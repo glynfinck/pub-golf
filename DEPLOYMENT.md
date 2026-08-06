@@ -173,9 +173,68 @@ notice if they are missing, so CI stays green while you work through this
 list. `deploy` skipping is a **warning** in the run summary — if a push to
 `main` did not reach production, check there first.
 
+## The preview environment
+
+**pub-golf-preview.glyn.dev** is a full staging copy: the `preview` git branch
+deploys there, against its own database.
+
+| Piece | Value |
+| --- | --- |
+| Git branch | `preview` |
+| Vercel | Preview deploy, aliased to `pub-golf-preview.glyn.dev` |
+| Supabase branch | `preview` → its own project `xssmjzinaghxjncoezez` |
+| Supabase URL | `https://xssmjzinaghxjncoezez.supabase.co` |
+
+The Supabase branch is a real separate project, created from
+`supabase/migrations` with **no production data**, so anything you do on
+preview — rounds, guests, claimed cards — is invisible to production and safe
+to throw away.
+
+Set Vercel's **Preview** environment variables to point at it, not at
+production:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xssmjzinaghxjncoezez.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<the branch's publishable key>
+```
+
+Getting these wrong is the failure mode worth guarding against: preview
+builds silently pointing at the production database, writing real rounds.
+
+### Google sign-in on preview needs two extra things
+
+The branch has its own auth server, so production's setup does not carry it:
+
+1. **Google Cloud** → add `https://xssmjzinaghxjncoezez.supabase.co/auth/v1/callback`
+   to the OAuth client's authorized redirect URIs, alongside production's.
+2. **The branch's auth settings** → enable the Google provider with the same
+   client ID/secret, turn on anonymous sign-ins and manual linking, and add
+   `https://pub-golf-preview.glyn.dev/**` to the redirect allow list. Miss the
+   last one and you get the silent `/?code=…` bounce described in step 2.
+
+### Two things to know
+
+**The preview domain is public.** Vercel Authentication is set to
+`all_except_custom_domains`, so the `*.vercel.app` URLs ask for a Vercel login
+but `pub-golf-preview.glyn.dev` does not — anyone with the link can play. That
+is usually what you want for showing people; add password protection in
+Vercel if it is not.
+
+**CI does not gate the preview deploy.** `verify` runs on `preview` pushes,
+but Vercel's git integration deploys the branch immediately either way — a
+staging URL is not worth blocking on a test run. Only `main` has the ordered
+verify → migrate → deploy path.
+
+The Supabase branch is currently non-persistent, meaning it is tied to the
+`preview` git branch and is torn down with it. Mark it persistent in the
+dashboard if you want it to outlive the branch.
+
 ## Day-to-day
 
 Push to `main`. CI verifies, migrates, then deploys. Nothing else to do.
+
+To stage something first, merge it to `preview` and look at
+pub-golf-preview.glyn.dev before it goes near `main`.
 
 Rolling back app code is a Vercel instant rollback to the previous
 deployment. Rolling back a migration is a new forward migration — never edit
