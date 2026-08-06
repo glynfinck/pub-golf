@@ -65,23 +65,22 @@ shapes first, then drop the old column in a later release.
 
 ### 1. Supabase production project
 
-An additional project on this org costs **$10/month** (Pro plan compute).
+Already created — **Pub Golf**, ref `quncylgcwfiqsjugnvtv`, region
+`eu-west-2`, at `https://quncylgcwfiqsjugnvtv.supabase.co`. It bills at
+$10/month on the Pro org.
+
+Apply the schema:
 
 ```bash
 supabase login                    # opens a browser
-supabase projects create parlour --org-id qfabnyoyejsscqklyrmx \
-  --region eu-central-1 --db-password "$(openssl rand -base64 24)"
-```
-
-Save that database password in your password manager — it becomes the
-`SUPABASE_DB_PASSWORD` secret and cannot be read back.
-
-`eu-central-1` matches the other two projects. Then apply the schema:
-
-```bash
-supabase link --project-ref <new-ref>
+supabase link --project-ref quncylgcwfiqsjugnvtv
 supabase db push                  # applies supabase/migrations/*
 ```
+
+CI does this on every push to `main` once the secrets are in place (step 6);
+this first run is only to get the schema in before the first deploy. Keep the
+database password from project creation — it is the `SUPABASE_DB_PASSWORD`
+secret and cannot be read back.
 
 ### 2. Supabase auth settings (the part that breaks quietly)
 
@@ -119,7 +118,7 @@ these point at Supabase:
 
 | Environment | URI |
 | --- | --- |
-| Production | `https://<ref>.supabase.co/auth/v1/callback` |
+| Production | `https://quncylgcwfiqsjugnvtv.supabase.co/auth/v1/callback` |
 | Local dev | `http://127.0.0.1:54331/auth/v1/callback` |
 
 Put the client ID and secret into the Supabase dashboard for production, and
@@ -141,8 +140,8 @@ Environment variables (Production **and** Preview):
 
 | Variable | Where it comes from |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key (`sb_publishable_…`) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Cloud; restrict to `pub-golf.glyn.dev/*` |
 | `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Google Cloud styled map ID |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
@@ -163,7 +162,7 @@ Settings → Secrets and variables → Actions:
 | Secret | Where to get it |
 | --- | --- |
 | `SUPABASE_ACCESS_TOKEN` | supabase.com/dashboard/account/tokens |
-| `SUPABASE_PROJECT_REF` | The new project's ref |
+| `SUPABASE_PROJECT_REF` | `quncylgcwfiqsjugnvtv` |
 | `SUPABASE_DB_PASSWORD` | The password from step 1 |
 | `VERCEL_TOKEN` | vercel.com/account/tokens |
 | `VERCEL_ORG_ID` | `team_efHn4CGsL2iT0Xmp3qdWG9d2` |

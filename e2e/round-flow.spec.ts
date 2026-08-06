@@ -123,7 +123,9 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Marker's roam: review hole 1 without moving the round ----
   await guest.goto(`/round/${roundCode}/card?hole=1`);
-  await expect(guest.getByText(/reviewing the record/i)).toBeVisible();
+  // .first(): mid-navigation the outgoing and incoming cards can both be in
+  // the DOM for a frame, which tripped strict mode in CI.
+  await expect(guest.getByTestId("roaming-banner").first()).toBeVisible();
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
     .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })

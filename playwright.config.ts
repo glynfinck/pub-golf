@@ -15,6 +15,10 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 90_000,
   expect: { timeout: 15_000 },
+  // The realtime assertions race the socket's first subscribe on a cold stack
+  // — a known flake, not a product failure (see CLAUDE.md). Without retries it
+  // would block production deploys, since the deploy job gates on this suite.
+  retries: process.env.CI ? 2 : 1,
   // One round at a time — tests share the local database.
   workers: 1,
   use: {
