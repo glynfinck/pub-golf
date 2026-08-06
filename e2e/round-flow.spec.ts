@@ -1,28 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const MAILPIT = "http://127.0.0.1:54334";
-
-/** Pull the newest 6-digit tee-off code Mailpit captured for an address. */
-async function fetchOtpCode(email: string): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const list = await fetch(`${MAILPIT}/api/v1/messages?limit=10`).then(
-      (response) => response.json(),
-    );
-    const message = list.messages?.find(
-      (entry: { To: { Address: string }[] }) =>
-        entry.To?.some((to) => to.Address === email),
-    );
-    if (message) {
-      const detail = await fetch(
-        `${MAILPIT}/api/v1/message/${message.ID}`,
-      ).then((response) => response.json());
-      const match = `${detail.Text} ${detail.HTML}`.match(/\b(\d{6})\b/);
-      if (match) return match[1];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`No OTP email arrived for ${email}`);
-}
+import { signInAs } from "./auth";
 
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
@@ -35,17 +13,6 @@ async function holeOutAndTeeUp(caddy: Page, expectVenue?: string | RegExp) {
   }
 }
 
-/** Sign the page in through the real email-code flow. */
-async function signIn(page: Page, email: string, name: string) {
-  await page.goto("/signin");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel(/name on the card/i).fill(name);
-  await page.getByRole("button", { name: /email me a tee-off code/i }).click();
-  const code = await fetchOtpCode(email);
-  await page.getByLabel(/enter the 6-digit code/i).fill(code);
-  await page.getByRole("button", { name: /^tee off$/i }).click();
-  await expect(page).toHaveURL(/\/$/);
-}
 
 test("a full round: create, join, caddy controls, live scores, results", async ({
   browser,
@@ -53,10 +20,11 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   const stamp = Date.now();
   const hostEmail = `host-${stamp}@e2e.local`;
 
-  // ---- Host signs in with a real emailed code and creates the round ----
+  // ---- Host signs in and creates the round ----
   const hostContext = await browser.newContext();
+  await signInAs(hostContext, { email: hostEmail, name: "Glyn" });
   const host = await hostContext.newPage();
-  await signIn(host, hostEmail, "Glyn");
+  await host.goto("/");
 
   await host.getByRole("link", { name: /new round/i }).click();
   await host.getByLabel(/round name/i).fill(`E2E Invitational ${stamp}`);
@@ -201,16 +169,21 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await guest.getByTestId("hole-out").click();
   await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
 
-  // ---- The guest claims their card: anonymous → permanent account ----
-  const claimEmail = `guest-${stamp}@e2e.local`;
-  await guest.getByLabel("Email").fill(claimEmail);
-  await guest.getByRole("button", { name: /claim your card/i }).click();
-  const claimCode = await fetchOtpCode(claimEmail);
-  await guest.getByLabel(/confirmation code/i).fill(claimCode);
-  await guest.getByRole("button", { name: /^confirm$/i }).click();
-  await expect(
-    guest.getByText(/now live in the clubhouse/i),
-  ).toBeVisible();
+  // ---- The guest claims their card: anonymous → Google-linked ----
+  // The consent screen belongs to Google and cannot be driven here, so assert
+  // the handoff instead: the button must send this anonymous session to
+  // Supabase's identity-linking endpoint for google, returning to our own
+  // callback. Intercepting it also keeps the run off the network.
+  let authorizeUrl: string | null = null;
+  await guest.route("**/user/identities/authorize**", async (route) => {
+    authorizeUrl = route.request().url();
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await expect(guest.getByTestId("claim-card")).toBeVisible();
+  await guest.getByTestId("claim-card").click();
+  await expect.poll(() => authorizeUrl).toContain("provider=google");
+  expect(decodeURIComponent(authorizeUrl!)).toContain("/auth/callback?next=");
 
   await hostContext.close();
   await guestContext.close();

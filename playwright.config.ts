@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+
+// e2e/auth.ts mints host sessions with the service role key, which lives in
+// .env.local alongside the stack's URL and anon key. Playwright does not read
+// dotenv files on its own.
+dotenv.config({ path: ".env.local", quiet: true });
 
 /**
  * E2E against the local Supabase stack (ports 54330-54334). Two browser
