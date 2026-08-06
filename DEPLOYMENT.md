@@ -108,15 +108,30 @@ gives users a link that does not complete the flow.
 
 ### 3. Custom SMTP — required, not optional
 
-Supabase's built-in email sender is rate-limited to a handful of messages per
-hour and is only intended for testing. Parlour sends an email *per sign-in*
-and *per card claim*, so at a real event with a dozen players the default
-sender will start dropping messages within the first minute.
+**Supabase's built-in email service cannot be used for this app.** Not as a
+stopgap, not for a first event. Two hard limits, quoting the docs:
 
-Configure a real provider under Authentication → SMTP Settings before the
+> Unless you configure a custom SMTP server for your project, Supabase Auth
+> will refuse to deliver messages to addresses that are not part of the
+> project's team. […] All other addresses will fail with the error message
+> *Email address not authorized.*
+
+Every player signs in with an emailed code. Anyone who is not a member of the
+Supabase org — i.e. every player — simply never receives it. On top of that
+the built-in sender is "for demonstration purposes only", with a rate limit
+of a couple of messages per hour that Supabase may "change without notice".
+
+So configure a real provider under Authentication → SMTP Settings before the
 first round. [Resend](https://resend.com) is the usual pick for this stack
 (free tier covers 3k/month; verify `glyn.dev` and send as
-`parlour@glyn.dev`). Raise the auth rate limit for emails once SMTP is on.
+`parlour@glyn.dev`).
+
+Then raise the rate limit. Custom SMTP still defaults to **30 emails per
+hour**, and Parlour sends one per sign-in *and* one per card claim — a
+sixteen-player round can spend half that allowance in the first five minutes,
+and a rejected email is a player who cannot get onto the scorecard. Set it
+generously under Authentication → Rate Limits (the OTP endpoint defaults to
+360/hour and is separately configurable).
 
 ### 4. Vercel project
 
