@@ -56,15 +56,18 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
         </span>
       </button>
 
+      {/* The rows own the horizontal padding, not the card, so the row you are
+          on fills the card edge to edge — the card's own overflow-hidden clips
+          it to the rounded corners. */}
       {expanded ? (
-        <Card className="gap-0 px-4 py-1" data-testid="standings">
+        <Card className="gap-0 py-1" data-testid="standings">
           {standings.map((row, index) => (
             <div
               key={row.playerId}
               className={cn(
-                "flex min-h-11 items-center justify-between px-1",
+                "flex min-h-11 items-center justify-between px-5",
                 index > 0 && !row.isYou && "border-t border-border",
-                row.isYou && "rounded-lg bg-secondary",
+                row.isYou && "bg-secondary",
               )}
             >
               <span className="flex items-center gap-2">
