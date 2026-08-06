@@ -64,6 +64,13 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$STATUS")"
           } >> .env.local
 
+      # RLS is the app's real access control — every server action reaches
+      # Postgres through PostgREST on the caller's own session — so it is
+      # verified against the database directly, and before the build: a policy
+      # regression should not wait on webpack and a browser download.
+      - name: RLS + database tests
+        run: npm run test:db
+
       - name: Build
         run: npm run build
 

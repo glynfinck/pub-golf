@@ -46,7 +46,13 @@ live/walking + `walk_deadline_at` for the between-holes walk) → `holes`
 marker entries). `courses`/`course_holes` are the builder's output,
 owner-scoped. Guests use Supabase anonymous auth so RLS always keys on
 `auth.uid()`; joining goes through the `join_round(code, name)` SECURITY
-DEFINER function. Regenerate types after schema changes:
+DEFINER function — which since the RLS hardening migration is the *only* way
+into a round. The `round_players` INSERT policy allows exactly one direct
+seat: the creator's own `role='host'` row, gated on `is_round_creator`, which
+is what `createRound` writes between the round and the holes. Any future
+re-seat or rejoin flow needs a SECURITY DEFINER function, not a client insert.
+Roles are guarded by a `BEFORE UPDATE` trigger rather than a policy, because
+`WITH CHECK` only sees NEW and "your role may not change" is about OLD. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Auth is **Google-only, and deliberately email-free**: hosting a round needs
@@ -73,6 +79,19 @@ network, no clock** — every helper takes the time it needs as an argument, so
 `lib/time.ts` is where countdown maths lives and `Date.now()` stays out of the
 functions. Rules belong in the lowest layer that can hold them: if a browser is
 proving something a function call could prove, it is in the wrong place.
+
+`npm run test:db` runs the Vitest `db` project (`tests/db/**`) against the
+local stack, driving Postgres with per-role supabase-js clients
+(`tests/support/clients.ts`: `adminClient`, `signedInUser`, `anonymousGuest`,
+`visitor`) and bypassing the server actions entirely. That is the point —
+every action reaches Postgres through PostgREST on the caller's own session,
+so **RLS is the only real enforcement** and `getOfficiatedRound` is a UX guard.
+Fixtures come from `tests/support/factories.ts` and register themselves for an
+`afterEach` scoped delete: **never `truncate`, never an unscoped `delete`** —
+the Playwright suite uses the same stack minutes later. Two rules for this
+tier: `adminClient()` is for seeding and reading a row back, never the subject
+of a test; and an UPDATE that RLS filters out returns *no error and no rows*,
+so a blocked write is proven by re-reading the row, never by `error === null`.
 
 `npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
 real local Supabase stack — two browser contexts play a full round: create,
