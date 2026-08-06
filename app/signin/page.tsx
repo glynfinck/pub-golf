@@ -12,8 +12,11 @@ export default async function SignInPage({
   const { error, next } = await searchParams;
   const target = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
 
+  // gap-8 between groups against gap-2 inside them: the wordmark lockup, the
+  // sign-in action and the guest escape hatch each have to read as one thing,
+  // not as a stack of evenly spaced lines.
   return (
-    <Screen className="justify-center gap-5">
+    <Screen className="justify-center gap-8">
       <div className="text-center">
         <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full border-2 border-fairway">
           <svg viewBox="0 0 28 28" className="size-9" aria-hidden fill="none">
@@ -45,7 +48,7 @@ export default async function SignInPage({
         </p>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <p className="text-center text-xs text-muted-foreground">
           Sign in to keep a card and start rounds. It takes one tap.
         </p>
