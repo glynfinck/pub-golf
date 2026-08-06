@@ -1,6 +1,7 @@
 "use client";
 
 import { useCountdown } from "@/hooks/use-countdown";
+import { formatClock, isUrgent, ringFraction, spokenClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const RADIUS = 22;
@@ -22,28 +23,16 @@ export function TimerRing({
 }) {
   const remainingMs = useCountdown(deadline);
 
-  const fraction =
-    remainingMs === null || totalMs <= 0
-      ? 1
-      : Math.min(1, Math.max(0, remainingMs / totalMs));
-  const totalSeconds = remainingMs === null ? null : Math.ceil(remainingMs / 1000);
-  const urgent = totalSeconds !== null && totalSeconds <= 120;
-  const label =
-    totalSeconds === null
-      ? "--:--"
-      : `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60)
-          .toString()
-          .padStart(2, "0")}`;
+  const fraction = ringFraction(remainingMs, totalMs);
+  const urgent = isUrgent(remainingMs);
+  const spoken = spokenClock(remainingMs);
+  const label = formatClock(remainingMs);
 
   return (
     <div
       className={cn("relative size-14 shrink-0", className)}
       role="timer"
-      aria-label={
-        totalSeconds === null
-          ? "Hole timer"
-          : `${Math.floor(totalSeconds / 60)} minutes ${totalSeconds % 60} seconds left on this hole`
-      }
+      aria-label={spoken === null ? "Hole timer" : `${spoken} left on this hole`}
     >
       <svg viewBox="0 0 56 56" className="absolute inset-0 -rotate-90">
         <circle

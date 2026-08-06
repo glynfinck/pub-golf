@@ -33,6 +33,17 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Pure logic — scoring substitutions, placings, clock and walk maths.
+      # Runs before Docker: the whole tier costs less than one `supabase
+      # start`, so a broken leaderboard never pays for a container boot.
+      - name: Unit tests
+        run: npm test
+
+      # Moved above `supabase start`: tsc needs no stack, so a type error is
+      # reported in seconds rather than after the stack has come up.
+      - name: Typecheck
+        run: npm run typecheck
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -53,14 +64,20 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$STATUS")"
           } >> .env.local
 
-      - name: Typecheck
-        run: npm run typecheck
+      # RLS is the app's real access control — every server action reaches
+      # Postgres through PostgREST on the caller's own session — so it is
+      # verified against the database directly, and before the build: a policy
+      # regression should not wait on webpack and a browser download.
+      - name: RLS + database tests
+        run: npm run test:db
 
       - name: Build
         run: npm run build
 
       # Two browser contexts play a full round against the seeded stack above:
-      # OTP sign-in via Mailpit, create, guest join, caddy controls, results.
+      # create, guest join, caddy controls, live score sync, results. The host
+      # session is minted with the admin API in e2e/auth.ts — Google's consent
+      # screen cannot be driven from CI.
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 

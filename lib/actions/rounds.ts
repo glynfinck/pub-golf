@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { templateForHoleCount } from "@/lib/course-templates";
 import { createClient } from "@/lib/supabase/server";
+import { deadlineFrom } from "@/lib/time";
 
 const HOLE_TIMER_MINUTES = 20;
 
@@ -194,9 +195,7 @@ export async function advanceHole(code: string): Promise<ActionResult> {
       current_hole: round.current_hole + 1,
       hole_phase: "walking",
       hole_deadline_at: null,
-      walk_deadline_at: walkMinutes
-        ? new Date(Date.now() + walkMinutes * 60_000).toISOString()
-        : null,
+      walk_deadline_at: deadlineFrom(Date.now(), walkMinutes),
     })
     .eq("id", round.id);
   if (error) return { error: error.message };
@@ -456,9 +455,7 @@ export async function removePenalty(code: string, penaltyId: string): Promise<Ac
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
 function holeDeadline(ruleset: { holeTimerMinutes?: number | null }) {
-  return ruleset.holeTimerMinutes
-    ? new Date(Date.now() + ruleset.holeTimerMinutes * 60_000).toISOString()
-    : null;
+  return deadlineFrom(Date.now(), ruleset.holeTimerMinutes);
 }
 
 /** Fetch the round and assert the caller is host or caddy (UX guard — RLS

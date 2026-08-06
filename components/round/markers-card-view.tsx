@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { MarkerPlayerSheet } from "@/components/round/marker-player-sheet";
-import { penaltyOptions } from "@/components/round/penalty-sheet";
+import { penaltyOptions } from "@/lib/penalty-options";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";

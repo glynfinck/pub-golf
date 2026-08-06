@@ -14,6 +14,7 @@ import { useCountdown } from "@/hooks/use-countdown";
 import { usePresence } from "@/hooks/use-presence";
 import { teeUpHole } from "@/lib/actions/rounds";
 import type { HoleWithVenue, RoundBundle } from "@/lib/data/rounds";
+import { formatClock, remainingSeconds } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /** Turn-by-turn without a map of our own: the Maps app the player already
@@ -30,16 +31,14 @@ function directionsUrl(hole: HoleWithVenue) {
 
 function WalkCountdown({ deadline }: { deadline: Date }) {
   const remainingMs = useCountdown(deadline);
-  if (remainingMs === null)
+  const totalSeconds = remainingSeconds(remainingMs);
+  if (totalSeconds === null)
     return <span className="tabular font-mono text-5xl font-bold">--:--</span>;
-  const totalSeconds = Math.ceil(remainingMs / 1000);
   if (totalSeconds <= 0)
     return <span className="font-serif text-3xl italic">any second now</span>;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
   return (
     <span className="tabular font-mono text-5xl font-bold text-good">
-      {minutes}:{seconds.toString().padStart(2, "0")}
+      {formatClock(remainingMs)}
     </span>
   );
 }
