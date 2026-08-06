@@ -1,0 +1,68 @@
+# Ports offset from the `home` project (54321-54329) so both local stacks
+# can run at once.
+project_id = "pub-golf"
+
+[api]
+enabled = true
+port = 54331
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54332
+shadow_port = 54330
+major_version = 17
+
+[studio]
+enabled = true
+port = 54333
+
+[inbucket]
+enabled = true
+port = 54334
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://localhost:3105"
+additional_redirect_urls = ["http://localhost:3105", "http://localhost:3000"]
+# Guests join rounds without an account (Kahoot/Jackbox pattern) — they get
+# an anonymous session so RLS still has an auth.uid() to key on.
+enable_anonymous_sign_ins = true
+
+[auth.sms]
+enable_signup = true
+enable_confirmations = true
+
+# Confirmations on, matching production — claiming a card (anonymous ->
+# permanent) must require the emailed code, not autoconfirm.
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+# Local email lands in Mailpit (54334); the template carries the 6-digit
+# code so sign-in never depends on redirect URLs.
+[auth.email.template.magic_link]
+subject = "Your tee-off code"
+content_path = "./supabase/templates/magic_link.html"
+
+# First-time sign-ins get the signup confirmation — same code, same card.
+[auth.email.template.confirmation]
+subject = "Your tee-off code"
+content_path = "./supabase/templates/magic_link.html"
+
+# Guests claim their card by adding an email (anonymous -> permanent);
+# the confirmation must carry a visible code, same as sign-in.
+[auth.email.template.email_change]
+subject = "Claim your card"
+content_path = "./supabase/templates/email_change.html"
+
+[realtime]
+enabled = true
+
+# Analytics defaults to port 54327, which the `home` stack occupies.
+[analytics]
+enabled = false

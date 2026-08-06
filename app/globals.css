@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* House-specific semantic colors */
+  --color-fairway: var(--fairway);
+  --color-marker: var(--marker);
+  --color-hazard: var(--hazard);
+  --color-good: var(--good);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/* .theme-cream re-asserts the daylight card inside .dark subtrees — the
+   shareable results recap renders on cream stock whatever the app theme. */
+:root,
+.theme-cream {
+  /* The Invitational scorecard: cream stock, fairway green, orange markers */
+  --background: #f1edde;
+  --foreground: #23281e;
+  --card: #f7f4e9;
+  --card-foreground: #23281e;
+  --popover: #f7f4e9;
+  --popover-foreground: #23281e;
+  --primary: #1e4630;
+  --primary-foreground: #f1edde;
+  --secondary: #e4dec9;
+  --secondary-foreground: #23281e;
+  --muted: #e9e4d1;
+  --muted-foreground: #5a5f4e;
+  --accent: #c8802f;
+  --accent-foreground: #fbf7ea;
+  --destructive: #a63d2c;
+  --border: #c9c3ac;
+  --input: #c9c3ac;
+  --ring: #c8802f;
+  --fairway: #1e4630;
+  --marker: #c8802f;
+  --hazard: #a63d2c;
+  --good: #3d7a4a;
+  --radius: 0.625rem;
+  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue",
+    sans-serif;
+  --font-serif: "Palatino Linotype", Palatino, "Iowan Old Style", Georgia,
+    serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.dark {
+  /* The Midnight Invitational: green felt, cream ink, amber for the
+     one action that scores. House skin — dark is the default theme. */
+  --background: #101b13;
+  --foreground: #eae5d2;
+  --card: #17251b;
+  --card-foreground: #eae5d2;
+  --popover: #17251b;
+  --popover-foreground: #eae5d2;
+  --primary: #d99443;
+  --primary-foreground: #1a1206;
+  --secondary: #1e3024;
+  --secondary-foreground: #eae5d2;
+  --muted: #182619;
+  --muted-foreground: #a8ad93;
+  --accent: #d99443;
+  --accent-foreground: #101b13;
+  --destructive: #d07660;
+  --border: #2e3f31;
+  --input: #2e3f31;
+  --ring: #d99443;
+  --fairway: #7fb08d;
+  --marker: #d99443;
+  --hazard: #d07660;
+  --good: #8ecf9b;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@utility eyebrow {
+  @apply text-[10px] font-bold tracking-[0.2em] uppercase text-muted-foreground;
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Engraving kit — the printed-scorecard line work, inked in either theme. */
+
+@utility rule-double {
+  border-top: 1px solid var(--color-border);
+  border-bottom: 3px double var(--color-border);
+  height: 6px;
+}
+
+/* Dot-leader fill between a label and its value, menu style. Apply to a
+   flex-1 spacer span inside a flex row. */
+@utility leader {
+  align-self: flex-end;
+  background-image: radial-gradient(
+    circle,
+    var(--color-border) 1px,
+    transparent 1.5px
+  );
+  background-size: 8px 3px;
+  background-repeat: repeat-x;
+  background-position: 0 bottom;
+  height: 0.9em;
+}
+
+/* Engraved inset double border, for the frame that holds the score. */
+@utility engraved {
+  box-shadow:
+    inset 0 0 0 4px var(--color-card),
+    inset 0 0 0 5px var(--color-border);
+}
