@@ -214,11 +214,13 @@ The branch has its own auth server, so production's setup does not carry it:
 
 ### Two things to know
 
-**The preview domain is public.** Vercel Authentication is set to
-`all_except_custom_domains`, so the `*.vercel.app` URLs ask for a Vercel login
-but `pub-golf-preview.glyn.dev` does not — anyone with the link can play. That
-is usually what you want for showing people; add password protection in
-Vercel if it is not.
+**Only you can open the preview URL.** Vercel Authentication is on with
+`all_except_custom_domains`, and that exemption covers the *production*
+custom domain only — `pub-golf.glyn.dev` is public, `pub-golf-preview.glyn.dev`
+still redirects to a Vercel login. Fine while you are the only one looking;
+to hand the link to someone without a Vercel account, either switch
+Deployment Protection off for previews (makes staging fully public) or turn
+on password protection and share the password.
 
 **CI does not gate the preview deploy.** `verify` runs on `preview` pushes,
 but Vercel's git integration deploys the branch immediately either way — a

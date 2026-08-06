@@ -56,11 +56,12 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
         </span>
       </button>
 
-      {/* The rows own the horizontal padding, not the card, so the row you are
-          on fills the card edge to edge — the card's own overflow-hidden clips
-          it to the rounded corners. */}
+      {/* The rows own every edge of the card, so the row you are on fills its
+          slot completely — no card padding peeking above or below it as a
+          stray strip. overflow-hidden on the card clips the top and bottom
+          rows to the rounded corners. */}
       {expanded ? (
-        <Card className="gap-0 py-1" data-testid="standings">
+        <Card className="gap-0 py-0" data-testid="standings">
           {standings.map((row, index) => (
             <div
               key={row.playerId}
