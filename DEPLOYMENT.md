@@ -138,16 +138,25 @@ team. Framework preset auto-detects as Next.js; leave build settings alone.
 
 Environment variables (Production **and** Preview):
 
+Required:
+
 | Variable | Where it comes from |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key (`sb_publishable_…`) |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Cloud; restrict to `pub-golf.glyn.dev/*` |
-| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Google Cloud styled map ID |
+
+Optional — improves the course builder, nothing breaks without it:
+
+| Variable | Where it comes from |
+| --- | --- |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
 
-The two Google keys are optional; without them the course builder degrades to
-add-by-name, which still works.
+Without it, pub search degrades to add-by-name, which builds a perfectly
+good course.
+
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` are
+placeholders in `.env.example` for the themed course map, which is not built
+yet — **no code reads either one**. Skip them until there is a map to style.
 
 ### 5. Domain
 
