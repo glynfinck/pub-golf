@@ -94,8 +94,20 @@ in local dev:
 | Allow anonymous sign-ins | **on** | Guests join rounds without an account; RLS keys on `auth.uid()`. Off ⇒ nobody can join. |
 | Allow manual linking | **on** | "Claim your card" links Google to an anonymous uid. Off by default; the claim button fails without it. |
 | Email provider | **off** | Nothing in the UI reaches it. Leaving it on is a signup path nobody uses. |
-| Site URL | `https://pub-golf.glyn.dev` | Where OAuth returns to |
-| Redirect URLs | `https://pub-golf.glyn.dev/**` | Plus any preview origins you want to allow |
+| Site URL | `https://pub-golf.glyn.dev` | The fallback OAuth returns to when nothing else matches |
+| Redirect URLs | `https://pub-golf.glyn.dev/**`, plus `http://localhost:3000/**` and `http://localhost:3105/**` for local dev | See below — this one fails in a way that looks like a code bug |
+
+**The redirect allow list is the trap.** `signInWithOAuth` asks to come back
+to `<origin>/auth/callback`. If that exact origin is not on the Redirect URLs
+list, Supabase does not error — it silently falls back to the **Site URL and
+drops the path**, so you land on `/?code=…` instead of `/auth/callback?code=…`.
+The code is never exchanged, no session cookie is set, and the app looks like
+it ignored a successful login.
+
+A fresh Supabase project ships with Site URL `http://localhost:3000` and an
+empty allow list, so this is the default behaviour until you fix it. Add
+every origin you actually browse from, including Vercel preview URLs if you
+want sign-in to work there.
 
 > Do **not** run `supabase config push`. It would overwrite the production
 > `site_url` with `http://localhost:3105` from `config.toml`, which is
