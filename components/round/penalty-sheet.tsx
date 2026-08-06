@@ -11,34 +11,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { addPenalty, removeOwnPenalty } from "@/lib/actions/rounds";
-import { QUICK_PENALTIES } from "@/lib/rules";
+import type { PenaltyOption } from "@/lib/penalty-options";
 import type { Tables } from "@/types/supabase-helpers";
 import { cn } from "@/lib/utils";
-
-export interface PenaltyOption {
-  label: string;
-  strokes: number;
-  reason: string;
-}
-
-/** QUICK_PENALTIES first (their labels are the house shorthand), then any
- * extra presets this round's ruleset carries, keyed by reason. */
-export function penaltyOptions(
-  rulesetPenalties: { strokes: number; reason: string }[] | undefined,
-): PenaltyOption[] {
-  const options: PenaltyOption[] = [...QUICK_PENALTIES];
-  const known = new Set(options.map((option) => option.reason));
-  for (const preset of rulesetPenalties ?? []) {
-    if (known.has(preset.reason)) continue;
-    known.add(preset.reason);
-    options.push({
-      label: `${preset.reason.split(/[—,]/)[0].trim()} +${preset.strokes}`,
-      strokes: preset.strokes,
-      reason: preset.reason,
-    });
-  }
-  return options;
-}
 
 /**
  * The penalties bottom sheet, self mode: call a penalty on your own card,

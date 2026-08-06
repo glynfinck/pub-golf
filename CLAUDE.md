@@ -66,6 +66,14 @@ any hole via `/round/CODE/card?hole=N` without moving the round.
 
 ## Testing
 
+`npm test` runs the Vitest `unit` project (`tests/unit/**`) — pure logic only:
+scoring substitutions and placings (`lib/scoring.ts`), formatting, course
+templates, walk estimates, penalty options, clock maths. **No stack, no
+network, no clock** — every helper takes the time it needs as an argument, so
+`lib/time.ts` is where countdown maths lives and `Date.now()` stays out of the
+functions. Rules belong in the lowest layer that can hold them: if a browser is
+proving something a function call could prove, it is in the wrong place.
+
 `npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
 real local Supabase stack — two browser contexts play a full round: create,
 guest join, caddy promotion + controls (tee off, back/forward, reset timer,

@@ -12,7 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { callPenaltyOn, removePenalty } from "@/lib/actions/rounds";
-import type { PenaltyOption } from "@/components/round/penalty-sheet";
+import type { PenaltyOption } from "@/lib/penalty-options";
 import type { Tables } from "@/types/supabase-helpers";
 import { cn } from "@/lib/utils";
 
