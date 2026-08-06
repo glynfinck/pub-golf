@@ -65,23 +65,22 @@ shapes first, then drop the old column in a later release.
 
 ### 1. Supabase production project
 
-An additional project on this org costs **$10/month** (Pro plan compute).
+Already created — **Pub Golf**, ref `quncylgcwfiqsjugnvtv`, region
+`eu-west-2`, at `https://quncylgcwfiqsjugnvtv.supabase.co`. It bills at
+$10/month on the Pro org.
+
+Apply the schema:
 
 ```bash
 supabase login                    # opens a browser
-supabase projects create parlour --org-id qfabnyoyejsscqklyrmx \
-  --region eu-central-1 --db-password "$(openssl rand -base64 24)"
-```
-
-Save that database password in your password manager — it becomes the
-`SUPABASE_DB_PASSWORD` secret and cannot be read back.
-
-`eu-central-1` matches the other two projects. Then apply the schema:
-
-```bash
-supabase link --project-ref <new-ref>
+supabase link --project-ref quncylgcwfiqsjugnvtv
 supabase db push                  # applies supabase/migrations/*
 ```
+
+CI does this on every push to `main` once the secrets are in place (step 6);
+this first run is only to get the schema in before the first deploy. Keep the
+database password from project creation — it is the `SUPABASE_DB_PASSWORD`
+secret and cannot be read back.
 
 ### 2. Supabase auth settings (the part that breaks quietly)
 
@@ -91,47 +90,45 @@ in local dev:
 
 | Setting | Value | Why |
 | --- | --- | --- |
+| Google provider | **enabled**, with the client ID/secret from step 3 | The only way to sign in |
 | Allow anonymous sign-ins | **on** | Guests join rounds without an account; RLS keys on `auth.uid()`. Off ⇒ nobody can join. |
-| Site URL | `https://pub-golf.glyn.dev` | Confirmation/claim links |
+| Allow manual linking | **on** | "Claim your card" links Google to an anonymous uid. Off by default; the claim button fails without it. |
+| Email provider | **off** | Nothing in the UI reaches it. Leaving it on is a signup path nobody uses. |
+| Site URL | `https://pub-golf.glyn.dev` | Where OAuth returns to |
 | Redirect URLs | `https://pub-golf.glyn.dev/**` | Plus any preview origins you want to allow |
-| Confirm email | **on** | Claiming a card must require the emailed code, not autoconfirm |
-
-Then copy the three email templates from `supabase/templates/` into
-Authentication → Email Templates — **magic link**, **confirm signup**, and
-**change email address**. Each must contain `{{ .Token }}`: the app signs in
-with a 6-digit code, so a template that only carries `{{ .ConfirmationURL }}`
-gives users a link that does not complete the flow.
 
 > Do **not** run `supabase config push`. It would overwrite the production
 > `site_url` with `http://localhost:3105` from `config.toml`, which is
-> local-first by design.
+> local-first by design — and it would re-enable the email provider, which
+> local keeps on only so the e2e suite can seed sessions.
 
-### 3. Custom SMTP — required, not optional
+**There is no SMTP to configure, and that is the point.** Hosts sign in with
+Google and guests join anonymously, so the app never sends an email. This is
+worth protecting: the moment any flow goes back to emailing users, Supabase's
+built-in sender *refuses to deliver to anyone outside your org's team*, and
+you would need Resend plus a verified domain before that flow works at all.
 
-**Supabase's built-in email service cannot be used for this app.** Not as a
-stopgap, not for a first event. Two hard limits, quoting the docs:
+### 3. Google OAuth client
 
-> Unless you configure a custom SMTP server for your project, Supabase Auth
-> will refuse to deliver messages to addresses that are not part of the
-> project's team. […] All other addresses will fail with the error message
-> *Email address not authorized.*
+In Google Cloud → APIs & Services → Credentials, create an **OAuth client ID**
+of type *Web application*, and configure the consent screen as External.
 
-Every player signs in with an emailed code. Anyone who is not a member of the
-Supabase org — i.e. every player — simply never receives it. On top of that
-the built-in sender is "for demonstration purposes only", with a rate limit
-of a couple of messages per hour that Supabase may "change without notice".
+Authorized redirect URIs — Supabase handles the callback, not the app, so
+these point at Supabase:
 
-So configure a real provider under Authentication → SMTP Settings before the
-first round. [Resend](https://resend.com) is the usual pick for this stack
-(free tier covers 3k/month; verify `glyn.dev` and send as
-`parlour@glyn.dev`).
+| Environment | URI |
+| --- | --- |
+| Production | `https://quncylgcwfiqsjugnvtv.supabase.co/auth/v1/callback` |
+| Local dev | `http://127.0.0.1:54331/auth/v1/callback` |
 
-Then raise the rate limit. Custom SMTP still defaults to **30 emails per
-hour**, and Parlour sends one per sign-in *and* one per card claim — a
-sixteen-player round can spend half that allowance in the first five minutes,
-and a rejected email is a player who cannot get onto the scorecard. Set it
-generously under Authentication → Rate Limits (the OTP endpoint defaults to
-360/hour and is separately configurable).
+Put the client ID and secret into the Supabase dashboard for production, and
+into `.env.local` as `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` /
+`SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET` for local (`supabase start` reads them
+through `config.toml`). Local dev also needs `skip_nonce_check`, which is
+already set.
+
+While the consent screen is in *Testing*, only accounts on its test-user list
+can sign in — publish it before letting anyone else host a round.
 
 ### 4. Vercel project
 
@@ -143,8 +140,8 @@ Environment variables (Production **and** Preview):
 
 | Variable | Where it comes from |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key (`sb_publishable_…`) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Cloud; restrict to `pub-golf.glyn.dev/*` |
 | `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Google Cloud styled map ID |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
@@ -165,7 +162,7 @@ Settings → Secrets and variables → Actions:
 | Secret | Where to get it |
 | --- | --- |
 | `SUPABASE_ACCESS_TOKEN` | supabase.com/dashboard/account/tokens |
-| `SUPABASE_PROJECT_REF` | The new project's ref |
+| `SUPABASE_PROJECT_REF` | `quncylgcwfiqsjugnvtv` |
 | `SUPABASE_DB_PASSWORD` | The password from step 1 |
 | `VERCEL_TOKEN` | vercel.com/account/tokens |
 | `VERCEL_ORG_ID` | `team_efHn4CGsL2iT0Xmp3qdWG9d2` |

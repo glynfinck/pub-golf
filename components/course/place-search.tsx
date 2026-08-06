@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Check, Plus, Search } from "lucide-react";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
 
 type VenueResult = Tables<"venues">;
@@ -34,6 +35,24 @@ export function PlaceSearch({
   const [degraded, setDegraded] = useState(false);
   const [searching, setSearching] = useState(false);
   const requestSeq = useRef(0);
+  // The hole lands at the bottom of a long form, often below the fold, so the
+  // tap itself has to confirm it landed. Keyed by venue id ("manual" for the
+  // by-name row) so only the button actually pressed flips.
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const addedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (addedTimer.current) clearTimeout(addedTimer.current);
+    },
+    [],
+  );
+
+  function confirmAdd(key: string) {
+    setJustAdded(key);
+    if (addedTimer.current) clearTimeout(addedTimer.current);
+    addedTimer.current = setTimeout(() => setJustAdded(null), 1400);
+  }
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -82,6 +101,7 @@ export function PlaceSearch({
       lng: null,
     });
     setManualName("");
+    confirmAdd("manual");
   }
 
   return (
@@ -128,7 +148,7 @@ export function PlaceSearch({
               <button
                 type="button"
                 aria-label={`Add ${venue.name} as hole ${nextHoleNumber}`}
-                onClick={() =>
+                onClick={() => {
                   onAdd({
                     venue_id: venue.id,
                     venue_name: venue.name,
@@ -136,11 +156,30 @@ export function PlaceSearch({
                     rating: venue.rating,
                     lat: venue.lat,
                     lng: venue.lng,
-                  })
-                }
-                className="flex min-h-10 shrink-0 items-center gap-1 rounded-full border-[1.5px] border-fairway px-3.5 text-xs font-bold text-fairway"
+                  });
+                  confirmAdd(venue.id);
+                }}
+                className={cn(
+                  "flex min-h-10 shrink-0 items-center gap-1 rounded-full border-[1.5px] border-fairway px-3.5 text-xs font-bold transition-colors duration-200",
+                  justAdded === venue.id
+                    ? "bg-fairway text-primary-foreground"
+                    : "text-fairway",
+                )}
               >
-                <Plus size={13} aria-hidden /> Add
+                {justAdded === venue.id ? (
+                  <>
+                    <Check
+                      size={13}
+                      aria-hidden
+                      className="animate-in zoom-in-50 duration-200"
+                    />
+                    Added
+                  </>
+                ) : (
+                  <>
+                    <Plus size={13} aria-hidden /> Add
+                  </>
+                )}
               </button>
             </div>
           ))}
@@ -168,11 +207,29 @@ export function PlaceSearch({
         <button
           type="button"
           aria-label="Add the named pub"
-          disabled={!manualName.trim()}
+          disabled={!manualName.trim() && justAdded !== "manual"}
           onClick={addManual}
-          className="flex min-h-12 shrink-0 items-center gap-1 rounded-lg border-[1.5px] border-fairway px-4 text-sm font-bold text-fairway disabled:opacity-40"
+          className={cn(
+            "flex min-h-12 shrink-0 items-center gap-1 rounded-lg border-[1.5px] border-fairway px-4 text-sm font-bold transition-colors duration-200 disabled:opacity-40",
+            justAdded === "manual"
+              ? "bg-fairway text-primary-foreground"
+              : "text-fairway",
+          )}
         >
-          <Plus size={14} aria-hidden /> Add
+          {justAdded === "manual" ? (
+            <>
+              <Check
+                size={14}
+                aria-hidden
+                className="animate-in zoom-in-50 duration-200"
+              />
+              Added
+            </>
+          ) : (
+            <>
+              <Plus size={14} aria-hidden /> Add
+            </>
+          )}
         </button>
       </div>
     </div>

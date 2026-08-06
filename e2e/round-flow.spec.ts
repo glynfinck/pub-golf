@@ -1,50 +1,32 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const MAILPIT = "http://127.0.0.1:54334";
+import { signInAs } from "./auth";
 
-/** Pull the newest 6-digit tee-off code Mailpit captured for an address. */
-async function fetchOtpCode(email: string): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const list = await fetch(`${MAILPIT}/api/v1/messages?limit=10`).then(
-      (response) => response.json(),
-    );
-    const message = list.messages?.find(
-      (entry: { To: { Address: string }[] }) =>
-        entry.To?.some((to) => to.Address === email),
-    );
-    if (message) {
-      const detail = await fetch(
-        `${MAILPIT}/api/v1/message/${message.ID}`,
-      ).then((response) => response.json());
-      const match = `${detail.Text} ${detail.HTML}`.match(/\b(\d{6})\b/);
-      if (match) return match[1];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`No OTP email arrived for ${email}`);
+/**
+ * Click a control once the page has settled to exactly one copy of it.
+ *
+ * A realtime event fires router.refresh() while a navigation is already in
+ * flight, so for a moment the outgoing and incoming views are both mounted
+ * and a bare getByTestId matches twice. Waiting for the count beats picking
+ * .first(): if a duplicate ever stops being transient — a genuine double
+ * mount, which would mean two live-round subscriptions — this fails instead
+ * of quietly clicking a stale node.
+ */
+async function clickSettled(page: Page, testId: string) {
+  const control = page.getByTestId(testId);
+  await expect(control).toHaveCount(1);
+  await control.click();
 }
 
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
 async function holeOutAndTeeUp(caddy: Page, expectVenue?: string | RegExp) {
-  await caddy.getByTestId("hole-out").click();
-  await expect(caddy.getByTestId("walking-view")).toBeVisible();
-  await caddy.getByTestId("tee-up").click();
+  await clickSettled(caddy, "hole-out");
+  await expect(caddy.getByTestId("walking-view")).toHaveCount(1);
+  await clickSettled(caddy, "tee-up");
   if (expectVenue) {
     await expect(caddy.getByTestId("hole-venue")).toHaveText(expectVenue);
   }
-}
-
-/** Sign the page in through the real email-code flow. */
-async function signIn(page: Page, email: string, name: string) {
-  await page.goto("/signin");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel(/name on the card/i).fill(name);
-  await page.getByRole("button", { name: /email me a tee-off code/i }).click();
-  const code = await fetchOtpCode(email);
-  await page.getByLabel(/enter the 6-digit code/i).fill(code);
-  await page.getByRole("button", { name: /^tee off$/i }).click();
-  await expect(page).toHaveURL(/\/$/);
 }
 
 test("a full round: create, join, caddy controls, live scores, results", async ({
@@ -53,10 +35,11 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   const stamp = Date.now();
   const hostEmail = `host-${stamp}@e2e.local`;
 
-  // ---- Host signs in with a real emailed code and creates the round ----
+  // ---- Host signs in and creates the round ----
   const hostContext = await browser.newContext();
+  await signInAs(hostContext, { email: hostEmail, name: "Glyn" });
   const host = await hostContext.newPage();
-  await signIn(host, hostEmail, "Glyn");
+  await host.goto("/");
 
   await host.getByRole("link", { name: /new round/i }).click();
   await host.getByLabel(/round name/i).fill(`E2E Invitational ${stamp}`);
@@ -89,7 +72,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   ).toBeVisible();
 
   // ---- The caddy (not the host) tees off — officials share control ----
-  await guest.getByTestId("tee-off").click();
+  await clickSettled(guest, "tee-off");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await expect(host.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
@@ -142,20 +125,21 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await guest.goto(`/round/${roundCode}/play`);
 
   // ---- Caddy calls the hole; the whole group walks, then tees up ----
-  await guest.getByTestId("hole-out").click();
+  await clickSettled(guest, "hole-out");
   // Both phones enter the walking phase together, pointed at the next pub.
   await expect(guest.getByTestId("walking-view")).toBeVisible();
   await expect(host.getByTestId("walking-view")).toBeVisible();
   await expect(guest.getByTestId("walking-next-venue")).toHaveText(
     "Pub on the Park",
   );
-  await guest.getByTestId("tee-up").click();
+  await clickSettled(guest, "tee-up");
   await expect(guest.getByTestId("hole-venue")).toHaveText("Pub on the Park");
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
   // ---- Marker's roam: review hole 1 without moving the round ----
   await guest.goto(`/round/${roundCode}/card?hole=1`);
-  await expect(guest.getByText(/reviewing the record/i)).toBeVisible();
+  await expect(guest.getByTestId("roaming-banner")).toHaveCount(1);
+  await expect(guest.getByTestId("roaming-banner")).toBeVisible();
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
     .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })
@@ -163,7 +147,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
   // ---- The only rewind: reopen hole 1 for everyone ----
-  await guest.getByTestId("reopen-hole").click();
+  await clickSettled(guest, "reopen-hole");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await expect(guest.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
   await expect(host.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
@@ -179,7 +163,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Play the course out: walk, tee up, drink, repeat ----
   for (let hole = 1; hole <= 9; hole += 1) {
     if (hole === 9) {
-      await guest.getByTestId("hole-out").click();
+      await clickSettled(guest, "hole-out");
     } else {
       await holeOutAndTeeUp(guest);
       await expect(guest.getByTestId("hole-venue")).not.toHaveText("", {
@@ -195,22 +179,27 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(host.getByTestId("final-standings")).toContainText("Jamie");
 
   // ---- Caddy reopens the last hole, then files the card again ----
-  await guest.getByTestId("reopen-round").click();
+  await clickSettled(guest, "reopen-round");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
-  await guest.getByTestId("hole-out").click();
+  await clickSettled(guest, "hole-out");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
 
-  // ---- The guest claims their card: anonymous → permanent account ----
-  const claimEmail = `guest-${stamp}@e2e.local`;
-  await guest.getByLabel("Email").fill(claimEmail);
-  await guest.getByRole("button", { name: /claim your card/i }).click();
-  const claimCode = await fetchOtpCode(claimEmail);
-  await guest.getByLabel(/confirmation code/i).fill(claimCode);
-  await guest.getByRole("button", { name: /^confirm$/i }).click();
-  await expect(
-    guest.getByText(/now live in the clubhouse/i),
-  ).toBeVisible();
+  // ---- The guest claims their card: anonymous → Google-linked ----
+  // The consent screen belongs to Google and cannot be driven here, so assert
+  // the handoff instead: the button must send this anonymous session to
+  // Supabase's identity-linking endpoint for google, returning to our own
+  // callback. Intercepting it also keeps the run off the network.
+  let authorizeUrl: string | null = null;
+  await guest.route("**/user/identities/authorize**", async (route) => {
+    authorizeUrl = route.request().url();
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await expect(guest.getByTestId("claim-card")).toBeVisible();
+  await guest.getByTestId("claim-card").click();
+  await expect.poll(() => authorizeUrl).toContain("provider=google");
+  expect(decodeURIComponent(authorizeUrl!)).toContain("/auth/callback?next=");
 
   await hostContext.close();
   await guestContext.close();

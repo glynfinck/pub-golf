@@ -1,42 +1,13 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
-const MAILPIT = "http://127.0.0.1:54334";
-
-async function fetchOtpCode(email: string): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const list = await fetch(`${MAILPIT}/api/v1/messages?limit=10`).then(
-      (response) => response.json(),
-    );
-    const message = list.messages?.find(
-      (entry: { To: { Address: string }[] }) =>
-        entry.To?.some((to) => to.Address === email),
-    );
-    if (message) {
-      const detail = await fetch(
-        `${MAILPIT}/api/v1/message/${message.ID}`,
-      ).then((response) => response.json());
-      const match = `${detail.Text} ${detail.HTML}`.match(/\b(\d{6})\b/);
-      if (match) return match[1];
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`No OTP email arrived for ${email}`);
-}
-
-async function signIn(page: Page, email: string, name: string) {
-  await page.goto("/signin");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel(/name on the card/i).fill(name);
-  await page.getByRole("button", { name: /email me a tee-off code/i }).click();
-  const code = await fetchOtpCode(email);
-  await page.getByLabel(/enter the 6-digit code/i).fill(code);
-  await page.getByRole("button", { name: /^tee off$/i }).click();
-  await expect(page).toHaveURL(/\/$/);
-}
+import { signInAs } from "./auth";
 
 test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
-  await signIn(page, `builder-${stamp}@e2e.local`, "Glyn");
+  await signInAs(page.context(), {
+    email: `builder-${stamp}@e2e.local`,
+    name: "Glyn",
+  });
 
   // ---- Plot a two-pub course by name (works with or without a key) ----
   await page.goto("/courses/new");
@@ -85,7 +56,10 @@ test("pub search returns real venues when a Places key is configured", async ({
   page,
 }) => {
   const stamp = Date.now();
-  await signIn(page, `search-${stamp}@e2e.local`, "Glyn");
+  await signInAs(page.context(), {
+    email: `search-${stamp}@e2e.local`,
+    name: "Glyn",
+  });
 
   // Probe the route first: without a key the route degrades and this
   // test has nothing to verify.

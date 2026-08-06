@@ -42,12 +42,15 @@ jobs:
           supabase start
           supabase db reset   # deterministic: re-applies migrations from scratch
 
+      # The service role key is for the e2e suite only — it seeds host sessions
+      # with the admin API, since Google's consent screen can't be driven here.
       - name: Point the app at local Supabase
         run: |
           STATUS=$(supabase status -o json)
           {
             echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL <<<"$STATUS")"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY <<<"$STATUS")"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$STATUS")"
           } >> .env.local
 
       - name: Typecheck

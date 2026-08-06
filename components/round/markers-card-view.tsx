@@ -114,7 +114,10 @@ export function MarkersCardView({
       </div>
 
       {roaming && round.status !== "finished" ? (
-        <div className="rounded-lg border border-marker bg-marker/10 px-3 py-2 text-[11px] text-marker">
+        <div
+          data-testid="roaming-banner"
+          className="rounded-lg border border-marker bg-marker/10 px-3 py-2 text-[11px] text-marker"
+        >
           Reviewing the record — the round stays live on hole{" "}
           {round.current_hole}. Nobody moves; totals update everywhere.
         </div>

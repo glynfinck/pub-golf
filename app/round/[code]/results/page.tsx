@@ -15,10 +15,13 @@ import { cn, formatToPar } from "@/lib/utils";
 
 export default async function ResultsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ claimed?: string }>;
 }) {
   const { code } = await params;
+  const { claimed } = await searchParams;
   const normalized = code.toUpperCase();
 
   const user = await getSessionUser();
@@ -110,6 +113,18 @@ export default async function ResultsPage({
           gross={myRow?.gross ?? 0}
           toPar={myRow?.toPar ?? 0}
         />
+      ) : null}
+
+      {me && !user.is_anonymous && claimed ? (
+        <Card className="engraved gap-0 px-5 py-5" data-testid="card-claimed">
+          <div className="eyebrow text-center" style={{ textIndent: "0.2em" }}>
+            Card claimed
+          </div>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            This round and your name now live in the clubhouse. See you on the
+            next tee.
+          </p>
+        </Card>
       ) : null}
 
       <RecapCard

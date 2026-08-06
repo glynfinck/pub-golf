@@ -46,9 +46,18 @@ live/walking + `walk_deadline_at` for the between-holes walk) → `holes`
 marker entries). `courses`/`course_holes` are the builder's output,
 owner-scoped. Guests use Supabase anonymous auth so RLS always keys on
 `auth.uid()`; joining goes through the `join_round(code, name)` SECURITY
-DEFINER function; claiming a card is `updateUser({email})` +
-`verifyOtp(email_change)`. Regenerate types after schema changes:
+DEFINER function. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
+
+Auth is **Google-only, and deliberately email-free**: hosting a round needs
+a Google sign-in (`signInWithOAuth` → `/auth/callback` exchanges the PKCE
+code), joining one needs nothing. Claiming a card is
+`linkIdentity({provider:"google"})` on the anonymous uid, which keeps every
+round already on it — that needs `enable_manual_linking`, off by default.
+Never reintroduce an emailed code: Supabase's built-in sender refuses any
+address outside the org team, so an email flow means Resend and a verified
+domain before it works for a single real player. `handle_new_user` reads
+`display_name`, then Google's `full_name`/`name`, before falling back.
 
 Walking state machine: `advanceHole` → phase `walking` (current_hole =
 the upcoming hole, drink timer down); `teeUpHole` → phase `live` (timer
@@ -58,10 +67,19 @@ any hole via `/round/CODE/card?hole=N` without moving the round.
 ## Testing
 
 `npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
-real local Supabase stack — two browser contexts play a full round: OTP
-sign-in via Mailpit's API, create, guest join, caddy promotion + controls
-(tee off, back/forward, reset timer, marker's card edits, reopen), live
-score sync, results. The stack must be running (`supabase start`).
+real local Supabase stack — two browser contexts play a full round: create,
+guest join, caddy promotion + controls (tee off, back/forward, reset timer,
+marker's card edits, reopen), live score sync, results. The stack must be
+running (`supabase start`), and `.env.local` needs
+`SUPABASE_SERVICE_ROLE_KEY`.
+
+Host sessions are seeded by `e2e/auth.ts`, not driven through the UI —
+Google's consent screen can't be automated. It creates a confirmed user with
+the admin API, signs in for real tokens, and hands the cookies to the browser
+context; `@supabase/ssr` does the serialization against an in-memory jar so
+the cookie names and encoding always match what the app reads. The card-claim
+step asserts the handoff to `/user/identities/authorize?provider=google`
+with the request intercepted, rather than following it out to Google.
 
 Gotchas already learned: seat the host in round_players BEFORE inserting
 holes (RLS is_round_official); rounds SELECT policy needs `host =
@@ -70,11 +88,7 @@ user JWT (`supabase.realtime.setAuth`) or RLS silently filters all events;
 after `supabase stop/start` or `db reset`, RESTART the dev server on 3105
 (kill it and let Playwright respawn) or realtime events stop reaching
 pages — and expect the first e2e run after a cold stack boot to flake once
-on the lobby realtime assertion; auth email templates
-(`supabase/templates/*.html` + config.toml blocks for magic_link,
-confirmation, email_change) must all carry `{{ .Token }}` — confirmations
-are enabled locally to match production, so first sign-ins use the
-confirmation template, not magic_link.
+on the lobby realtime assertion.
 
 ## Local ports
 
