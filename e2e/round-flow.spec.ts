@@ -2,17 +2,32 @@ import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
 
+/**
+ * Click a control once the page has settled to exactly one copy of it.
+ *
+ * A realtime event fires router.refresh() while a navigation is already in
+ * flight, so for a moment the outgoing and incoming views are both mounted
+ * and a bare getByTestId matches twice. Waiting for the count beats picking
+ * .first(): if a duplicate ever stops being transient — a genuine double
+ * mount, which would mean two live-round subscriptions — this fails instead
+ * of quietly clicking a stale node.
+ */
+async function clickSettled(page: Page, testId: string) {
+  const control = page.getByTestId(testId);
+  await expect(control).toHaveCount(1);
+  await control.click();
+}
+
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
 async function holeOutAndTeeUp(caddy: Page, expectVenue?: string | RegExp) {
-  await caddy.getByTestId("hole-out").click();
-  await expect(caddy.getByTestId("walking-view")).toBeVisible();
-  await caddy.getByTestId("tee-up").click();
+  await clickSettled(caddy, "hole-out");
+  await expect(caddy.getByTestId("walking-view")).toHaveCount(1);
+  await clickSettled(caddy, "tee-up");
   if (expectVenue) {
     await expect(caddy.getByTestId("hole-venue")).toHaveText(expectVenue);
   }
 }
-
 
 test("a full round: create, join, caddy controls, live scores, results", async ({
   browser,
@@ -57,7 +72,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   ).toBeVisible();
 
   // ---- The caddy (not the host) tees off — officials share control ----
-  await guest.getByTestId("tee-off").click();
+  await clickSettled(guest, "tee-off");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await expect(host.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
@@ -110,22 +125,21 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await guest.goto(`/round/${roundCode}/play`);
 
   // ---- Caddy calls the hole; the whole group walks, then tees up ----
-  await guest.getByTestId("hole-out").click();
+  await clickSettled(guest, "hole-out");
   // Both phones enter the walking phase together, pointed at the next pub.
   await expect(guest.getByTestId("walking-view")).toBeVisible();
   await expect(host.getByTestId("walking-view")).toBeVisible();
   await expect(guest.getByTestId("walking-next-venue")).toHaveText(
     "Pub on the Park",
   );
-  await guest.getByTestId("tee-up").click();
+  await clickSettled(guest, "tee-up");
   await expect(guest.getByTestId("hole-venue")).toHaveText("Pub on the Park");
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
   // ---- Marker's roam: review hole 1 without moving the round ----
   await guest.goto(`/round/${roundCode}/card?hole=1`);
-  // .first(): mid-navigation the outgoing and incoming cards can both be in
-  // the DOM for a frame, which tripped strict mode in CI.
-  await expect(guest.getByTestId("roaming-banner").first()).toBeVisible();
+  await expect(guest.getByTestId("roaming-banner")).toHaveCount(1);
+  await expect(guest.getByTestId("roaming-banner")).toBeVisible();
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
     .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })
@@ -133,7 +147,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
   // ---- The only rewind: reopen hole 1 for everyone ----
-  await guest.getByTestId("reopen-hole").click();
+  await clickSettled(guest, "reopen-hole");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await expect(guest.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
   await expect(host.getByTestId("hole-venue")).toHaveText("Cat & Mutton");
@@ -149,7 +163,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Play the course out: walk, tee up, drink, repeat ----
   for (let hole = 1; hole <= 9; hole += 1) {
     if (hole === 9) {
-      await guest.getByTestId("hole-out").click();
+      await clickSettled(guest, "hole-out");
     } else {
       await holeOutAndTeeUp(guest);
       await expect(guest.getByTestId("hole-venue")).not.toHaveText("", {
@@ -165,10 +179,10 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(host.getByTestId("final-standings")).toContainText("Jamie");
 
   // ---- Caddy reopens the last hole, then files the card again ----
-  await guest.getByTestId("reopen-round").click();
+  await clickSettled(guest, "reopen-round");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
-  await guest.getByTestId("hole-out").click();
+  await clickSettled(guest, "hole-out");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
 
   // ---- The guest claims their card: anonymous → Google-linked ----
