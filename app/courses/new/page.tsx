@@ -3,13 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { ParlourMark } from "@/components/ui/parlour-mark";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { RuleDouble } from "@/components/ui/rule";
 import { useAction } from "@/hooks/use-action";
 import { createCourse } from "@/lib/actions/courses";
 
@@ -63,7 +64,11 @@ export default function NewCoursePage() {
 
   return (
     <Screen>
-      <RuleDouble head />
+      <Masthead
+        back={{ href: "/courses", label: "Courses" }}
+        center={<ParlourMark className="mx-auto size-6" />}
+        busy={busy}
+      />
       <ScreenHeader
         eyebrow={`New course · ${holes.length} holes so far`}
         title="Plot the course"
