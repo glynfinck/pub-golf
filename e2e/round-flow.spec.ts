@@ -43,6 +43,10 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   await host.getByRole("link", { name: /new round/i }).click();
   await host.getByLabel(/round name/i).fill(`E2E Invitational ${stamp}`);
+  // Play this one with handicaps and a breakfast ball each, so the lobby
+  // stepper and the half-pint button are both on the card.
+  await host.getByLabel(/player handicaps/i).click();
+  await host.getByRole("button", { name: /more breakfast balls/i }).click();
   await host.getByRole("button", { name: /create round/i }).click();
 
   // The lobby URL carries the DB-generated unique code — the route key.
@@ -64,6 +68,13 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(
     host.getByTestId("lobby-players").getByText("Jamie"),
   ).toBeVisible();
+
+  // ---- Host gives Jamie two shots before anyone tees off ----
+  // Only officials may set one, so this is the host's own stepper on Jamie's
+  // row; Jamie's phone picks it up over realtime without a reload.
+  await host.getByRole("button", { name: /raise Jamie's handicap/i }).click();
+  await host.getByRole("button", { name: /raise Jamie's handicap/i }).click();
+  await expect(guest.getByText(/playing off 2/i)).toBeVisible();
 
   // ---- Host hands Jamie the caddy's card ----
   await host.getByRole("button", { name: /^make caddy$/i }).click();
@@ -136,6 +147,41 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expect(guest.getByTestId("hole-venue")).toHaveText("Pub on the Park");
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
+  // ---- Breakfast ball: a bad hole gets wiped for a half pint ----
+  for (let sip = 0; sip < 5; sip += 1) {
+    await host.getByTestId("swig-plus").click();
+  }
+  await expect(host.getByTestId("swig-count")).toHaveText("5");
+  await clickSettled(host, "breakfast-ball");
+  await clickSettled(host, "take-breakfast-ball");
+  // The hole is back to nothing, and that was the only one on the card.
+  await expect(host.getByTestId("swig-count")).toHaveText("0");
+  await expect(host.getByTestId("breakfast-ball")).toBeDisabled();
+
+  // ---- Local rules: on their own hole and nowhere else ----
+  // The Invitational's third hole carries one; the first carries none. Roam
+  // reviews both without moving the round off hole 2.
+  await guest.goto(`/round/${roundCode}/card?hole=3`);
+  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await expect(
+    guest.getByRole("button", {
+      name: /call drinking before the pass is complete \+2 on Glyn/i,
+    }),
+  ).toBeVisible();
+  await guest.keyboard.press("Escape");
+
+  await guest.goto(`/round/${roundCode}/card?hole=1`);
+  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await expect(
+    guest.getByRole("button", {
+      name: /call drinking before the pass is complete \+2 on Glyn/i,
+    }),
+  ).toBeHidden();
+  await expect(
+    guest.getByRole("button", { name: /call spill \+1 on Glyn/i }),
+  ).toBeVisible();
+  await guest.keyboard.press("Escape");
+
   // ---- Marker's roam: review hole 1 without moving the round ----
   await guest.goto(`/round/${roundCode}/card?hole=1`);
   await expect(guest.getByTestId("roaming-banner")).toHaveCount(1);
@@ -177,6 +223,10 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await host.waitForURL(new RegExp(`/round/${roundCode}/results`));
   await expect(host.getByTestId("winner")).toBeVisible();
   await expect(host.getByTestId("final-standings")).toContainText("Jamie");
+  // Handicapped round: the card is settled on net, with gross still shown and
+  // Jamie's two shots on the line beside their name.
+  await expect(host.getByTestId("winner")).toContainText(/net/i);
+  await expect(host.getByTestId("final-standings")).toContainText("hcp 2");
 
   // ---- Caddy reopens the last hole, then files the card again ----
   await clickSettled(guest, "reopen-round");

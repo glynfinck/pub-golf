@@ -15,10 +15,16 @@ export interface SeedRoundOptions {
   host: Pick<Actor, "userId" | "name">;
   players?: (Pick<Actor, "userId" | "name"> & {
     role?: "caddy" | "player";
+    handicap?: number;
   })[];
   holes?: number;
   status?: "lobby" | "live" | "finished";
   currentHole?: number;
+  /** Breakfast balls per player. 0 (the default) turns them off. */
+  breakfastBalls?: number;
+  /** Leave the new ruleset keys off entirely, as a round created before
+   * they existed would have them. */
+  legacyRuleset?: boolean;
 }
 
 /**
@@ -39,13 +45,24 @@ export async function seedRound(
       host: options.host.userId,
       status: options.status ?? "live",
       current_hole: options.currentHole ?? 1,
-      ruleset: {
-        format: "stroke",
-        hazards: true,
-        holeTimerMinutes: null,
-        softSubstituteScoresPar: true,
-        penalties: [],
-      },
+      ruleset: options.legacyRuleset
+        ? {
+            format: "stroke",
+            hazards: true,
+            holeTimerMinutes: null,
+            softSubstituteScoresPar: true,
+            penalties: [],
+          }
+        : {
+            format: "stroke",
+            hazards: true,
+            holeTimerMinutes: null,
+            softSubstituteScoresPar: true,
+            penalties: [],
+            handicaps: true,
+            breakfastBalls: options.breakfastBalls ?? 0,
+            breakfastBallStrokes: 1,
+          },
     })
     .select("id, code")
     .single();
@@ -80,6 +97,7 @@ export async function seedRound(
         profile_id: player.userId,
         display_name: player.name,
         role: player.role ?? "player",
+        handicap: player.handicap ?? 0,
       })),
     ])
     .select("id, profile_id");
@@ -98,7 +116,12 @@ export async function seedRound(
 /** Put swigs on the card without playing a hole through a browser. */
 export async function seedScores(
   roundId: string,
-  entries: { playerId: string; hole: number; swigs: number }[],
+  entries: {
+    playerId: string;
+    hole: number;
+    swigs: number;
+    breakfastBalls?: number;
+  }[],
 ): Promise<void> {
   const { error } = await adminClient()
     .from("scores")
@@ -108,6 +131,7 @@ export async function seedScores(
         player_id: entry.playerId,
         hole_number: entry.hole,
         swigs: entry.swigs,
+        breakfast_balls: entry.breakfastBalls ?? 0,
       })),
     );
   if (error) throw error;

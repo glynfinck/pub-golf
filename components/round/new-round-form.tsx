@@ -9,10 +9,15 @@ import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { RuleDouble } from "@/components/ui/rule";
+import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { createRound } from "@/lib/actions/rounds";
 import type { MyCourse } from "@/lib/data/courses";
-import { PENALTY_PRESETS } from "@/lib/rules";
+import {
+  BREAKFAST_BALL_STROKES,
+  MAX_BREAKFAST_BALLS,
+  PENALTY_PRESETS,
+} from "@/lib/rules";
 import { cn } from "@/lib/utils";
 
 const FORMATS = [
@@ -26,6 +31,7 @@ const TOGGLES = [
   { key: "hazards", label: "Hazards on course" },
   { key: "timer", label: "20-min hole timer" },
   { key: "softSub", label: "Soft substitute scores par" },
+  { key: "handicaps", label: "Player handicaps" },
 ] as const;
 
 export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
@@ -39,7 +45,10 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
     hazards: true,
     timer: true,
     softSub: true,
+    // Off by default: most rounds are between people who'd rather not know.
+    handicaps: false,
   });
+  const [breakfastBalls, setBreakfastBalls] = useState(0);
   const [penalties, setPenalties] = useState<Set<number>>(
     new Set(PENALTY_PRESETS.map((_, index) => index)),
   );
@@ -57,6 +66,8 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
           hazards: toggles.hazards,
           timer: toggles.timer,
           softSub: toggles.softSub,
+          handicaps: toggles.handicaps,
+          breakfastBalls,
           penalties: PENALTY_PRESETS.filter((_, index) =>
             penalties.has(index),
           ),
@@ -167,6 +178,25 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
           </label>
         ))}
       </Card>
+
+      <div>
+        <FieldLabel htmlFor="breakfast-balls">Breakfast balls each</FieldLabel>
+        <div className="flex items-center gap-3">
+          <Stepper
+            className="w-36 shrink-0"
+            value={breakfastBalls}
+            onChange={setBreakfastBalls}
+            max={MAX_BREAKFAST_BALLS}
+            label="breakfast balls"
+            format={(value) => (value === 0 ? "off" : String(value))}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            {breakfastBalls === 0
+              ? "No bail-outs — every drink gets finished."
+              : `A half pint wipes the hole and starts it again, for +${BREAKFAST_BALL_STROKES} on the card.`}
+          </p>
+        </div>
+      </div>
 
       <div>
         <FieldLabel>House penalties · tap to include</FieldLabel>

@@ -27,7 +27,7 @@ export async function storedRound(id: string) {
 export async function storedSeat(roundId: string, profileId: string) {
   const { data, error } = await adminClient()
     .from("round_players")
-    .select("id, role, display_name, round_id, profile_id")
+    .select("id, role, display_name, handicap, round_id, profile_id")
     .eq("round_id", roundId)
     .eq("profile_id", profileId)
     .maybeSingle();

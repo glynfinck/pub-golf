@@ -29,6 +29,7 @@ export default function NewCoursePage() {
         par: 4,
         hazard: null,
         hazard_note: null,
+        penalties: [],
       },
     ]);
   }
@@ -44,6 +45,8 @@ export default function NewCoursePage() {
           par: hole.par,
           hazard: hole.hazard,
           hazard_note: hole.hazard_note,
+          // A rule with no offence on it is a half-typed thought, not a rule.
+          penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
           lat: hole.lat,
           lng: hole.lng,
         })),

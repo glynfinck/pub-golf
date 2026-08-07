@@ -13,15 +13,22 @@ const hole = (number: number, par: number, venue_name = `Pub ${number}`) => ({
   par,
   venue_name,
 });
-const player = (id: string, role = "player") => ({
+const player = (id: string, role = "player", handicap = 0) => ({
   id,
   display_name: id,
   role,
+  handicap,
 });
-const score = (player_id: string, hole_number: number, swigs: number) => ({
+const score = (
+  player_id: string,
+  hole_number: number,
+  swigs: number,
+  breakfast_balls = 0,
+) => ({
   player_id,
   hole_number,
   swigs,
+  breakfast_balls,
 });
 const penalty = (player_id: string, strokes: number) => ({
   player_id,
@@ -30,7 +37,11 @@ const penalty = (player_id: string, strokes: number) => ({
 
 /** The house card for these tests: three holes, par 12 all told. */
 const COURSE = [hole(1, 5), hole(2, 4), hole(3, 3)];
-const SOFT = { filedThrough: 0, softSubstituteScoresPar: true };
+const SOFT = {
+  filedThrough: 0,
+  softSubstituteScoresPar: true,
+  breakfastBallStrokes: 1,
+};
 
 describe("computeStandings — the substitution rule", () => {
   it("scores nothing when no hole has been filed and no swig recorded", () => {
@@ -47,7 +58,11 @@ describe("computeStandings — the substitution rule", () => {
       [score("a", 1, 0)],
       [],
       undefined,
-      { filedThrough: 1, softSubstituteScoresPar: true },
+      {
+        filedThrough: 1,
+        softSubstituteScoresPar: true,
+        breakfastBallStrokes: 1,
+      },
     );
     expect(row).toMatchObject({ gross: 5, toPar: 0, holesPlayed: 1 });
   });
@@ -59,7 +74,11 @@ describe("computeStandings — the substitution rule", () => {
       [score("a", 1, 0)],
       [],
       undefined,
-      { filedThrough: 1, softSubstituteScoresPar: false },
+      {
+        filedThrough: 1,
+        softSubstituteScoresPar: false,
+        breakfastBallStrokes: 1,
+      },
     );
     expect(row).toMatchObject({ gross: 10, toPar: 5, holesPlayed: 1 });
   });
@@ -71,7 +90,11 @@ describe("computeStandings — the substitution rule", () => {
       [score("a", 1, 3)],
       [],
       undefined,
-      { filedThrough: 1, softSubstituteScoresPar: true },
+      {
+        filedThrough: 1,
+        softSubstituteScoresPar: true,
+        breakfastBallStrokes: 1,
+      },
     );
     expect(row).toMatchObject({ gross: 3, toPar: -2, holesPlayed: 1 });
   });
@@ -84,7 +107,11 @@ describe("computeStandings — the substitution rule", () => {
       [score("a", 1, 4)],
       [],
       undefined,
-      { filedThrough: 3, softSubstituteScoresPar: true },
+      {
+        filedThrough: 3,
+        softSubstituteScoresPar: true,
+        breakfastBallStrokes: 1,
+      },
     );
     expect(row).toMatchObject({ gross: 11, toPar: -1, holesPlayed: 3 });
   });
@@ -294,6 +321,251 @@ describe("computeStandings — identity", () => {
 
   it("returns nothing for an empty field", () => {
     expect(computeStandings(COURSE, [], [], [], undefined, SOFT)).toEqual([]);
+  });
+});
+
+describe("computeStandings — breakfast balls", () => {
+  it("charges the round's price for every one taken", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 4, 1)],
+      [],
+      undefined,
+      SOFT,
+    );
+    // Four swigs on a par 5, plus one stroke for the half pint.
+    expect(row).toMatchObject({ gross: 5, breakfastBalls: 1, toPar: 0 });
+  });
+
+  it("charges the price the round snapshotted, not the house one", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 4, 1)],
+      [],
+      undefined,
+      { ...SOFT, breakfastBallStrokes: 3 },
+    );
+    expect(row.gross).toBe(7);
+  });
+
+  it("counts them from every hole on the card, not just the one being played", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 5, 1), score("a", 2, 4, 2)],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 2 },
+    );
+    expect(row).toMatchObject({ breakfastBalls: 3, gross: 12 });
+  });
+
+  it("still substitutes when a filed hole was reset and never drunk", () => {
+    // The load-bearing rule: zero swigs means the drink never happened, and a
+    // breakfast ball must not become a way to buy a free under-par hole. The
+    // substitute lands AND the half pint is still charged.
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 0, 1)],
+      [],
+      undefined,
+      { filedThrough: 1, softSubstituteScoresPar: true, breakfastBallStrokes: 1 },
+    );
+    expect(row).toMatchObject({ gross: 6, toPar: 1, holesPlayed: 1 });
+  });
+
+  it("does not put an unplayed hole on the card just because one was taken", () => {
+    // A breakfast ball on a hole nobody has filed yet leaves swigs at zero,
+    // and an in-progress hole only counts once there are real swigs on it.
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 0, 1)],
+      [],
+      undefined,
+      SOFT,
+    );
+    expect(row).toMatchObject({ holesPlayed: 0, gross: 1, toPar: 1 });
+  });
+
+  it("scores a card with none exactly as it did before they existed", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a")],
+      [score("a", 1, 6)],
+      [],
+      undefined,
+      SOFT,
+    );
+    expect(row).toMatchObject({ gross: 6, breakfastBalls: 0, toPar: 1 });
+  });
+});
+
+describe("computeStandings — handicaps", () => {
+  it("leaves gross alone and takes the shots off net", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a", "player", 3)],
+      [score("a", 1, 6), score("a", 2, 5), score("a", 3, 4)],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 3 },
+    );
+    // 15 gross against par 12, less a full 3 once every hole is filed.
+    expect(row).toMatchObject({
+      gross: 15,
+      toPar: 3,
+      handicap: 3,
+      handicapApplied: 3,
+      net: 12,
+      netToPar: 0,
+    });
+  });
+
+  it("phases the shots in over the holes actually played", () => {
+    // A flat six off from the first hole would put a six-handicap six under
+    // before they had drunk anything, and this board is read all night.
+    const [row] = computeStandings(
+      COURSE,
+      [player("a", "player", 6)],
+      [score("a", 1, 5)],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 1 },
+    );
+    expect(row).toMatchObject({ holesPlayed: 1, handicapApplied: 2, net: 3 });
+  });
+
+  it("hands over the whole handicap once the card is filed", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a", "player", 7)],
+      [score("a", 1, 5), score("a", 2, 4), score("a", 3, 3)],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 3 },
+    );
+    expect(row.handicapApplied).toBe(7);
+  });
+
+  it("gives nothing away before a single hole is on the card", () => {
+    const [row] = computeStandings(
+      COURSE,
+      [player("a", "player", 9)],
+      [],
+      [],
+      undefined,
+      SOFT,
+    );
+    expect(row).toMatchObject({
+      holesPlayed: 0,
+      handicapApplied: 0,
+      net: 0,
+      netToPar: 0,
+    });
+  });
+
+  it("does not divide by zero on a course with no holes", () => {
+    const [row] = computeStandings(
+      [],
+      [player("a", "player", 9)],
+      [],
+      [],
+      undefined,
+      SOFT,
+    );
+    expect(row).toMatchObject({ handicapApplied: 0, net: 0, netToPar: 0 });
+  });
+});
+
+describe("computeStandings — the round is won on net", () => {
+  it("ranks the higher handicap ahead despite the worse gross", () => {
+    const rows = computeStandings(
+      COURSE,
+      [player("low", "player", 0), player("high", "player", 6)],
+      [
+        score("low", 1, 5),
+        score("low", 2, 4),
+        score("low", 3, 3),
+        score("high", 1, 7),
+        score("high", 2, 6),
+        score("high", 3, 5),
+      ],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 3 },
+    );
+    // 18 gross beaten into 12 net; 12 gross stays 12 — but "high" is ahead on
+    // the tie-break because gross no longer decides anything.
+    expect(rows.map((row) => row.playerId)).toEqual(["low", "high"]);
+    expect(rows.map((row) => row.rank)).toEqual([1, 1]);
+    expect(rows.map((row) => row.net)).toEqual([12, 12]);
+    expect(rows.map((row) => row.gross)).toEqual([12, 18]);
+  });
+
+  it("puts a handicapped player clear of a level one on net", () => {
+    const rows = computeStandings(
+      COURSE,
+      [player("scratch", "player", 0), player("rusty", "player", 9)],
+      [
+        score("scratch", 1, 5),
+        score("scratch", 2, 4),
+        score("scratch", 3, 3),
+        score("rusty", 1, 7),
+        score("rusty", 2, 6),
+        score("rusty", 3, 5),
+      ],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 3 },
+    );
+    expect(rows[0].playerId).toBe("rusty");
+    expect(rows.map((row) => row.rank)).toEqual([1, 2]);
+    expect(rows[0]).toMatchObject({ gross: 18, net: 9, netToPar: -3 });
+  });
+
+  it("shares a placing on equal net, not on equal gross", () => {
+    const rows = computeStandings(
+      COURSE,
+      [player("a", "player", 0), player("b", "player", 4)],
+      [
+        score("a", 1, 5),
+        score("a", 2, 4),
+        score("a", 3, 3),
+        score("b", 1, 5),
+        score("b", 2, 4),
+        score("b", 3, 3),
+      ],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 3 },
+    );
+    // Identical gross, four shots between them — so no shared placing.
+    expect(rows.map((row) => row.gross)).toEqual([12, 12]);
+    expect(rows.map((row) => row.rank)).toEqual([1, 2]);
+    expect(rows[0].playerId).toBe("b");
+  });
+
+  it("orders a field of level cards exactly as it did before handicaps", () => {
+    // With nobody carrying a handicap, netToPar is toPar and net is gross —
+    // every round already on the books keeps the result it finished with.
+    const rows = computeStandings(
+      COURSE,
+      [player("a"), player("b"), player("c")],
+      [score("a", 1, 6), score("b", 1, 4), score("c", 1, 6)],
+      [],
+      undefined,
+      { ...SOFT, filedThrough: 1 },
+    );
+    expect(rows.map((row) => row.playerId)).toEqual(["b", "a", "c"]);
+    expect(rows.map((row) => row.rank)).toEqual([1, 2, 2]);
+    for (const row of rows) {
+      expect(row.net).toBe(row.gross);
+      expect(row.netToPar).toBe(row.toPar);
+    }
   });
 });
 

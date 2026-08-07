@@ -8,8 +8,15 @@ import { Button } from "@/components/ui/button";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { RuleDouble } from "@/components/ui/rule";
 import { usePresence } from "@/hooks/use-presence";
-import { setPlayerRole, startRound } from "@/lib/actions/rounds";
+import { Stepper } from "@/components/ui/stepper";
+import {
+  setPlayerHandicap,
+  setPlayerRole,
+  startRound,
+} from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { MAX_HANDICAP } from "@/lib/rules";
+import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { cn } from "@/lib/utils";
 
 export function LobbyView({ bundle }: { bundle: RoundBundle }) {
@@ -22,13 +29,12 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
   const isHost = me?.role === "host";
   const par = holes.reduce((sum, hole) => sum + hole.par, 0);
-  const ruleset = round.ruleset as {
-    hazards?: boolean;
-    holeTimerMinutes?: number | null;
-    softSubstituteScoresPar?: boolean;
-  };
+  const ruleset = readRuleset(round.ruleset);
   const hazardHoles = holes
     .filter((hole) => hole.hazard)
+    .map((hole) => hole.number);
+  const localRuleHoles = holes
+    .filter((hole) => readHolePenalties(hole.penalties).length > 0)
     .map((hole) => hole.number);
 
   function share() {
@@ -61,6 +67,13 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
         playerId,
         currentRole === "caddy" ? "player" : "caddy",
       );
+      if (result.error) toast.error(result.error);
+    });
+  }
+
+  function changeHandicap(playerId: string, next: number) {
+    startTransition(async () => {
+      const result = await setPlayerHandicap(round.code, playerId, next);
       if (result.error) toast.error(result.error);
     });
   }
@@ -108,6 +121,27 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
                 <span className="block text-[10px] text-muted-foreground">
                   Caddy · stays sober, final word
                 </span>
+              ) : null}
+              {ruleset.handicaps ? (
+                isOfficial ? (
+                  <span className="mt-1 flex items-center gap-1.5">
+                    <span className="eyebrow">Hcp</span>
+                    <Stepper
+                      className="min-h-9 w-24 px-1"
+                      value={player.handicap}
+                      onChange={(next) => changeHandicap(player.id, next)}
+                      max={MAX_HANDICAP}
+                      disabled={pending}
+                      decrementLabel={`Lower ${player.display_name}'s handicap`}
+                      incrementLabel={`Raise ${player.display_name}'s handicap`}
+                      label="handicap"
+                    />
+                  </span>
+                ) : player.handicap > 0 ? (
+                  <span className="block text-[10px] text-muted-foreground">
+                    Playing off {player.handicap}
+                  </span>
+                ) : null
               ) : null}
             </span>
             <span aria-hidden className="leader flex-1 self-center" />
@@ -168,6 +202,27 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
           <DotLeaderRow
             label="Soft substitutes"
             value="score par"
+            className="text-xs"
+          />
+        ) : null}
+        {localRuleHoles.length > 0 ? (
+          <DotLeaderRow
+            label="Local rules"
+            value={localRuleHoles.join(" · ")}
+            className="text-xs"
+          />
+        ) : null}
+        {ruleset.breakfastBalls > 0 ? (
+          <DotLeaderRow
+            label="Breakfast balls"
+            value={`${ruleset.breakfastBalls} each · +${ruleset.breakfastBallStrokes}`}
+            className="text-xs"
+          />
+        ) : null}
+        {ruleset.handicaps ? (
+          <DotLeaderRow
+            label="Handicaps"
+            value="net scoring"
             className="text-xs"
           />
         ) : null}

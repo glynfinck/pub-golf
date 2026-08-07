@@ -4,6 +4,8 @@ import { Minus, Plus, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { MAX_LOCAL_RULES } from "@/lib/rules";
+import type { RulesetPenalty } from "@/lib/ruleset";
 
 export interface DraftHole {
   venue_id: string | null;
@@ -16,6 +18,8 @@ export interface DraftHole {
   par: number;
   hazard: "water" | "bunker" | "dogleg" | null;
   hazard_note: string | null;
+  /** Local rules: offered on this hole's penalty sheet and nowhere else. */
+  penalties: RulesetPenalty[];
 }
 
 const HAZARDS = [
@@ -122,6 +126,99 @@ export function HoleEditor({
           onChange={(event) => onChange({ hazard_note: event.target.value })}
         />
       ) : null}
+
+      <LocalRules
+        number={number}
+        penalties={hole.penalties}
+        onChange={(penalties) => onChange({ penalties })}
+      />
     </Card>
+  );
+}
+
+/**
+ * Local rules: the offences this pub adds to the penalty sheet. A hazard note
+ * says what the rule is; this says what it costs, which is the part the card
+ * can actually score.
+ */
+function LocalRules({
+  number,
+  penalties,
+  onChange,
+}: {
+  number: number;
+  penalties: RulesetPenalty[];
+  onChange: (penalties: RulesetPenalty[]) => void;
+}) {
+  function patch(index: number, next: Partial<RulesetPenalty>) {
+    onChange(
+      penalties.map((rule, i) => (i === index ? { ...rule, ...next } : rule)),
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-dotted border-border pt-2.5">
+      <FieldLabel>Local rules · this hole only</FieldLabel>
+
+      {penalties.map((rule, index) => (
+        <div key={index} className="flex items-center gap-1.5">
+          <Input
+            aria-label={`Local rule ${index + 1} on hole ${number}`}
+            placeholder="The offence — e.g. drinking with your right hand"
+            value={rule.reason}
+            onChange={(event) => patch(index, { reason: event.target.value })}
+            className="min-h-11 min-w-0 flex-1 text-sm"
+          />
+          <div className="flex min-h-11 shrink-0 items-center gap-0.5 rounded-lg border border-input bg-card px-1">
+            <button
+              type="button"
+              aria-label={`Lower the strokes on local rule ${index + 1} of hole ${number}`}
+              onClick={() =>
+                patch(index, { strokes: Math.max(1, rule.strokes - 1) })
+              }
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
+            >
+              <Minus size={14} aria-hidden />
+            </button>
+            <span className="tabular min-w-6 text-center font-mono text-xs font-bold text-hazard">
+              +{rule.strokes}
+            </span>
+            <button
+              type="button"
+              aria-label={`Raise the strokes on local rule ${index + 1} of hole ${number}`}
+              onClick={() =>
+                patch(index, { strokes: Math.min(20, rule.strokes + 1) })
+              }
+              className="flex size-8 items-center justify-center rounded-md text-hazard hover:bg-secondary"
+            >
+              <Plus size={14} aria-hidden />
+            </button>
+          </div>
+          <button
+            type="button"
+            aria-label={`Remove local rule ${index + 1} from hole ${number}`}
+            onClick={() => onChange(penalties.filter((_, i) => i !== index))}
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
+          >
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+      ))}
+
+      {penalties.length < MAX_LOCAL_RULES ? (
+        <button
+          type="button"
+          onClick={() => onChange([...penalties, { strokes: 2, reason: "" }])}
+          className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border-[1.5px] border-dashed border-hazard/50 text-[11px] font-bold text-hazard"
+        >
+          <Plus size={13} aria-hidden />
+          Add a local rule
+        </button>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          Five is the limit — any more and nobody reads the sheet.
+        </p>
+      )}
+    </div>
   );
 }

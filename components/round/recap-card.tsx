@@ -53,7 +53,8 @@ export function RecapCard({
             </span>
             <span aria-hidden className="leader flex-1 self-center" />
             <span className="tabular shrink-0 font-mono text-xs">
-              <b>{row.gross}</b> · {formatToPar(row.toPar)}
+              <b>{row.handicap > 0 ? row.net : row.gross}</b> ·{" "}
+              {formatToPar(row.netToPar)}
             </span>
           </div>
         ))}

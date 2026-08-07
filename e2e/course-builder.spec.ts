@@ -26,6 +26,18 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
     .getByLabel(/hazard note for hole 1/i)
     .fill("No toilet for the whole hole");
 
+  // A local rule on hole 1 only — the hazard note says what the rule is, this
+  // says what it costs.
+  await page.getByRole("button", { name: /add a local rule/i }).first().click();
+  await page
+    .getByLabel(/local rule 1 on hole 1/i)
+    .fill("Drinking with your right hand");
+  await page
+    .getByRole("button", {
+      name: /raise the strokes on local rule 1 of hole 1/i,
+    })
+    .click();
+
   await page.getByRole("button", { name: /save the course · 2 holes/i }).click();
   await page.waitForURL(/\/courses$/);
   await expect(page.getByText(`Two Pub Crawl ${stamp}`)).toBeVisible();
@@ -50,6 +62,32 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expect(page.getByTestId("hole-venue")).toHaveText("The Test Tavern");
   await expect(page.getByText("Pint of the black stuff")).toBeVisible();
   await expect(page.getByText(/no toilet for the whole hole/i)).toBeVisible();
+
+  // The local rule is on hole 1's sheet, under its own heading, alongside the
+  // house shortcuts — and it followed the course into the round's snapshot.
+  await page.getByRole("button", { name: /penalties/i }).click();
+  await expect(page.getByText(/on this hole/i)).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /call drinking with your right hand \+3/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /call spill \+1/i }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Hole 2 was never given one, so its sheet is the house list alone.
+  await page.getByTestId("hole-out").click();
+  await page.getByTestId("tee-up").click();
+  await expect(page.getByTestId("hole-venue")).toHaveText("The Other Arms");
+  await page.getByRole("button", { name: /penalties/i }).click();
+  await expect(
+    page.getByRole("button", {
+      name: /call drinking with your right hand \+3/i,
+    }),
+  ).toBeHidden();
+  await expect(page.getByText(/on this hole/i)).toBeHidden();
 });
 
 test("pub search returns real venues when a Places key is configured", async ({

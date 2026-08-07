@@ -4,8 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { templateForHoleCount } from "@/lib/course-templates";
+import {
+  BREAKFAST_BALL_STROKES,
+  MAX_BREAKFAST_BALLS,
+  MAX_HANDICAP,
+} from "@/lib/rules";
+import { readRuleset } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
+import type { Json } from "@/types/database";
 
 const HOLE_TIMER_MINUTES = 20;
 
@@ -20,6 +27,15 @@ const createRoundSchema = z.object({
   hazards: z.boolean(),
   timer: z.boolean(),
   softSub: z.boolean(),
+  /** Whether the host is handicapping this round at all. */
+  handicaps: z.boolean().default(false),
+  /** Breakfast balls per player for the whole round; 0 turns them off. */
+  breakfastBalls: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_BREAKFAST_BALLS)
+    .default(0),
   penalties: z.array(z.object({ strokes: z.number(), reason: z.string() })),
 });
 
@@ -50,6 +66,11 @@ export async function createRound(input: CreateRoundInput) {
         holeTimerMinutes: parsed.timer ? HOLE_TIMER_MINUTES : null,
         softSubstituteScoresPar: parsed.softSub,
         penalties: parsed.penalties,
+        handicaps: parsed.handicaps,
+        breakfastBalls: parsed.breakfastBalls,
+        // Snapshotted, not read from the constant at scoring time: changing
+        // the house price later must never rescore a round already played.
+        breakfastBallStrokes: BREAKFAST_BALL_STROKES,
       },
     })
     .select()
@@ -77,6 +98,7 @@ export async function createRound(input: CreateRoundInput) {
     par: number;
     hazard: string | null;
     hazard_note: string | null;
+    penalties: Json;
     walk_minutes_to_next: number | null;
   }[];
   if (parsed.courseId) {
@@ -95,6 +117,7 @@ export async function createRound(input: CreateRoundInput) {
       par: hole.par,
       hazard: hole.hazard,
       hazard_note: hole.hazard_note,
+      penalties: hole.penalties,
       walk_minutes_to_next: hole.walk_minutes_to_next,
     }));
   } else {
@@ -132,7 +155,7 @@ export async function startRound(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -212,7 +235,7 @@ export async function teeUpHole(code: string): Promise<ActionResult> {
   if (round.status !== "live" || round.hole_phase !== "walking")
     return { error: "The group isn't walking" };
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -275,6 +298,109 @@ export async function addPenalty(
   return {};
 }
 
+/**
+ * Take a breakfast ball: wipe this hole and start the drink again, for the
+ * price of a half pint on the card.
+ *
+ * The allowance is for the whole round, so the count is read across every
+ * hole. This check is the friendly message — the real enforcement is the
+ * scores trigger, which is the only thing an attacker with the anon key
+ * cannot route around.
+ */
+export async function takeBreakfastBall(
+  code: string,
+  holeNumber: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const context = await getMemberContext(supabase, code);
+  if ("error" in context) return context;
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("ruleset")
+    .eq("id", context.roundId)
+    .maybeSingle();
+  const ruleset = readRuleset(round?.ruleset);
+  if (ruleset.breakfastBalls < 1)
+    return { error: "This round isn't playing breakfast balls" };
+
+  const { data: myScores } = await supabase
+    .from("scores")
+    .select("hole_number, breakfast_balls")
+    .eq("round_id", context.roundId)
+    .eq("player_id", context.playerId);
+
+  const used = (myScores ?? []).reduce(
+    (sum, score) => sum + score.breakfast_balls,
+    0,
+  );
+  if (used >= ruleset.breakfastBalls)
+    return { error: "No breakfast balls left on your card" };
+
+  const onThisHole =
+    (myScores ?? []).find((score) => score.hole_number === holeNumber)
+      ?.breakfast_balls ?? 0;
+
+  const { error } = await supabase.from("scores").upsert(
+    {
+      round_id: context.roundId,
+      player_id: context.playerId,
+      hole_number: holeNumber,
+      swigs: 0,
+      breakfast_balls: onThisHole + 1,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "player_id,hole_number" },
+  );
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** Marker's card: an official corrects the breakfast balls on a player-hole.
+ * Officials only — a player raising their own allowance is exactly what the
+ * scores trigger exists to stop. */
+export async function setPlayerBreakfastBalls(
+  code: string,
+  playerId: string,
+  holeNumber: number,
+  count: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const ruleset = readRuleset(round.ruleset);
+  const next = Math.max(0, Math.round(count));
+  if (next > MAX_BREAKFAST_BALLS)
+    return { error: "That is more breakfast balls than any round allows" };
+
+  const { data: existing } = await supabase
+    .from("scores")
+    .select("hole_number, breakfast_balls")
+    .eq("round_id", round.id)
+    .eq("player_id", playerId);
+
+  const elsewhere = (existing ?? [])
+    .filter((score) => score.hole_number !== holeNumber)
+    .reduce((sum, score) => sum + score.breakfast_balls, 0);
+  if (elsewhere + next > ruleset.breakfastBalls)
+    return { error: "That is over this round's allowance" };
+
+  const { error } = await supabase.from("scores").upsert(
+    {
+      round_id: round.id,
+      player_id: playerId,
+      hole_number: holeNumber,
+      breakfast_balls: next,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "player_id,hole_number" },
+  );
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
 /** Marker's card: an official calls a penalty on any player. The entry is
  * attributed to the official, so "who called it" shows on the card. */
 export async function callPenaltyOn(
@@ -321,7 +447,7 @@ export async function reopenHole(
   if (!Number.isInteger(holeNumber) || holeNumber < 1 || holeNumber > lastHole)
     return { error: "That hole is not on this course" };
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -343,7 +469,7 @@ export async function resetHoleTimer(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   if (!ruleset.holeTimerMinutes)
     return { error: "This round has no hole timer" };
 
@@ -351,6 +477,37 @@ export async function resetHoleTimer(code: string): Promise<ActionResult> {
     .from("rounds")
     .update({ hole_deadline_at: holeDeadline(ruleset) })
     .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/**
+ * Officials set a player's handicap — the strokes that come off their gross
+ * to give the net the round is won on.
+ *
+ * Not gated on the lobby: players can join a round that has already teed off,
+ * and the marker's card is already where officials put the record straight
+ * after the fact. The round_players trigger is what actually stops a player
+ * flattering their own card.
+ */
+export async function setPlayerHandicap(
+  code: string,
+  playerId: string,
+  handicap: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const next = Math.round(handicap);
+  if (!Number.isFinite(next) || next < 0 || next > MAX_HANDICAP)
+    return { error: `A handicap runs from 0 to ${MAX_HANDICAP}` };
+
+  const { error } = await supabase
+    .from("round_players")
+    .update({ handicap: next })
+    .eq("id", playerId)
+    .eq("round_id", round.id);
   if (error) return { error: error.message };
   revalidatePath(`/round/${code}`);
   return {};
