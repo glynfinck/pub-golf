@@ -470,7 +470,16 @@ export async function reopenHole(
     .eq("id", round.id);
   if (error) return { error: error.message };
   revalidatePath(`/round/${code}`);
-  return {};
+
+  // Server-side, because a client push cannot win this race. Reopening
+  // fires two refreshes at the tapping phone — the realtime echo, and the
+  // one Next runs when this action's revalidate comes back — and a refresh
+  // landing inside a router.push cancels it, dropping the caddy back on the
+  // marker's card as if the button had done nothing. A redirect is part of
+  // the action's own response, so there is nothing left to interrupt.
+  // Both callers want it: the marker's card and the results page alike are
+  // reopening the round to play it.
+  redirect(`/round/${code}/play`);
 }
 
 /** Re-arm the current hole's shared countdown (caddy's discretion —
