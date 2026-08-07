@@ -114,14 +114,14 @@ export function formatDuration(totalMinutes: number): string {
 }
 
 /**
- * "7:00pm" from minutes since midnight, wrapping past it — a finish that
- * runs long reads as "12:40am", which is its own warning.
+ * "7:00 PM" from minutes since midnight, wrapping past it — a finish that
+ * runs long reads as "12:40 AM", which is its own warning.
  */
 export function clockTime12(minutesOfDay: number): string {
   const wrapped = ((Math.round(minutesOfDay) % 1440) + 1440) % 1440;
   const hours = Math.floor(wrapped / 60);
   const minutes = wrapped % 60;
-  const half = hours >= 12 ? "pm" : "am";
+  const half = hours >= 12 ? "PM" : "AM";
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
-  return `${hour12}:${minutes.toString().padStart(2, "0")}${half}`;
+  return `${hour12}:${minutes.toString().padStart(2, "0")} ${half}`;
 }

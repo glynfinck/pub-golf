@@ -43,6 +43,13 @@ const FORMATS = [
 
 /** The tee-time grain. Nobody tees off at 7:23 — quarter hours are enough. */
 const TEE_MINUTE_STEP = 15;
+/** The last tee the picker can set: 11:45 PM. */
+const LAST_TEE_MINUTES = 24 * 60 - TEE_MINUTE_STEP;
+
+const teeNudgeDown =
+  "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md px-1 font-mono text-[11px] font-bold text-muted-foreground hover:bg-secondary disabled:opacity-30";
+const teeNudgeUp =
+  "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md px-1 font-mono text-[11px] font-bold text-fairway hover:bg-secondary disabled:opacity-30";
 
 /** The price ladder a tap walks a penalty through. */
 const PRICE_LADDER = [1, 2, 3, 5, 10, 20];
@@ -140,6 +147,12 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
 
   function setToggle(key: string, checked: boolean) {
     setToggles((state) => ({ ...state, [key]: checked }));
+  }
+
+  function nudgeTee(delta: number) {
+    setTeeMinutes((current) =>
+      Math.min(LAST_TEE_MINUTES, Math.max(0, current + delta)),
+    );
   }
 
   function submit() {
@@ -367,38 +380,48 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
                     selected={teeDate ?? undefined}
                     onSelect={(day) => setTeeDate(day ?? null)}
                   />
-                  {/* Any time of day, on the quarter hour: an hour stepper
-                      and a minutes stepper, not a wheel. */}
-                  <div className="mt-2 flex items-center gap-2">
-                    <Stepper
-                      className="flex-1"
-                      value={Math.floor(teeMinutes / 60)}
-                      onChange={(hour) =>
-                        setTeeMinutes(hour * 60 + (teeMinutes % 60))
-                      }
-                      max={23}
-                      label="tee-off hour"
-                      decrementLabel="Tee off an hour earlier"
-                      incrementLabel="Tee off an hour later"
-                      format={(hour) => clockTime12(hour * 60).replace(":00", "")}
-                    />
-                    <Stepper
-                      className="flex-1"
-                      value={teeMinutes % 60}
-                      onChange={(minute) =>
-                        setTeeMinutes(
-                          Math.floor(teeMinutes / 60) * 60 + minute,
-                        )
-                      }
-                      max={60 - TEE_MINUTE_STEP}
-                      step={TEE_MINUTE_STEP}
-                      label="tee-off minutes"
-                      decrementLabel="Tee off a quarter hour earlier"
-                      incrementLabel="Tee off a quarter hour later"
-                      format={(minute) =>
-                        `:${minute.toString().padStart(2, "0")}`
-                      }
-                    />
+                  {/* One readout, four nudges: any time of day on the
+                      quarter hour, hour jumps still two buttons away. */}
+                  <div className="mt-2 flex min-h-12 items-center gap-0.5 rounded-lg border border-input bg-card px-1.5">
+                    <button
+                      type="button"
+                      aria-label="Tee off an hour earlier"
+                      disabled={teeMinutes === 0}
+                      onClick={() => nudgeTee(-60)}
+                      className={teeNudgeDown}
+                    >
+                      −1h
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Tee off a quarter hour earlier"
+                      disabled={teeMinutes === 0}
+                      onClick={() => nudgeTee(-TEE_MINUTE_STEP)}
+                      className={teeNudgeDown}
+                    >
+                      −15
+                    </button>
+                    <span className="tabular min-w-0 flex-1 text-center font-mono text-sm font-bold">
+                      {clockTime12(teeMinutes)}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Tee off a quarter hour later"
+                      disabled={teeMinutes === LAST_TEE_MINUTES}
+                      onClick={() => nudgeTee(TEE_MINUTE_STEP)}
+                      className={teeNudgeUp}
+                    >
+                      +15
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Tee off an hour later"
+                      disabled={teeMinutes === LAST_TEE_MINUTES}
+                      onClick={() => nudgeTee(60)}
+                      className={teeNudgeUp}
+                    >
+                      +1h
+                    </button>
                   </div>
                   <div className="mt-2 flex justify-between gap-2">
                     <Button

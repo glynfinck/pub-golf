@@ -162,16 +162,16 @@ describe("formatDuration", () => {
 
 describe("clockTime12", () => {
   it("prints the tee times the way the card says them", () => {
-    expect(clockTime12(19 * 60)).toBe("7:00pm");
-    expect(clockTime12(18 * 60 + 30)).toBe("6:30pm");
+    expect(clockTime12(19 * 60)).toBe("7:00 PM");
+    expect(clockTime12(18 * 60 + 30)).toBe("6:30 PM");
   });
 
   it("handles noon and midnight without a 0 o'clock", () => {
-    expect(clockTime12(0)).toBe("12:00am");
-    expect(clockTime12(12 * 60)).toBe("12:00pm");
+    expect(clockTime12(0)).toBe("12:00 AM");
+    expect(clockTime12(12 * 60)).toBe("12:00 PM");
   });
 
   it("wraps a finish past midnight — its own warning", () => {
-    expect(clockTime12(24 * 60 + 40)).toBe("12:40am");
+    expect(clockTime12(24 * 60 + 40)).toBe("12:40 AM");
   });
 });
