@@ -10,6 +10,24 @@
 /** Under two minutes turns the hole red. */
 export const URGENT_MS = 120_000;
 
+/**
+ * The waiting thresholds. A tap is acknowledged instantly by its label; the
+ * busy furniture (the putt, the masthead sweep) waits until the wait has
+ * earned it, then holds long enough that a 420ms action never flashes it.
+ */
+export const BUSY_DELAY_MS = 400;
+export const BUSY_MIN_VISIBLE_MS = 300;
+
+/** How long until the busy mark may come up; 0 once it is due. */
+export function busyDelayRemaining(startedAt: number, now: number): number {
+  return Math.max(0, startedAt + BUSY_DELAY_MS - now);
+}
+
+/** How long a shown busy mark must stay up, so it never flashes. */
+export function busyHoldRemaining(shownAt: number, now: number): number {
+  return Math.max(0, shownAt + BUSY_MIN_VISIBLE_MS - now);
+}
+
 /** Whole seconds left, rounding up so a countdown never shows 0:00 early. */
 export function remainingSeconds(remainingMs: number | null): number | null {
   return remainingMs === null ? null : Math.ceil(remainingMs / 1000);
@@ -62,4 +80,48 @@ export function deadlineFrom(
   minutes: number | null | undefined,
 ): string | null {
   return minutes ? new Date(now + minutes * 60_000).toISOString() : null;
+}
+
+/**
+ * The 19th-hole estimate: minutes a round takes end to end — the pubs plus
+ * the walks between them. Walk minutes come from the course (measured by
+ * Google when it was built), so the estimate costs nothing at round time.
+ */
+export function roundMinutes(
+  holeCount: number,
+  minutesPerPub: number,
+  walkMinutesTotal: number,
+): number {
+  return holeCount * minutesPerPub + walkMinutesTotal;
+}
+
+/** When the 19th hole lands, given a tee-off instant. */
+export function estimatedFinishMs(
+  teeOffMs: number,
+  totalMinutes: number,
+): number {
+  return teeOffMs + totalMinutes * 60_000;
+}
+
+/** "3h 55m" (or "55m", or "4h") — the pace line for an unscheduled round. */
+export function formatDuration(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * "7:00 PM" from minutes since midnight, wrapping past it — a finish that
+ * runs long reads as "12:40 AM", which is its own warning.
+ */
+export function clockTime12(minutesOfDay: number): string {
+  const wrapped = ((Math.round(minutesOfDay) % 1440) + 1440) % 1440;
+  const hours = Math.floor(wrapped / 60);
+  const minutes = wrapped % 60;
+  const half = hours >= 12 ? "PM" : "AM";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${minutes.toString().padStart(2, "0")} ${half}`;
 }

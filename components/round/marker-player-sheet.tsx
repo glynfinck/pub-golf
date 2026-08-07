@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useTransition } from "react";
+import { Fragment, useOptimistic } from "react";
 import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { LocalRulesHeading } from "@/components/round/local-rules-heading";
@@ -13,13 +13,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Stepper } from "@/components/ui/stepper";
+import { useAction } from "@/hooks/use-action";
+import { useDraftFigures } from "@/hooks/use-draft-figures";
 import {
   callPenaltyOn,
   removePenalty,
-  setPlayerBreakfastBalls,
+  setPlayerMulligans,
 } from "@/lib/actions/rounds";
 import type { PenaltyOption } from "@/lib/penalty-options";
-import { MAX_BREAKFAST_BALLS } from "@/lib/rules";
+import { MAX_MULLIGANS } from "@/lib/rules";
 import type { Tables } from "@/types/supabase-helpers";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +29,9 @@ import { cn } from "@/lib/utils";
  * The marker's side of the penalty sheet: the caddy calls or retracts
  * penalties on one player's card. Every entry is attributed — "who called
  * it" is never a mystery on the player's own phone.
+ *
+ * Counts and the mulligan figure are optimistic; the retract only
+ * arms once the row it would delete has really landed.
  */
 export function MarkerPlayerSheet({
   open,
@@ -37,8 +42,8 @@ export function MarkerPlayerSheet({
   playerPenalties,
   players,
   options,
-  breakfastBalls,
-  breakfastBallsOffered,
+  mulligans,
+  mulligansOffered,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,19 +55,42 @@ export function MarkerPlayerSheet({
   /** All players, for attributing called_by ids to names. */
   players: Tables<"round_players">[];
   options: PenaltyOption[];
-  /** Breakfast balls on this player-hole, for the marker to correct. */
-  breakfastBalls: number;
+  /** Mulligans on this player-hole, for the marker to correct. */
+  mulligans: number;
   /** False when the round isn't playing them — then the row stays off. */
-  breakfastBallsOffered: boolean;
+  mulligansOffered: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
+  const { run } = useAction();
+
+  // Optimistic ×N per reason — the tap counts before the server does.
+  const baseCounts: Record<string, number> = {};
+  for (const row of playerPenalties)
+    baseCounts[row.reason] = (baseCounts[row.reason] ?? 0) + 1;
+  const [counts, bump] = useOptimistic(
+    baseCounts,
+    (state: Record<string, number>, delta: { reason: string; by: 1 | -1 }) => ({
+      ...state,
+      [delta.reason]: Math.max(0, (state[delta.reason] ?? 0) + delta.by),
+    }),
+  );
+
+  // Optimistic mulligan figure, debounced like every other stepper.
+  const figureKey = `${holeNumber}:${player?.id ?? "none"}`;
+  const figures = useDraftFigures({
+    server: { [figureKey]: mulligans },
+    write: (_key, value) =>
+      player
+        ? setPlayerMulligans(code, player.id, holeNumber, value)
+        : Promise.resolve(),
+  });
 
   if (!player) return null;
   const name = player.display_name;
 
   function call(option: PenaltyOption) {
     if (!player) return;
-    startTransition(async () => {
+    run(async () => {
+      bump({ reason: option.reason, by: 1 });
       const result = await callPenaltyOn(
         code,
         player.id,
@@ -70,8 +98,8 @@ export function MarkerPlayerSheet({
         option.strokes,
         option.reason,
       );
-      if (result.error) toast.error(result.error);
-      else toast(`${option.label} — on ${name}'s card.`);
+      if (!result.error) toast(`${option.label} — on ${name}'s card.`);
+      return result;
     });
   }
 
@@ -80,23 +108,11 @@ export function MarkerPlayerSheet({
       .filter((row) => row.reason === option.reason)
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     if (!latest) return;
-    startTransition(async () => {
+    run(async () => {
+      bump({ reason: option.reason, by: -1 });
       const result = await removePenalty(code, latest.id);
-      if (result.error) toast.error(result.error);
-      else toast(`${option.label} taken off ${name}'s card.`);
-    });
-  }
-
-  function correctBreakfastBalls(next: number) {
-    if (!player) return;
-    startTransition(async () => {
-      const result = await setPlayerBreakfastBalls(
-        code,
-        player.id,
-        holeNumber,
-        next,
-      );
-      if (result.error) toast.error(result.error);
+      if (!result.error) toast(`${option.label} taken off ${name}'s card.`);
+      return result;
     });
   }
 
@@ -123,6 +139,7 @@ export function MarkerPlayerSheet({
             const rows = playerPenalties.filter(
               (row) => row.reason === option.reason,
             );
+            const count = counts[option.reason] ?? 0;
             const attributed = rows
               .map((row) => callerName(row.called_by))
               .filter(Boolean);
@@ -145,8 +162,8 @@ export function MarkerPlayerSheet({
                   <span className="min-w-0 flex-1">
                     <b className="block text-sm">{option.label}</b>
                     <span className="block truncate text-[11px] text-muted-foreground">
-                      {rows.length > 0
-                        ? `On the card ×${rows.length}${
+                      {count > 0
+                        ? `On the card ×${count}${
                             attributed.length > 0
                               ? ` · by ${attributed.join(", ")}`
                               : ""
@@ -157,7 +174,7 @@ export function MarkerPlayerSheet({
                   <button
                     type="button"
                     aria-label={`Retract ${option.label} from ${name}`}
-                    disabled={pending || rows.length === 0}
+                    disabled={rows.length === 0}
                     onClick={() => retract(option)}
                     className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard/60 text-hazard disabled:opacity-25"
                   >
@@ -166,7 +183,6 @@ export function MarkerPlayerSheet({
                   <button
                     type="button"
                     aria-label={`Call ${option.label} on ${name}`}
-                    disabled={pending}
                     onClick={() => call(option)}
                     className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard bg-hazard/10 text-hazard disabled:opacity-25"
                   >
@@ -177,26 +193,32 @@ export function MarkerPlayerSheet({
             );
           })}
 
-          {breakfastBallsOffered ? (
+          {mulligansOffered ? (
             <div className="mt-2 flex min-h-14 items-center gap-3 border-t border-dotted border-border py-1.5">
               <span className="min-w-0 flex-1">
-                <b className="block text-sm">Breakfast balls</b>
-                <span className="block truncate text-[11px] text-muted-foreground">
-                  {breakfastBalls > 0
-                    ? `${breakfastBalls} taken on this hole`
+                <b className="block text-sm">Mulligans</b>
+                <span
+                  className={cn(
+                    "block truncate text-[11px]",
+                    figures.settling(figureKey)
+                      ? "text-marker"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {figures.valueOf(figureKey) > 0
+                    ? `${figures.valueOf(figureKey)} taken on this hole`
                     : "None taken on this hole"}
                 </span>
               </span>
               <Stepper
                 className="w-28 shrink-0"
-                value={breakfastBalls}
-                onChange={correctBreakfastBalls}
-                max={MAX_BREAKFAST_BALLS}
-                disabled={pending}
+                value={figures.valueOf(figureKey)}
+                onChange={(next) => figures.set(figureKey, next)}
+                max={MAX_MULLIGANS}
                 tone="hazard"
-                decrementLabel={`Take a breakfast ball off ${name} on hole ${holeNumber}`}
-                incrementLabel={`Give ${name} a breakfast ball on hole ${holeNumber}`}
-                label="breakfast balls"
+                decrementLabel={`Take a mulligan off ${name} on hole ${holeNumber}`}
+                incrementLabel={`Give ${name} a mulligan on hole ${holeNumber}`}
+                label="mulligans"
               />
             </div>
           ) : null}

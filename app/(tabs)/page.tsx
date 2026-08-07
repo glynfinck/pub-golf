@@ -18,7 +18,7 @@ export default async function ClubhousePage() {
 
   return (
     <Screen withTabBar>
-      <RuleDouble />
+      <RuleDouble head />
       <ScreenHeader
         eyebrow="The Clubhouse"
         title={`Evening, ${profile.display_name.split(" ")[0]}`}

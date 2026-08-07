@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { refreshQuietUntil } from "@/lib/action-window";
 import { createClient } from "@/lib/supabase/client";
 
 const LIVE_TABLES = ["rounds", "round_players", "scores", "penalties"];
@@ -22,9 +23,20 @@ export function useLiveRound(roundId: string) {
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
     const refresh = () => {
-      // Coalesce bursts (a score upsert + penalty insert) into one refresh.
+      // Coalesce bursts (a score upsert + penalty insert) into one refresh,
+      // and defer — never drop — events landing inside an action's quiet
+      // window: our own write's echo is already in the action's revalidate
+      // payload, so answering it immediately buys the same bytes twice.
       clearTimeout(timeout);
-      timeout = setTimeout(() => router.refresh(), 150);
+      const fire = () => {
+        const wait = refreshQuietUntil() - Date.now();
+        if (wait > 0) {
+          timeout = setTimeout(fire, wait);
+          return;
+        }
+        router.refresh();
+      };
+      timeout = setTimeout(fire, 150);
     };
 
     (async () => {

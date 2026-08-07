@@ -28,10 +28,16 @@ export interface RoundRuleset {
   penalties: RulesetPenalty[];
   /** Whether the host is handicapping this round at all. */
   handicaps: boolean;
-  /** Breakfast balls per player for the whole round. 0 turns them off. */
-  breakfastBalls: number;
-  /** What one breakfast ball costs on the card. */
-  breakfastBallStrokes: number;
+  /** Mulligans per player for the whole round. 0 turns them off. */
+  mulligans: number;
+  /** What one mulligan costs on the card. */
+  mulliganStrokes: number;
+  /** Planned minutes at each pub — drives the 19th-hole estimate, and the
+   * shot clock when one is on the card. */
+  minutesPerPub: number;
+  /** The advertised first tee (ISO), printed on the lobby and the invite.
+   * Advisory only — the host still tees off when the group is stood there. */
+  scheduledTeeOff: string | null;
 }
 
 const FORMATS = ["stroke", "stableford", "match", "scramble"] as const;
@@ -43,8 +49,10 @@ export const RULESET_DEFAULTS: RoundRuleset = {
   softSubstituteScoresPar: true,
   penalties: [],
   handicaps: false,
-  breakfastBalls: 0,
-  breakfastBallStrokes: 1,
+  mulligans: 0,
+  mulliganStrokes: 1,
+  minutesPerPub: 20,
+  scheduledTeeOff: null,
 };
 
 function isFormat(value: unknown): value is RoundRuleset["format"] {
@@ -108,13 +116,24 @@ export function readRuleset(json: unknown): RoundRuleset {
       typeof raw.handicaps === "boolean"
         ? raw.handicaps
         : RULESET_DEFAULTS.handicaps,
-    breakfastBalls: counted(
-      raw.breakfastBalls,
-      RULESET_DEFAULTS.breakfastBalls,
+    mulligans: counted(
+      raw.mulligans,
+      RULESET_DEFAULTS.mulligans,
     ),
-    breakfastBallStrokes: counted(
-      raw.breakfastBallStrokes,
-      RULESET_DEFAULTS.breakfastBallStrokes,
+    mulliganStrokes: counted(
+      raw.mulliganStrokes,
+      RULESET_DEFAULTS.mulliganStrokes,
     ),
+    // Pre-schedule rounds read as the old fixed pace, not as zero minutes.
+    minutesPerPub:
+      typeof raw.minutesPerPub === "number" &&
+      Number.isFinite(raw.minutesPerPub) &&
+      raw.minutesPerPub > 0
+        ? Math.round(raw.minutesPerPub)
+        : RULESET_DEFAULTS.minutesPerPub,
+    scheduledTeeOff:
+      typeof raw.scheduledTeeOff === "string" && raw.scheduledTeeOff !== ""
+        ? raw.scheduledTeeOff
+        : null,
   };
 }

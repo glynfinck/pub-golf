@@ -51,13 +51,16 @@ is this Next version's middleware convention (see the `home` sibling repo).
 - Zero swigs = the drink never happened. On FILED holes computeStandings
   substitutes par (softSubstituteScoresPar, default) or double par (max
   score) — a 0 never scores as a free under-par hole. The in-progress hole
-  only counts once swigs > 0. This still holds after a breakfast ball:
+  only counts once swigs > 0. This still holds after a mulligan:
   resetting a hole never buys a free one.
 - `rounds.ruleset` is read through `readRuleset` in `lib/ruleset.ts` and
   nowhere else — never re-cast the jsonb inline. It fills in defaults, so a
   round created before a rule existed reads as that rule being off.
 - Three per-round rules ride on the ruleset snapshot: `penalties` (the house
-  table), `breakfastBalls`/`breakfastBallStrokes`, and `handicaps`. Holes
+  table), `mulligans`/`mulliganStrokes`, and `handicaps`. Mulligans were
+  "breakfast balls" until the pre-launch rename (migration
+  `20260813000000_mulligans`, deliberately non-additive) — if an old name
+  resurfaces anywhere, it lost that rename, not a synonym. Holes
   carry their own `penalties` jsonb — local rules, merged after the house
   list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
   the join key for the undo and the ×N count.
@@ -86,9 +89,23 @@ Roles are guarded by a `BEFORE UPDATE` trigger rather than a policy, because
 `WITH CHECK` only sees NEW and "your role may not change" is about OLD. Two
 more rules live in triggers for the same reason: `round_players.handicap` is
 officials-only (a player editing their own passes the self policy, so only
-OLD-vs-NEW can tell), and `scores.breakfast_balls` is capped at the round's
+OLD-vs-NEW can tell), and `scores.mulligans` is capped at the round's
 allowance (a count across sibling rows, which WITH CHECK can never see).
-Both raise `42501` so `expectDenied` recognises them. Regenerate types after schema changes:
+A third — `guard_score_hole_window` — is the cheatproofing pass
+(`20260814000000`): non-officials cannot write future holes, cannot lower a
+filed hole, cannot lower the last hole once the card is filed, cannot
+first-write a hole filed longer ago than one (the substitute stands), and
+never take a mulligan off their own row. The **one-hole grace**
+(`20260815000000`) is load-bearing, not a loophole: `advanceHole`
+increments `current_hole` immediately while the play screen debounces swigs
+by 400ms, so the hole directly behind the live one is the only hole an
+honest late tap can be aimed at — refusing it silently scored that player
+the par substitute while their own screen showed their swigs, and officials
+never saw it because the guard exempts them. `penalties.strokes` is
+schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
+retraction follows `called_by`, not whose card it sits on. All raise
+`42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
+is the adversarial suite. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Two hosted environments, both deployed by the platforms rather than from this
@@ -152,12 +169,18 @@ creates, but a table created by any other owner would still need it by hand.
 Read the error shape: `42501 permission denied` is always the table grant; a
 policy refusal returns no rows and no error at all.
 
-`npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
-real local Supabase stack — two browser contexts play a full round: create,
-guest join, caddy promotion + controls (tee off, back/forward, reset timer,
-marker's card edits, reopen), live score sync, results. The stack must be
-running (`supabase start`), and `.env.local` needs
-`SUPABASE_SERVICE_ROLE_KEY`.
+`npm run test:e2e` runs Playwright (port 3105) against the real local
+Supabase stack, once per row of a platform matrix — Android Chrome
+(Pixel 7), iOS Safari (iPhone 15/WebKit) and desktop Firefox — so
+`npx playwright install chromium webkit firefox` once before the first run.
+Two browser contexts play a full round in `round-flow`: create, guest join,
+caddy promotion + controls (tee off, back/forward, reset timer, marker's
+card edits, reopen), live score sync, results; `foursome` plays four phones
+at once (stampede join, concurrent scoring, ties, the zero-swig substitute,
+a latecomer joining a live round). The stack must be running
+(`supabase start`), and `.env.local` needs `SUPABASE_SERVICE_ROLE_KEY`.
+Multi-session Postgres races (join stampede, debounce vs marker collisions)
+live in the db tier — `tests/db/multiplayer-concurrency.test.ts` — not here.
 
 Host sessions are seeded by `e2e/auth.ts`, not driven through the UI —
 Google's consent screen can't be automated. It creates a confirmed user with
@@ -173,8 +196,21 @@ auth.uid()` for INSERT..RETURNING; the realtime socket must carry the
 user JWT (`supabase.realtime.setAuth`) or RLS silently filters all events;
 after `supabase stop/start` or `db reset`, RESTART the dev server on 3105
 (kill it and let Playwright respawn) or realtime events stop reaching
-pages — and expect the first e2e run after a cold stack boot to flake once
-on the lobby realtime assertion.
+pages.
+
+**A pass on retry is a failure.** CI sets `failOnFlakyTests`, so a test
+that goes green on attempt two fails the run: retries are there to record
+a trace (`trace: "on-first-retry"`), never to launder a red. This is not
+pedantry — a "flaky" line once hid a real scoring bug, where swigs written
+inside the hole-out debounce were refused and the hole silently scored the
+par substitute, behind a green check. Assertions racing a realtime
+`router.refresh()` are the usual suspect: Next mounts the outgoing and
+incoming view together for a beat, so **counting a testid and then acting
+on it must retry as one block** — `expectSettled`/`clickSettled` in
+`e2e/nav.ts` do that with `toPass`; a bare `toHaveCount(1)` followed by a
+separate `await` is the bug it looks like it prevents. In CI the suite
+runs against `next start` (the build the job already made), so `CI=1
+npx playwright test` after `npm run build` reproduces CI exactly.
 
 ## Local ports
 

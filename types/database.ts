@@ -238,11 +238,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "penalties_player_id_fkey"
-            columns: ["player_id"]
+            foreignKeyName: "penalties_player_id_round_id_fkey"
+            columns: ["player_id", "round_id"]
             isOneToOne: false
             referencedRelation: "round_players"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "round_id"]
           },
           {
             foreignKeyName: "penalties_round_id_fkey"
@@ -429,27 +429,27 @@ export type Database = {
       }
       scores: {
         Row: {
-          breakfast_balls: number
           hole_number: number
           id: string
+          mulligans: number
           player_id: string
           round_id: string
           swigs: number
           updated_at: string
         }
         Insert: {
-          breakfast_balls?: number
           hole_number: number
           id?: string
+          mulligans?: number
           player_id: string
           round_id: string
           swigs?: number
           updated_at?: string
         }
         Update: {
-          breakfast_balls?: number
           hole_number?: number
           id?: string
+          mulligans?: number
           player_id?: string
           round_id?: string
           swigs?: number
@@ -457,11 +457,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scores_player_id_fkey"
-            columns: ["player_id"]
+            foreignKeyName: "scores_player_id_round_id_fkey"
+            columns: ["player_id", "round_id"]
             isOneToOne: false
             referencedRelation: "round_players"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "round_id"]
           },
           {
             foreignKeyName: "scores_round_id_fkey"
@@ -537,6 +537,7 @@ export type Database = {
           tee_off_at: string
         }[]
       }
+      is_round_creator: { Args: { round: string }; Returns: boolean }
       is_round_member: { Args: { round: string }; Returns: boolean }
       is_round_official: { Args: { round: string }; Returns: boolean }
       join_round: {

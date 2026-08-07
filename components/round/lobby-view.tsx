@@ -1,41 +1,100 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
+import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
-import { RuleDouble } from "@/components/ui/rule";
+import { PendingLabel } from "@/components/ui/pending-label";
 import { usePresence } from "@/hooks/use-presence";
 import { Stepper } from "@/components/ui/stepper";
+import { useAction } from "@/hooks/use-action";
+import { useDraftFigures } from "@/hooks/use-draft-figures";
 import {
   setPlayerHandicap,
   setPlayerRole,
   startRound,
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { roundRuleLines } from "@/lib/round-rules";
 import { MAX_HANDICAP } from "@/lib/rules";
-import { readHolePenalties, readRuleset } from "@/lib/ruleset";
+import { readRuleset } from "@/lib/ruleset";
+import { clockTime12, roundMinutes } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, me } = bundle;
   useLiveRound(round.id);
+  const router = useRouter();
   const { present, synced } = usePresence(round.id, me?.id ?? null);
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [copied, setCopied] = useState(false);
+
+  // Tee off ends with a navigation to /play that refetches everything —
+  // warm that route while the lobby idles so the arrival is out of cache.
+  useEffect(() => {
+    router.prefetch(`/round/${round.code}/play`);
+  }, [router, round.code]);
 
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
   const isHost = me?.role === "host";
-  const par = holes.reduce((sum, hole) => sum + hole.par, 0);
   const ruleset = readRuleset(round.ruleset);
-  const hazardHoles = holes
-    .filter((hole) => hole.hazard)
-    .map((hole) => hole.number);
-  const localRuleHoles = holes
-    .filter((hole) => readHolePenalties(hole.penalties).length > 0)
-    .map((hole) => hole.number);
+
+  // The 19th-hole estimate: pubs at the planned pace plus the walks the
+  // course already carries. Advisory, like the tee time it hangs off.
+  const walkTotal = holes.reduce(
+    (sum, hole) => sum + (hole.walk_minutes_to_next ?? 0),
+    0,
+  );
+  const totalMinutes = roundMinutes(
+    holes.length,
+    ruleset.minutesPerPub,
+    walkTotal,
+  );
+  const scheduledTee = ruleset.scheduledTeeOff
+    ? new Date(ruleset.scheduledTeeOff)
+    : null;
+  const teeValid = scheduledTee !== null && !isNaN(scheduledTee.getTime());
+  const teeMinutesOfDay = teeValid
+    ? scheduledTee.getHours() * 60 + scheduledTee.getMinutes()
+    : null;
+
+  // The lobby prints the diary, not the abstraction: with a first tee on
+  // the card, the pace line becomes the tee time and the expected finish.
+  // Everything else comes straight from roundRuleLines, the same door the
+  // mid-round rules sheet reads.
+  const ruleLines = roundRuleLines(ruleset, holes).flatMap((line) =>
+    line.id === "pace" && teeValid && teeMinutesOfDay !== null
+      ? [
+          {
+            id: "first-tee",
+            label: "First tee",
+            value: `${scheduledTee.toLocaleDateString("en-GB", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+            })} · ${clockTime12(teeMinutesOfDay)}`,
+          },
+          {
+            id: "finish",
+            label: "Expected 19th hole",
+            value: `~${clockTime12(teeMinutesOfDay + totalMinutes)}`,
+          },
+        ]
+      : [line],
+  );
+
+  // Optimistic handicaps: the figure moves on the host's tap, and a
+  // "tap-tap" to two becomes one write.
+  const handicaps = useDraftFigures({
+    server: Object.fromEntries(
+      players.map((player) => [player.id, player.handicap]),
+    ),
+    write: (playerId, value) =>
+      setPlayerHandicap(round.code, playerId, value),
+  });
 
   function share() {
     const url = `${window.location.origin}/round/${round.code}`;
@@ -53,34 +112,23 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   }
 
   function teeOff() {
-    startTransition(async () => {
-      const result = await startRound(round.code);
-      if (result.error) toast.error(result.error);
-    });
+    run(() => startRound(round.code));
   }
 
   function toggleCaddy(playerId: string, currentRole: string) {
     if (!isHost) return;
-    startTransition(async () => {
-      const result = await setPlayerRole(
+    run(() =>
+      setPlayerRole(
         round.code,
         playerId,
         currentRole === "caddy" ? "player" : "caddy",
-      );
-      if (result.error) toast.error(result.error);
-    });
-  }
-
-  function changeHandicap(playerId: string, next: number) {
-    startTransition(async () => {
-      const result = await setPlayerHandicap(round.code, playerId, next);
-      if (result.error) toast.error(result.error);
-    });
+      ),
+    );
   }
 
   return (
     <Screen>
-      <RuleDouble />
+      <RoundBar round={round} holes={holes} busy={busy} />
       <ScreenHeader eyebrow={`Lobby · ${round.name}`} title="The first tee" />
 
       {/* The letterpress plate: entry code, optically centered against its
@@ -125,13 +173,19 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
               {ruleset.handicaps ? (
                 isOfficial ? (
                   <span className="mt-1 flex items-center gap-1.5">
-                    <span className="eyebrow">Hcp</span>
+                    <span
+                      className={cn(
+                        "eyebrow",
+                        handicaps.settling(player.id) && "text-marker",
+                      )}
+                    >
+                      Hcp
+                    </span>
                     <Stepper
                       className="min-h-9 w-24 px-1"
-                      value={player.handicap}
-                      onChange={(next) => changeHandicap(player.id, next)}
+                      value={handicaps.valueOf(player.id)}
+                      onChange={(next) => handicaps.set(player.id, next)}
                       max={MAX_HANDICAP}
-                      disabled={pending}
                       decrementLabel={`Lower ${player.display_name}'s handicap`}
                       incrementLabel={`Raise ${player.display_name}'s handicap`}
                       label="handicap"
@@ -179,53 +233,14 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <DotLeaderRow
-          label={`${holes.length} holes`}
-          value={`par ${par}`}
-          className="text-xs"
-        />
-        {ruleset.hazards && hazardHoles.length > 0 ? (
+        {ruleLines.map((line) => (
           <DotLeaderRow
-            label="Hazards in force"
-            value={hazardHoles.join(" · ")}
+            key={line.id}
+            label={line.label}
+            value={line.value}
             className="text-xs"
           />
-        ) : null}
-        {ruleset.holeTimerMinutes ? (
-          <DotLeaderRow
-            label="Timed holes"
-            value={`${ruleset.holeTimerMinutes} min`}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.softSubstituteScoresPar ? (
-          <DotLeaderRow
-            label="Soft substitutes"
-            value="score par"
-            className="text-xs"
-          />
-        ) : null}
-        {localRuleHoles.length > 0 ? (
-          <DotLeaderRow
-            label="Local rules"
-            value={localRuleHoles.join(" · ")}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.breakfastBalls > 0 ? (
-          <DotLeaderRow
-            label="Breakfast balls"
-            value={`${ruleset.breakfastBalls} each · +${ruleset.breakfastBallStrokes}`}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.handicaps ? (
-          <DotLeaderRow
-            label="Handicaps"
-            value="net scoring"
-            className="text-xs"
-          />
-        ) : null}
+        ))}
       </div>
 
       {isOfficial ? (
@@ -235,7 +250,12 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
           data-testid="tee-off"
           className="mt-auto"
         >
-          {pending ? "Counting everyone in…" : "Tee off — all cards go live"}
+          <PendingLabel
+            pending={pending}
+            busy={busy}
+            label="Tee off — all cards go live"
+            pendingLabel="Counting everyone in"
+          />
         </Button>
       ) : (
         <p className="mt-auto text-center text-sm text-muted-foreground">

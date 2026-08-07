@@ -23,7 +23,12 @@ export function TimerRing({
 }) {
   const remainingMs = useCountdown(deadline);
 
-  const fraction = ringFraction(remainingMs, totalMs);
+  // Empty (not full) before the first tick: with the transition below, the
+  // first real fraction makes mounting read as the clock arming — the ring
+  // sweeps up to what's left rather than popping into existence. A reset
+  // deadline sweeps back up the same way.
+  const fraction =
+    remainingMs === null ? 0 : ringFraction(remainingMs, totalMs);
   const urgent = isUrgent(remainingMs);
   const spoken = spokenClock(remainingMs);
   const label = formatClock(remainingMs);
@@ -52,7 +57,10 @@ export function TimerRing({
           strokeLinecap="round"
           strokeDasharray={CIRCUMFERENCE}
           strokeDashoffset={CIRCUMFERENCE * (1 - fraction)}
-          className={urgent ? "stroke-hazard" : "stroke-marker"}
+          className={cn(
+            "transition-[stroke-dashoffset,stroke] duration-700 ease-out motion-reduce:transition-none",
+            urgent ? "stroke-hazard" : "stroke-marker",
+          )}
         />
       </svg>
       <span

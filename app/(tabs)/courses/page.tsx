@@ -12,7 +12,7 @@ export default async function CoursesPage() {
 
   return (
     <Screen withTabBar>
-      <RuleDouble />
+      <RuleDouble head />
       <ScreenHeader eyebrow="The course book" title="Your courses" />
 
       {courses.length > 0 ? (

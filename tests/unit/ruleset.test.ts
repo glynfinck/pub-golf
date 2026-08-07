@@ -19,7 +19,7 @@ describe("readRuleset — rounds that predate a rule", () => {
     expect(readRuleset({})).toEqual(RULESET_DEFAULTS);
   });
 
-  it("turns handicaps and breakfast balls off for a round that never had them", () => {
+  it("turns handicaps and mulligans off for a round that never had them", () => {
     // The shape createRound wrote before this feature landed. It must keep
     // scoring exactly as it did on the night.
     const legacy = readRuleset({
@@ -30,8 +30,8 @@ describe("readRuleset — rounds that predate a rule", () => {
       penalties: [{ strokes: 2, reason: "Skipping a hole entirely" }],
     });
     expect(legacy.handicaps).toBe(false);
-    expect(legacy.breakfastBalls).toBe(0);
-    expect(legacy.breakfastBallStrokes).toBe(1);
+    expect(legacy.mulligans).toBe(0);
+    expect(legacy.mulliganStrokes).toBe(1);
     // And everything it did say is left alone.
     expect(legacy.holeTimerMinutes).toBe(20);
     expect(legacy.penalties).toEqual([
@@ -52,12 +52,14 @@ describe("readRuleset — a full ruleset", () => {
     const written = {
       format: "stableford" as const,
       hazards: false,
-      holeTimerMinutes: 20,
+      holeTimerMinutes: 25,
+      minutesPerPub: 25,
+      scheduledTeeOff: "2026-08-15T18:00:00.000Z",
       softSubstituteScoresPar: false,
       penalties: [{ strokes: 3, reason: "Spilling someone else's drink" }],
       handicaps: true,
-      breakfastBalls: 2,
-      breakfastBallStrokes: 1,
+      mulligans: 2,
+      mulliganStrokes: 1,
     };
     expect(readRuleset(written)).toEqual(written);
   });
@@ -75,10 +77,10 @@ describe("readRuleset — junk normalises rather than throws", () => {
   });
 
   it("floors a negative or fractional allowance to something countable", () => {
-    expect(readRuleset({ breakfastBalls: -3 }).breakfastBalls).toBe(0);
-    expect(readRuleset({ breakfastBalls: 2.6 }).breakfastBalls).toBe(3);
-    expect(readRuleset({ breakfastBalls: NaN }).breakfastBalls).toBe(0);
-    expect(readRuleset({ breakfastBalls: "two" }).breakfastBalls).toBe(0);
+    expect(readRuleset({ mulligans: -3 }).mulligans).toBe(0);
+    expect(readRuleset({ mulligans: 2.6 }).mulligans).toBe(3);
+    expect(readRuleset({ mulligans: NaN }).mulligans).toBe(0);
+    expect(readRuleset({ mulligans: "two" }).mulligans).toBe(0);
   });
 
   it("drops penalty rows that are not a penalty", () => {
@@ -114,5 +116,34 @@ describe("readHolePenalties", () => {
     expect(readHolePenalties([])).toEqual([]);
     expect(readHolePenalties(null)).toEqual([]);
     expect(readHolePenalties(undefined)).toEqual([]);
+  });
+});
+
+describe("the schedule on the snapshot", () => {
+  it("reads a round from before the schedule existed as the old fixed pace, unscheduled", () => {
+    const ruleset = readRuleset({ format: "stroke", hazards: true });
+    expect(ruleset.minutesPerPub).toBe(20);
+    expect(ruleset.scheduledTeeOff).toBeNull();
+  });
+
+  it("keeps the pace and the advertised tee a round was created with", () => {
+    const ruleset = readRuleset({
+      minutesPerPub: 25,
+      scheduledTeeOff: "2026-08-15T18:00:00.000Z",
+    });
+    expect(ruleset.minutesPerPub).toBe(25);
+    expect(ruleset.scheduledTeeOff).toBe("2026-08-15T18:00:00.000Z");
+  });
+
+  it("refuses a pace that could not run a round", () => {
+    expect(readRuleset({ minutesPerPub: 0 }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: -5 }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: NaN }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: "half an hour" }).minutesPerPub).toBe(20);
+  });
+
+  it("reads an empty or non-string tee as unscheduled", () => {
+    expect(readRuleset({ scheduledTeeOff: "" }).scheduledTeeOff).toBeNull();
+    expect(readRuleset({ scheduledTeeOff: 1755280800000 }).scheduledTeeOff).toBeNull();
   });
 });

@@ -3,18 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { templateForHoleCount } from "@/lib/course-templates";
+import { reverseCourse, templateForHoleCount } from "@/lib/course-templates";
 import {
-  BREAKFAST_BALL_STROKES,
-  MAX_BREAKFAST_BALLS,
+  MULLIGAN_STROKES,
+  MAX_MULLIGANS,
   MAX_HANDICAP,
 } from "@/lib/rules";
 import { readRuleset } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
 import type { Json } from "@/types/database";
-
-const HOLE_TIMER_MINUTES = 20;
 
 export type ActionResult = { error?: string; finished?: boolean };
 
@@ -23,18 +21,26 @@ const createRoundSchema = z.object({
   holes: z.coerce.number().int().min(1).max(18),
   /** A saved course to copy; null plays the Invitational template. */
   courseId: z.string().uuid().nullable().optional(),
+  /** Play the course back down — last pub first, walks intact. */
+  reversed: z.boolean().default(false),
   format: z.enum(["stroke", "stableford", "match", "scramble"]),
   hazards: z.boolean(),
   timer: z.boolean(),
   softSub: z.boolean(),
+  /** Planned minutes at each pub — the 19th-hole estimate, and the shot
+   * clock's length when `timer` is on. */
+  minutesPerPub: z.coerce.number().int().min(5).max(60).default(20),
+  /** The advertised first tee (ISO). Advisory — printed on the lobby and
+   * the invite; the host still tees off whenever the group is stood there. */
+  scheduledTeeOff: z.string().nullable().optional(),
   /** Whether the host is handicapping this round at all. */
   handicaps: z.boolean().default(false),
-  /** Breakfast balls per player for the whole round; 0 turns them off. */
-  breakfastBalls: z.coerce
+  /** Mulligans per player for the whole round; 0 turns them off. */
+  mulligans: z.coerce
     .number()
     .int()
     .min(0)
-    .max(MAX_BREAKFAST_BALLS)
+    .max(MAX_MULLIGANS)
     .default(0),
   penalties: z.array(z.object({ strokes: z.number(), reason: z.string() })),
 });
@@ -63,14 +69,17 @@ export async function createRound(input: CreateRoundInput) {
       ruleset: {
         format: parsed.format,
         hazards: parsed.hazards,
-        holeTimerMinutes: parsed.timer ? HOLE_TIMER_MINUTES : null,
+        // The shot clock runs at the planned pub pace — one number, two jobs.
+        holeTimerMinutes: parsed.timer ? parsed.minutesPerPub : null,
+        minutesPerPub: parsed.minutesPerPub,
+        scheduledTeeOff: parsed.scheduledTeeOff ?? null,
         softSubstituteScoresPar: parsed.softSub,
         penalties: parsed.penalties,
         handicaps: parsed.handicaps,
-        breakfastBalls: parsed.breakfastBalls,
+        mulligans: parsed.mulligans,
         // Snapshotted, not read from the constant at scoring time: changing
         // the house price later must never rescore a round already played.
-        breakfastBallStrokes: BREAKFAST_BALL_STROKES,
+        mulliganStrokes: MULLIGAN_STROKES,
       },
     })
     .select()
@@ -123,6 +132,7 @@ export async function createRound(input: CreateRoundInput) {
   } else {
     template = templateForHoleCount(parsed.holes);
   }
+  if (parsed.reversed) template = reverseCourse(template);
   if (!parsed.hazards)
     template = template.map((hole) => ({
       ...hole,
@@ -299,7 +309,7 @@ export async function addPenalty(
 }
 
 /**
- * Take a breakfast ball: wipe this hole and start the drink again, for the
+ * Take a mulligan: wipe this hole and start the drink again, for the
  * price of a half pint on the card.
  *
  * The allowance is for the whole round, so the count is read across every
@@ -307,7 +317,7 @@ export async function addPenalty(
  * scores trigger, which is the only thing an attacker with the anon key
  * cannot route around.
  */
-export async function takeBreakfastBall(
+export async function takeMulligan(
   code: string,
   holeNumber: number,
 ): Promise<ActionResult> {
@@ -321,25 +331,25 @@ export async function takeBreakfastBall(
     .eq("id", context.roundId)
     .maybeSingle();
   const ruleset = readRuleset(round?.ruleset);
-  if (ruleset.breakfastBalls < 1)
-    return { error: "This round isn't playing breakfast balls" };
+  if (ruleset.mulligans < 1)
+    return { error: "This round isn't playing mulligans" };
 
   const { data: myScores } = await supabase
     .from("scores")
-    .select("hole_number, breakfast_balls")
+    .select("hole_number, mulligans")
     .eq("round_id", context.roundId)
     .eq("player_id", context.playerId);
 
   const used = (myScores ?? []).reduce(
-    (sum, score) => sum + score.breakfast_balls,
+    (sum, score) => sum + score.mulligans,
     0,
   );
-  if (used >= ruleset.breakfastBalls)
-    return { error: "No breakfast balls left on your card" };
+  if (used >= ruleset.mulligans)
+    return { error: "No mulligans left on your card" };
 
   const onThisHole =
     (myScores ?? []).find((score) => score.hole_number === holeNumber)
-      ?.breakfast_balls ?? 0;
+      ?.mulligans ?? 0;
 
   const { error } = await supabase.from("scores").upsert(
     {
@@ -347,7 +357,7 @@ export async function takeBreakfastBall(
       player_id: context.playerId,
       hole_number: holeNumber,
       swigs: 0,
-      breakfast_balls: onThisHole + 1,
+      mulligans: onThisHole + 1,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "player_id,hole_number" },
@@ -357,10 +367,10 @@ export async function takeBreakfastBall(
   return {};
 }
 
-/** Marker's card: an official corrects the breakfast balls on a player-hole.
+/** Marker's card: an official corrects the mulligans on a player-hole.
  * Officials only — a player raising their own allowance is exactly what the
  * scores trigger exists to stop. */
-export async function setPlayerBreakfastBalls(
+export async function setPlayerMulligans(
   code: string,
   playerId: string,
   holeNumber: number,
@@ -371,19 +381,19 @@ export async function setPlayerBreakfastBalls(
 
   const ruleset = readRuleset(round.ruleset);
   const next = Math.max(0, Math.round(count));
-  if (next > MAX_BREAKFAST_BALLS)
-    return { error: "That is more breakfast balls than any round allows" };
+  if (next > MAX_MULLIGANS)
+    return { error: "That is more mulligans than any round allows" };
 
   const { data: existing } = await supabase
     .from("scores")
-    .select("hole_number, breakfast_balls")
+    .select("hole_number, mulligans")
     .eq("round_id", round.id)
     .eq("player_id", playerId);
 
   const elsewhere = (existing ?? [])
     .filter((score) => score.hole_number !== holeNumber)
-    .reduce((sum, score) => sum + score.breakfast_balls, 0);
-  if (elsewhere + next > ruleset.breakfastBalls)
+    .reduce((sum, score) => sum + score.mulligans, 0);
+  if (elsewhere + next > ruleset.mulligans)
     return { error: "That is over this round's allowance" };
 
   const { error } = await supabase.from("scores").upsert(
@@ -391,7 +401,7 @@ export async function setPlayerBreakfastBalls(
       round_id: round.id,
       player_id: playerId,
       hole_number: holeNumber,
-      breakfast_balls: next,
+      mulligans: next,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "player_id,hole_number" },

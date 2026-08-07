@@ -167,10 +167,10 @@ describe("scores and penalties", () => {
       expectDenied(error);
     });
 
-    it("lets a player retract a penalty called on them", async () => {
-      // Documented as open: the delete policy keys on who the penalty is
-      // against, not who called it, so an official's call can be retracted by
-      // its subject. The app's undo depends on this.
+    it("keeps the marker's call out of the subject's reach", async () => {
+      // The delete policy follows called_by since the cheatproofing
+      // migration: your own mis-tap comes back off, the marker's call does
+      // not — its subject retracting it was the quietest cheat on the card.
       const { data } = await adminClient()
         .from("penalties")
         .insert({
@@ -184,6 +184,7 @@ describe("scores and penalties", () => {
         .select("id")
         .single();
 
+      // Filtered, not raised: no error, no rows — the row is the witness.
       const { error } = await player.db
         .from("penalties")
         .delete()
@@ -194,7 +195,7 @@ describe("scores and penalties", () => {
         .from("penalties")
         .select("id", { count: "exact", head: true })
         .eq("id", data!.id);
-      expect(count).toBe(0);
+      expect(count).toBe(1);
     });
   });
 
@@ -225,14 +226,14 @@ describe("scores and penalties", () => {
 });
 
 /**
- * The breakfast ball allowance.
+ * The mulligan allowance.
  *
  * "At most N across the whole round" is a statement about sibling rows, which
  * WITH CHECK can never see — so a trigger holds it, and this is where that
  * trigger is actually proven. The server action's check is only the friendly
  * message.
  */
-describe("breakfast balls", () => {
+describe("mulligans", () => {
   let host: Actor;
   let player: Actor;
   let round: SeededRound;
@@ -241,9 +242,9 @@ describe("breakfast balls", () => {
   async function storedBalls(playerId: string): Promise<number> {
     const { data } = await adminClient()
       .from("scores")
-      .select("breakfast_balls")
+      .select("mulligans")
       .eq("player_id", playerId);
-    return (data ?? []).reduce((sum, row) => sum + row.breakfast_balls, 0);
+    return (data ?? []).reduce((sum, row) => sum + row.mulligans, 0);
   }
 
   beforeEach(async () => {
@@ -254,7 +255,7 @@ describe("breakfast balls", () => {
     round = await seedRound({
       host,
       players: [{ ...player, role: "player" }],
-      breakfastBalls: 2,
+      mulligans: 2,
     });
   });
 
@@ -268,15 +269,26 @@ describe("breakfast balls", () => {
     expect(await storedBalls(round.seatOf[player.userId])).toBe(0);
   });
 
+  /** Walk the round on: the hole-window guard scopes a player's writes to
+   * the live hole, so a take on hole N needs the round stood on hole N. */
+  async function advanceTo(hole: number) {
+    const { error } = await adminClient()
+      .from("rounds")
+      .update({ current_hole: hole })
+      .eq("id", round.id);
+    if (error) throw error;
+  }
+
   it("lets a player take one, and take the last one", async () => {
     const seat = round.seatOf[player.userId];
     for (const hole of [1, 2]) {
+      await advanceTo(hole);
       const { error } = await player.db.from("scores").insert({
         round_id: round.id,
         player_id: seat,
         hole_number: hole,
         swigs: 0,
-        breakfast_balls: 1,
+        mulligans: 1,
       });
       expect(error).toBeNull();
     }
@@ -285,16 +297,22 @@ describe("breakfast balls", () => {
 
   it("refuses the one that would go over the allowance", async () => {
     const seat = round.seatOf[player.userId];
-    await player.db.from("scores").insert([
-      { round_id: round.id, player_id: seat, hole_number: 1, breakfast_balls: 1 },
-      { round_id: round.id, player_id: seat, hole_number: 2, breakfast_balls: 1 },
-    ]);
+    for (const hole of [1, 2]) {
+      await advanceTo(hole);
+      await player.db.from("scores").insert({
+        round_id: round.id,
+        player_id: seat,
+        hole_number: hole,
+        mulligans: 1,
+      });
+    }
 
+    await advanceTo(3);
     const { error } = await player.db.from("scores").insert({
       round_id: round.id,
       player_id: seat,
       hole_number: 3,
-      breakfast_balls: 1,
+      mulligans: 1,
     });
     expectDenied(error);
     expect(await storedBalls(seat)).toBe(2);
@@ -307,7 +325,7 @@ describe("breakfast balls", () => {
       round_id: round.id,
       player_id: seat,
       hole_number: 1,
-      breakfast_balls: 3,
+      mulligans: 3,
     });
     expectDenied(error);
     expect(await storedBalls(seat)).toBe(0);
@@ -319,12 +337,12 @@ describe("breakfast balls", () => {
       round_id: round.id,
       player_id: seat,
       hole_number: 1,
-      breakfast_balls: 2,
+      mulligans: 2,
     });
 
     const { error } = await player.db
       .from("scores")
-      .update({ breakfast_balls: 3 })
+      .update({ mulligans: 3 })
       .eq("player_id", seat)
       .eq("hole_number", 1);
     expectDenied(error);
@@ -338,12 +356,12 @@ describe("breakfast balls", () => {
       round_id: round.id,
       player_id: seat,
       hole_number: 1,
-      breakfast_balls: 2,
+      mulligans: 2,
     });
 
     const { error } = await host.db
       .from("scores")
-      .update({ breakfast_balls: 1 })
+      .update({ mulligans: 1 })
       .eq("player_id", seat)
       .eq("hole_number", 1);
     expect(error).toBeNull();
@@ -362,14 +380,14 @@ describe("breakfast balls", () => {
       round_id: legacy.id,
       player_id: seat,
       hole_number: 1,
-      breakfast_balls: 1,
+      mulligans: 1,
     });
     expectDenied(error);
     expect(await storedBalls(seat)).toBe(0);
   });
 
   it("leaves one on the card when a swig lands on the same hole", async () => {
-    // upsertScore writes swigs without naming breakfast_balls. PostgREST
+    // upsertScore writes swigs without naming mulligans. PostgREST
     // builds its `on conflict do update set` list from the body's keys, so an
     // omitted column should survive — but a swig tap quietly wiping somebody's
     // half pint is exactly the bug nobody would report, so it gets pinned.
@@ -379,7 +397,7 @@ describe("breakfast balls", () => {
       player_id: seat,
       hole_number: 1,
       swigs: 0,
-      breakfast_balls: 1,
+      mulligans: 1,
     });
 
     const { error } = await player.db.from("scores").upsert(
@@ -395,11 +413,11 @@ describe("breakfast balls", () => {
 
     const { data } = await adminClient()
       .from("scores")
-      .select("swigs, breakfast_balls")
+      .select("swigs, mulligans")
       .eq("player_id", seat)
       .eq("hole_number", 1)
       .single();
-    expect(data).toMatchObject({ swigs: 4, breakfast_balls: 1 });
+    expect(data).toMatchObject({ swigs: 4, mulligans: 1 });
   });
 
   it("refuses a negative count outright", async () => {
@@ -407,7 +425,7 @@ describe("breakfast balls", () => {
       round_id: round.id,
       player_id: round.seatOf[player.userId],
       hole_number: 1,
-      breakfast_balls: -1,
+      mulligans: -1,
     });
     expect(error).not.toBeNull();
   });

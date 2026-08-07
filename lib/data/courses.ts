@@ -7,6 +7,8 @@ export interface MyCourse {
   created_at: string;
   hole_count: number;
   par: number;
+  /** Σ walk_minutes_to_next, for the 19th-hole estimate. */
+  walk_minutes: number;
 }
 
 /** The viewer's saved courses, newest first. */
@@ -19,7 +21,7 @@ export async function getMyCourses(): Promise<MyCourse[]> {
 
   const { data } = await supabase
     .from("courses")
-    .select("id, name, created_at, course_holes(par)")
+    .select("id, name, created_at, course_holes(par, walk_minutes_to_next)")
     .order("created_at", { ascending: false });
 
   return (data ?? []).map((course) => ({
@@ -28,6 +30,10 @@ export async function getMyCourses(): Promise<MyCourse[]> {
     created_at: course.created_at,
     hole_count: course.course_holes.length,
     par: course.course_holes.reduce((sum, hole) => sum + hole.par, 0),
+    walk_minutes: course.course_holes.reduce(
+      (sum, hole) => sum + (hole.walk_minutes_to_next ?? 0),
+      0,
+    ),
   }));
 }
 
