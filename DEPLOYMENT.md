@@ -1,65 +1,69 @@
 # Deploying Parlour
 
-Production is **pub-golf.glyn.dev** — Vercel for the app, a dedicated hosted
-Supabase project for Postgres/Auth/Realtime, GitHub Actions as the release
-pipeline. This mirrors `graph-editor` and `home`, with one deliberate
-difference: **the app deploys only after migrations have applied** (see
-[Release ordering](#release-ordering)).
+Two environments, both deployed by the platforms themselves:
+
+| | Branch | App | Database |
+| --- | --- | --- | --- |
+| Production | `main` | **pub-golf.glyn.dev** | `quncylgcwfiqsjugnvtv` |
+| Staging | `preview` | **pub-golf-preview.glyn.dev** | branch project `xssmjzinaghxjncoezez` |
+
+## Who deploys what
+
+Nothing in this repo ships anything. Push to a release branch and two
+integrations react to it independently:
+
+- **Vercel's git integration** builds and deploys the app. `main` goes to
+  production, `preview` to the staging domain, every other branch to a
+  throwaway preview URL.
+- **Supabase's GitHub integration** applies `supabase/migrations/*`. `main`
+  deploys to the production project; `preview` deploys to its own branch
+  project, and also applies `[remotes.preview]` from `config.toml`.
+
+There is no `vercel.json` and there are **no GitHub Actions secrets**. CI runs
+`verify` and nothing else.
+
+### What that costs, stated plainly
+
+This is the deliberate trade against an earlier design where GitHub Actions
+owned an ordered `verify → migrate → deploy` chain. Two properties were given
+up for a pipeline with no credentials in it:
+
+**The two integrations race.** Vercel builds in roughly 60–90 seconds;
+Supabase's branch deploy waits up to 2 minutes on a health check before it
+even migrates. So there is a window — call it 1–5 minutes — where new code is
+live against the old schema. That is not subtle here: PostgREST answers a
+select on a missing column with `42703` and fails the whole request, so the
+round page, the marker's card and the recap all 500 until the migration lands.
+
+The mitigation is discipline, not machinery: **migrations must be additive and
+backward-compatible with the currently-deployed release.** For a destructive
+change (dropping or renaming a column the live app still reads), use
+expand/contract — ship the additive migration and code that tolerates both
+shapes first, then drop the old column in a later release.
+
+**A deploy is not gated on tests.** Vercel builds whether or not CI is green.
+The thing that puts the test gate back is **branch protection**: require the
+`verify` check on `main` and `preview`, so the only way to reach a release
+branch is a merge that passed. Without that, this is a repo where a red suite
+ships itself. Set it up before relying on either environment.
 
 ## Why not the Vercel↔Supabase marketplace integration
 
-The Vercel marketplace integration exists mainly to provision a Supabase
-project *through Vercel* (Vercel becomes the biller) and to sync
-`NEXT_PUBLIC_SUPABASE_*` into the project's environment variables. It is a
-good fit for a brand-new project with no Supabase account.
-
-It is the wrong fit here:
+Even going native for deploys, **do not install it.** It exists mainly to
+provision a Supabase project *through Vercel* (Vercel becomes the biller) and
+to sync `NEXT_PUBLIC_SUPABASE_*` into Vercel's environment variables.
 
 - The Supabase org is already on **Pro**, with `Graph Editor` and `Home`
-  billed there. Provisioning through Vercel splits billing across two vendors
-  and moves this one project outside the org you actually manage.
-- Migrations are driven by the Supabase CLI from GitHub Actions. The
-  integration does not run migrations, so it solves none of the hard part.
-- It syncs env vars *into* Vercel, which is three values you set once and
-  never touch again.
+  billed there. Provisioning through Vercel splits billing across two vendors.
+- It does not run migrations — Supabase's *GitHub* integration does that, and
+  it is already installed. The marketplace one solves none of the hard part.
+- It syncs env vars into Vercel at pull-request-open time and re-deploys to
+  beat its own race. That makes it a second, invisible writer to the one pair
+  of values whose wrongness is catastrophic (see the Preview table below), and
+  `preview` is a long-lived branch, not a PR, so it would not fire for it
+  anyway.
 
-The convention for this stack — CLI-managed migrations, Vercel for hosting —
-is to keep the two accounts separate and wire three environment variables by
-hand. That is what the rest of this document does.
-
-## Release ordering
-
-`vercel.json` disables Vercel's git auto-deploy for `main`:
-
-```json
-{ "git": { "deploymentEnabled": { "main": false } } }
-```
-
-Without this, pushing to `main` triggers a Vercel build **in parallel** with
-the GitHub Actions run — so new code can go live seconds before (or instead
-of) its migration, serving production against an old schema. With it, `main`
-has exactly one path to production, and it is ordered:
-
-```
-verify  →  migrate  →  deploy
-(lint, typecheck,     (supabase   (vercel build
- build, e2e vs.        db push)    + deploy --prod)
- a real local
- Supabase)
-```
-
-Any job failing stops the ones after it: a red test never migrates, and a
-failed migration never deploys.
-
-Preview deploys for non-`main` branches still run through Vercel's git
-integration as usual — `deploymentEnabled` is scoped to `main` only.
-
-Because migrations land *before* the new code, migrations must be
-backward-compatible with the currently-deployed release for the length of a
-deploy (a minute or two). Additive changes are always safe. For a destructive
-change (dropping or renaming a column the live app still reads), use
-expand/contract: ship the additive migration and the code that tolerates both
-shapes first, then drop the old column in a later release.
+Four env vars per environment, set by hand, is the whole job.
 
 ## One-time setup
 
@@ -69,7 +73,18 @@ Already created — **Pub Golf**, ref `quncylgcwfiqsjugnvtv`, region
 `eu-west-2`, at `https://quncylgcwfiqsjugnvtv.supabase.co`. It bills at
 $10/month on the Pro org.
 
-Apply the schema:
+Migrations reach it through **Supabase's GitHub integration**, which must be
+connected to `glynfinck/pub-golf` with:
+
+- **Production branch** = `main`. This is the setting to check first when
+  production falls behind: with it unset, pushes to `main` migrate nothing and
+  no error is raised anywhere. The symptom is `list_branches` showing the
+  production branch with no `git_branch` field and an `updated_at` that never
+  moves.
+- **Supabase directory** = `supabase`.
+- Branching enabled, which is what creates the `preview` branch project.
+
+To apply migrations by hand — for a first run, or to catch a project up:
 
 ```bash
 supabase login                    # opens a browser
@@ -77,10 +92,10 @@ supabase link --project-ref quncylgcwfiqsjugnvtv
 supabase db push                  # applies supabase/migrations/*
 ```
 
-CI does this on every push to `main` once the secrets are in place (step 6);
-this first run is only to get the schema in before the first deploy. Keep the
-database password from project creation — it is the `SUPABASE_DB_PASSWORD`
-secret and cannot be read back.
+Keep the database password from project creation; it cannot be read back, and
+`db push` asks for it. If it is lost, reset it under Project Settings →
+Database — safe here, since nothing connects to Postgres directly (the app
+goes through PostgREST on the publishable key).
 
 ### 2. Supabase auth settings (the part that breaks quietly)
 
@@ -95,12 +110,20 @@ in local dev:
 | Allow manual linking | **on** | "Claim your card" links Google to an anonymous uid. Off by default; the claim button fails without it. |
 | Email provider | **off** | Nothing in the UI reaches it. Leaving it on is a signup path nobody uses. |
 | Site URL | `https://pub-golf.glyn.dev` | Where OAuth returns to |
-| Redirect URLs | `https://pub-golf.glyn.dev/**` | Plus any preview origins you want to allow |
+| Redirect URLs | `https://pub-golf.glyn.dev/**` | An unlisted origin is not rejected — Supabase falls back to Site URL and drops the path, which reads as an app bug |
 
 > Do **not** run `supabase config push`. It would overwrite the production
 > `site_url` with `http://localhost:3105` from `config.toml`, which is
 > local-first by design — and it would re-enable the email provider, which
 > local keeps on only so the e2e suite can seed sessions.
+
+**The `preview` branch is the exception, and it is not configured here.** Its
+auth comes from the `[remotes.preview]` block in `config.toml`, which
+branching's Configure step applies to the branch project on every push. That
+is not the same hazard as `config push`: a remote block targets one declared
+project ref rather than whatever you happen to be linked to. Anything added to
+`[auth]` for local dev needs considering for that block too, or local and
+preview silently disagree.
 
 **There is no SMTP to configure, and that is the point.** Hosts sign in with
 Google and guests join anonymously, so the app never sends an email. This is
@@ -119,13 +142,27 @@ these point at Supabase:
 | Environment | URI |
 | --- | --- |
 | Production | `https://quncylgcwfiqsjugnvtv.supabase.co/auth/v1/callback` |
+| Preview | `https://xssmjzinaghxjncoezez.supabase.co/auth/v1/callback` |
 | Local dev | `http://127.0.0.1:54331/auth/v1/callback` |
 
-Put the client ID and secret into the Supabase dashboard for production, and
-into `.env.local` as `SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID` /
-`SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET` for local (`supabase start` reads them
-through `config.toml`). Local dev also needs `skip_nonce_check`, which is
-already set.
+One client serves all three, so there is one secret in circulation. The branch
+needs its own entry because it runs its own auth server — production's setup
+does not carry over.
+
+Where the credentials go, per environment:
+
+- **Production** — the Supabase dashboard, by hand.
+- **Preview** — *branch secrets*, read by `[remotes.preview]` in
+  `config.toml`. Secrets are per-branch; production's do not carry over:
+
+  ```bash
+  supabase secrets set --project-ref xssmjzinaghxjncoezez \
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=... \
+    SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
+  ```
+
+- **Local dev** — `.env.local`, same two names (`supabase start` reads them
+  through `config.toml`). Local also needs `skip_nonce_check`, already set.
 
 While the consent screen is in *Testing*, only accounts on its test-user list
 can sign in — publish it before letting anyone else host a round.
@@ -136,46 +173,129 @@ Import `glynfinck/pub-golf` at
 [vercel.com/new](https://vercel.com/new) into the **glynfinck's projects**
 team. Framework preset auto-detects as Next.js; leave build settings alone.
 
-Environment variables (Production **and** Preview):
+**Environment variables are per environment, and crossing them is the one
+mistake that does real damage.** Nothing errors if they are wrong — the
+staging app simply reads and writes production rounds.
 
-| Variable | Where it comes from |
+Production:
+
+| Variable | Value |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → API → publishable key (`sb_publishable_…`) |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Cloud; restrict to `pub-golf.glyn.dev/*` |
-| `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | Google Cloud styled map ID |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | that project's publishable key (`sb_publishable_…`) |
+| `NEXT_PUBLIC_SITE_URL` | `https://pub-golf.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
 
-The two Google keys are optional; without them the course builder degrades to
-add-by-name, which still works.
+Preview — set for the **whole Preview environment**, not scoped to the
+`preview` branch. Branch-scoped values do take precedence, but a silent
+precedence rule is exactly how "staging wrote to prod" happens. Environment-wide
+makes the invariant absolute: *no preview deployment ever holds the production
+Supabase URL.* Feature-branch previews then also point at staging, which is
+strictly better — they cannot write to production, and junk rows in a
+throwaway database are a feature.
 
-### 5. Domain
+| Variable | Value |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://xssmjzinaghxjncoezez.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the **branch's** publishable key |
+| `NEXT_PUBLIC_SITE_URL` | `https://pub-golf-preview.glyn.dev` |
+| `GOOGLE_PLACES_API_KEY` | same key as production |
+
+`NEXT_PUBLIC_SITE_URL` is the quiet one: `lib/config.ts` **defaults it to
+`https://pub-golf.glyn.dev`**, so leaving it unset on preview does not fail —
+it makes every staging page advertise production URLs for `metadataBase` and
+its Open Graph images.
+
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` are
+optional placeholders; no code reads either one yet.
+
+### 5. Domains
 
 `glyn.dev` already uses Vercel nameservers (`ns1/ns2.vercel-dns.com`), so
-adding the domain in Vercel → Project → Settings → Domains creates the DNS
-record automatically. Add `pub-golf.glyn.dev`; no registrar changes needed.
+adding a domain in Vercel → Project → Settings → Domains creates the DNS
+record automatically; no registrar changes needed.
 
-### 6. GitHub secrets
+- `pub-golf.glyn.dev` — production.
+- `pub-golf-preview.glyn.dev` — set its **Git Branch** field to `preview`, and
+  leave it set. A custom domain with no branch assignment points at the
+  current *production* deployment, so clearing it would quietly turn the
+  staging URL into a second production URL.
 
-Settings → Secrets and variables → Actions:
+### 6. Access control on staging
 
-| Secret | Where to get it |
-| --- | --- |
-| `SUPABASE_ACCESS_TOKEN` | supabase.com/dashboard/account/tokens |
-| `SUPABASE_PROJECT_REF` | `quncylgcwfiqsjugnvtv` |
-| `SUPABASE_DB_PASSWORD` | The password from step 1 |
-| `VERCEL_TOKEN` | vercel.com/account/tokens |
-| `VERCEL_ORG_ID` | `team_efHn4CGsL2iT0Xmp3qdWG9d2` |
-| `VERCEL_PROJECT_ID` | Vercel → Project → Settings → General (or `.vercel/project.json` after `vercel link`) |
+Vercel Authentication is on with deployment type `all_except_custom_domains`,
+which exempts the **production** custom domain only. So `pub-golf.glyn.dev` is
+public and `pub-golf-preview.glyn.dev` sits behind a Vercel login — staging is
+reachable only by someone signed in with access to the team.
 
-Both the `migrate` and `deploy` jobs guard on their secrets and skip with a
-notice if they are missing, so CI stays green while you work through this
-list. `deploy` skipping is a **warning** in the run summary — if a push to
-`main` did not reach production, check there first.
+The consequence worth knowing before you plan a test: you cannot hand the
+staging link to anyone. Parlour is multiplayer, and its core loop is other
+people joining a round by code. Two browser profiles on your own account will
+exercise it; a friend's phone will not. Crawlers can't reach it either, so
+staging Open Graph cards never unfurl — that is the gate, not a bug.
+
+### 7. GitHub
+
+No secrets. Two settings, both under Settings → Branches:
+
+- Require the `verify` status check on **`main`** and **`preview`**.
+- Require a pull request before merging to both.
+
+That is what gates a deploy on tests here — see
+[What that costs](#what-that-costs-stated-plainly). Skipping it means a red
+suite ships itself.
+
+## The preview environment
+
+`preview` is a **mirror of `main`**, not a branch with a life of its own. It
+carries no commits `main` does not have; when the two drift, re-mirror it
+rather than merging:
+
+```bash
+git push --force-with-lease origin origin/main:refs/heads/preview
+```
+
+Its database is Supabase branch `preview` → project `xssmjzinaghxjncoezez`, a
+real separate project built from `supabase/migrations` with **no production
+data**. Rounds, guests and claimed cards on staging are invisible to
+production and safe to throw away.
+
+**The branch must stay persistent.** An ephemeral branch is torn down with the
+git branch it tracks, and comes back with a **different project ref** — a ref
+that is written down in three places: `[remotes.preview].project_id` in
+`config.toml`, the Preview environment variables in Vercel, and the authorized
+redirect URI on the Google OAuth client. All three would break at once, in
+three different ways, none of them saying why. Persistence is what makes the
+ref a constant you are allowed to write down.
+
+It costs a dedicated Micro compute running continuously — roughly **$10/month**,
+which about doubles this project's Supabase bill. Branch compute is **not**
+covered by the spend cap, and compute credits do not apply to it.
+
+### Verifying staging is not talking to production
+
+Worth doing once, after any change to the env vars. `NEXT_PUBLIC_*` is inlined
+into the client bundle, so the served page carries the URL:
+
+```bash
+curl -s https://pub-golf-preview.glyn.dev/join | \
+  grep -o 'https://[a-z]\{20\}\.supabase\.co' | sort -u
+```
+
+Expect exactly `https://xssmjzinaghxjncoezez.supabase.co`, with
+`quncylgcwfiqsjugnvtv` absent. (Behind the Vercel login this needs a
+`x-vercel-protection-bypass` header, or a browser view-source.)
+
+The decisive test: create a round on staging, note its join code, then count
+it in both databases. It must be **1** in the branch project and **0** in
+production. Both halves are needed — the first alone does not rule out a dual
+write.
 
 ## Day-to-day
 
-Push to `main`. CI verifies, migrates, then deploys. Nothing else to do.
+Push to `main` and it goes to production; merge to `preview` to stage
+something first. Vercel builds the app, Supabase applies the migrations,
+neither waits for the other.
 
 Rolling back app code is a Vercel instant rollback to the previous
 deployment. Rolling back a migration is a new forward migration — never edit
