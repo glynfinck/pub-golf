@@ -21,10 +21,23 @@ export default async function setup() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { error } = await admin.from("game_types").select("id").limit(1);
-  if (error) {
+  if (!error) return;
+
+  // Say which of the two it is. These fail identically from here — one clear
+  // error was the whole point of this file — but they are not the same
+  // problem, and calling a missing grant "Supabase is not answering" once cost
+  // an afternoon.
+  if (error.code === "42501") {
     throw new Error(
-      `Local Supabase is not answering at ${url} (${error.message}). Run ` +
-        "`supabase start`, then `supabase db reset` if migrations have moved.",
+      "The service role cannot read public.game_types " +
+        `(${error.message}). This is a table GRANT, not a policy — an RLS ` +
+        "refusal returns no rows and no error. Check that the service_role " +
+        "grants migration has been applied: `supabase db reset`.",
     );
   }
+
+  throw new Error(
+    `Local Supabase is not answering at ${url} (${error.message}). Run ` +
+      "`supabase start`, then `supabase db reset` if migrations have moved.",
+  );
 }

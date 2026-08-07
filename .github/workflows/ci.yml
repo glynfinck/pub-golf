@@ -53,15 +53,35 @@ jobs:
           supabase start
           supabase db reset   # deterministic: re-applies migrations from scratch
 
-      # The service role key is for the e2e suite only — it seeds host sessions
-      # with the admin API, since Google's consent screen can't be driven here.
+      # The service role key is spent two ways: the e2e suite seeds host
+      # sessions with the admin API (Google's consent screen can't be driven
+      # here), and the db suite reads rows back past RLS with it.
+      #
+      # `jq -r` prints the string "null" for a field that isn't there, so a key
+      # that failed to resolve used to end up in .env.local looking perfectly
+      # real and only announced itself much later as a permission error. Each
+      # value is checked here instead, where the log still says which one.
       - name: Point the app at local Supabase
         run: |
           STATUS=$(supabase status -o json)
+          API_URL=$(jq -r '.API_URL // empty' <<<"$STATUS")
+          ANON=$(jq -r '.ANON_KEY // .PUBLISHABLE_KEY // empty' <<<"$STATUS")
+          SERVICE=$(jq -r '.SERVICE_ROLE_KEY // .SECRET_KEY // empty' <<<"$STATUS")
+
+          missing=""
+          [ -n "$API_URL" ] || missing="$missing API_URL"
+          [ -n "$ANON" ]    || missing="$missing ANON_KEY"
+          [ -n "$SERVICE" ] || missing="$missing SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error title=Supabase status is missing keys::supabase status -o json had no:$missing"
+            echo "Fields it did offer: $(jq -r 'keys | join(", ")' <<<"$STATUS")"
+            exit 1
+          fi
+
           {
-            echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL <<<"$STATUS")"
-            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY <<<"$STATUS")"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$STATUS")"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
           } >> .env.local
 
       # RLS is the app's real access control — every server action reaches
