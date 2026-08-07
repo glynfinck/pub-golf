@@ -44,21 +44,26 @@ test("the lobby row keeps its controls inside their frames, on the line", async 
   );
   expect(plusBox!.x).toBeGreaterThanOrEqual(frameBox!.x - 0.5);
 
-  // ---- The leader dots run along the line the standing sits on ----
-  // The dots are painted at the bottom of the leader's box, which rides the
-  // baseline, so that edge and the HOST badge's baseline agree within a few
-  // pixels. Centring the dots in a row a stepper had made tall put them
-  // roughly ten pixels adrift.
+  // ---- The dots ride the name's line, above everything else in the row ----
+  // Asserted structurally rather than by comparing box edges: the first cut
+  // of this test compared the leader's bottom with the HOST badge's, which
+  // is a difference of font metrics between 14px text and a 10px uppercase
+  // badge — 4px on macOS, 5px on CI's Linux fonts, and a number that means
+  // nothing either way. What the bug actually did was let a tall row drag
+  // the dots down level with the handicap stepper, so that is what gets
+  // pinned: the stepper hangs entirely beneath the line the dots run along.
   const lobby = page.getByTestId("lobby-players");
   const leaderBox = await lobby.locator("span.leader").first().boundingBox();
-  const hostBox = await lobby.getByText("HOST").boundingBox();
   expect(leaderBox).not.toBeNull();
+  expect(leaderBox!.y + leaderBox!.height).toBeLessThanOrEqual(frameBox!.y);
+
+  // And the standing shares that line rather than sitting on its own.
+  const hostBox = await lobby.getByText("HOST").boundingBox();
   expect(hostBox).not.toBeNull();
-  expect(
-    Math.abs(
-      leaderBox!.y + leaderBox!.height - (hostBox!.y + hostBox!.height),
-    ),
-  ).toBeLessThanOrEqual(4);
+  const overlap =
+    Math.min(leaderBox!.y + leaderBox!.height, hostBox!.y + hostBox!.height) -
+    Math.max(leaderBox!.y, hostBox!.y);
+  expect(overlap).toBeGreaterThan(0);
 
   // ---- And the row still works ----
   await clickSettled(page, "tee-off");
