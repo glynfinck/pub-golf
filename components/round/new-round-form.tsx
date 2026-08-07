@@ -41,14 +41,8 @@ const FORMATS = [
   { id: "scramble", label: "Scramble" },
 ] as const;
 
-/** First-tee choices. Nobody tees off at 7:23 — chips beat a wheel. */
-const TEE_TIMES = [
-  { label: "6pm", minutes: 18 * 60 },
-  { label: "6:30", minutes: 18 * 60 + 30 },
-  { label: "7pm", minutes: 19 * 60 },
-  { label: "7:30", minutes: 19 * 60 + 30 },
-  { label: "8pm", minutes: 20 * 60 },
-];
+/** The tee-time grain. Nobody tees off at 7:23 — quarter hours are enough. */
+const TEE_MINUTE_STEP = 15;
 
 /** The price ladder a tap walks a penalty through. */
 const PRICE_LADDER = [1, 2, 3, 5, 10, 20];
@@ -373,17 +367,38 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
                     selected={teeDate ?? undefined}
                     onSelect={(day) => setTeeDate(day ?? null)}
                   />
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {TEE_TIMES.map((time) => (
-                      <Chip
-                        key={time.label}
-                        className="min-h-9 px-3"
-                        active={teeMinutes === time.minutes}
-                        onClick={() => setTeeMinutes(time.minutes)}
-                      >
-                        {time.label}
-                      </Chip>
-                    ))}
+                  {/* Any time of day, on the quarter hour: an hour stepper
+                      and a minutes stepper, not a wheel. */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <Stepper
+                      className="flex-1"
+                      value={Math.floor(teeMinutes / 60)}
+                      onChange={(hour) =>
+                        setTeeMinutes(hour * 60 + (teeMinutes % 60))
+                      }
+                      max={23}
+                      label="tee-off hour"
+                      decrementLabel="Tee off an hour earlier"
+                      incrementLabel="Tee off an hour later"
+                      format={(hour) => clockTime12(hour * 60).replace(":00", "")}
+                    />
+                    <Stepper
+                      className="flex-1"
+                      value={teeMinutes % 60}
+                      onChange={(minute) =>
+                        setTeeMinutes(
+                          Math.floor(teeMinutes / 60) * 60 + minute,
+                        )
+                      }
+                      max={60 - TEE_MINUTE_STEP}
+                      step={TEE_MINUTE_STEP}
+                      label="tee-off minutes"
+                      decrementLabel="Tee off a quarter hour earlier"
+                      incrementLabel="Tee off a quarter hour later"
+                      format={(minute) =>
+                        `:${minute.toString().padStart(2, "0")}`
+                      }
+                    />
                   </div>
                   <div className="mt-2 flex justify-between gap-2">
                     <Button
