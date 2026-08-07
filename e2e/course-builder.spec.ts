@@ -65,8 +65,11 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
 
   // The local rule is on hole 1's sheet, under its own heading, alongside the
   // house shortcuts — and it followed the course into the round's snapshot.
+  // Scoped to the sheet: the play screen behind it carries a presence line
+  // reading "1 OF 1 ON THIS HOLE", which a loose text match also finds.
+  const sheet = page.getByRole("dialog");
   await page.getByRole("button", { name: /penalties/i }).click();
-  await expect(page.getByText(/on this hole/i)).toBeVisible();
+  await expect(sheet.getByText("On this hole", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", {
       name: /call drinking with your right hand \+3/i,
@@ -87,7 +90,7 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
       name: /call drinking with your right hand \+3/i,
     }),
   ).toBeHidden();
-  await expect(page.getByText(/on this hole/i)).toBeHidden();
+  await expect(sheet.getByText("On this hole", { exact: true })).toBeHidden();
 });
 
 test("pub search returns real venues when a Places key is configured", async ({

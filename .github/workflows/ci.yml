@@ -104,12 +104,19 @@ jobs:
       - name: E2E tests (Playwright)
         run: npm run test:e2e
 
+      # test-results/ as well as the report: the dot reporter CI uses never
+      # writes playwright-report/, so this step has only ever uploaded nothing.
+      # test-results/ holds the per-failure error-context.md — the page
+      # snapshot at the moment of the failure, including any error toast, which
+      # is the one thing the log cannot tell you.
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
 
       - name: Stop Supabase

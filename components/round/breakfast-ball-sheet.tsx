@@ -1,7 +1,5 @@
 "use client";
 
-import { useTransition } from "react";
-import { toast } from "sonner";
 import {
   Sheet,
   SheetContent,
@@ -9,18 +7,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { takeBreakfastBall } from "@/lib/actions/rounds";
 import { countWord } from "@/lib/format";
 
 /**
  * Confirming a breakfast ball. This is the one control on the play screen
  * that destroys something — the swigs already on the hole — so it says the
  * number out loud before it wipes it, and the cancel is the wide target.
+ *
+ * Presentational on purpose: the taking itself lives in PlayView, which owns
+ * the swig debounce and has to settle it before the hole is wiped.
  */
 export function BreakfastBallSheet({
   open,
   onOpenChange,
-  code,
+  onConfirm,
+  pending,
   holeNumber,
   swigs,
   strokes,
@@ -28,7 +29,8 @@ export function BreakfastBallSheet({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  code: string;
+  onConfirm: () => void;
+  pending: boolean;
   holeNumber: number;
   /** What's on the hole right now, and about to be wiped. */
   swigs: number;
@@ -36,19 +38,6 @@ export function BreakfastBallSheet({
   /** Breakfast balls the player has left, this one included. */
   left: number;
 }) {
-  const [pending, startTransition] = useTransition();
-
-  function take() {
-    startTransition(async () => {
-      const result = await takeBreakfastBall(code, holeNumber);
-      if (result.error) toast.error(result.error);
-      else {
-        onOpenChange(false);
-        toast("Breakfast ball taken — start the hole again.");
-      }
-    });
-  }
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
@@ -71,7 +60,7 @@ export function BreakfastBallSheet({
           <button
             type="button"
             disabled={pending}
-            onClick={take}
+            onClick={onConfirm}
             data-testid="take-breakfast-ball"
             className="flex min-h-12 items-center justify-center rounded-xl border-[1.5px] border-marker bg-marker/10 text-sm font-bold text-marker disabled:opacity-40"
           >
