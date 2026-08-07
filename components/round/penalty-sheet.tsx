@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useTransition } from "react";
+import { Fragment, useOptimistic } from "react";
 import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { LocalRulesHeading } from "@/components/round/local-rules-heading";
@@ -11,15 +11,27 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useAction } from "@/hooks/use-action";
 import { addPenalty, removeOwnPenalty } from "@/lib/actions/rounds";
 import type { PenaltyOption } from "@/lib/penalty-options";
 import type { Tables } from "@/types/supabase-helpers";
 import { cn } from "@/lib/utils";
 
+/** The ×N counts per reason, with the taps not yet on the server counted
+ * in — the number moves the moment the thumb lands. */
+function reasonCounts(rows: Tables<"penalties">[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.reason] = (counts[row.reason] ?? 0) + 1;
+  return counts;
+}
+
 /**
  * The penalties bottom sheet, self mode: call a penalty on your own card,
  * or undo a mis-tap. Every target is a full-size 44px circle — this is
  * the drunkest interaction in the app.
+ *
+ * The counts are optimistic; the undo only arms once the row it would
+ * delete has really landed, so a mis-tap can never chase a ghost.
  */
 export function PenaltySheet({
   open,
@@ -37,26 +49,35 @@ export function PenaltySheet({
   /** The viewer's penalty rows for this hole. */
   myPenalties: Tables<"penalties">[];
 }) {
-  const [pending, startTransition] = useTransition();
+  const { run } = useAction();
+  const [counts, bump] = useOptimistic(
+    reasonCounts(myPenalties),
+    (state: Record<string, number>, delta: { reason: string; by: 1 | -1 }) => ({
+      ...state,
+      [delta.reason]: Math.max(0, (state[delta.reason] ?? 0) + delta.by),
+    }),
+  );
 
   function call(option: PenaltyOption) {
-    startTransition(async () => {
+    run(async () => {
+      bump({ reason: option.reason, by: 1 });
       const result = await addPenalty(
         code,
         holeNumber,
         option.strokes,
         option.reason,
       );
-      if (result.error) toast.error(result.error);
-      else toast(`${option.label} — it's on the card.`);
+      if (!result.error) toast(`${option.label} — it's on the card.`);
+      return result;
     });
   }
 
   function undo(option: PenaltyOption) {
-    startTransition(async () => {
+    run(async () => {
+      bump({ reason: option.reason, by: -1 });
       const result = await removeOwnPenalty(code, holeNumber, option.reason);
-      if (result.error) toast.error(result.error);
-      else toast(`${option.label} taken off the card.`);
+      if (!result.error) toast(`${option.label} taken off the card.`);
+      return result;
     });
   }
 
@@ -73,7 +94,10 @@ export function PenaltySheet({
         </SheetHeader>
         <div className="flex flex-col px-4 pb-6">
           {options.map((option, index) => {
-            const count = myPenalties.filter(
+            const count = counts[option.reason] ?? 0;
+            // Undo arms on the rows that have really landed — an optimistic
+            // count has nothing on the server to delete yet.
+            const landed = myPenalties.filter(
               (row) => row.reason === option.reason,
             ).length;
             const opensLocalRules =
@@ -102,7 +126,7 @@ export function PenaltySheet({
                   <button
                     type="button"
                     aria-label={`Undo ${option.label}`}
-                    disabled={pending || count === 0}
+                    disabled={landed === 0}
                     onClick={() => undo(option)}
                     className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard/60 text-hazard disabled:opacity-25"
                   >
@@ -111,7 +135,6 @@ export function PenaltySheet({
                   <button
                     type="button"
                     aria-label={`Call ${option.label}`}
-                    disabled={pending}
                     onClick={() => call(option)}
                     className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard bg-hazard/10 text-hazard disabled:opacity-25"
                   >

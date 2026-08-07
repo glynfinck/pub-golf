@@ -10,6 +10,24 @@
 /** Under two minutes turns the hole red. */
 export const URGENT_MS = 120_000;
 
+/**
+ * The waiting thresholds. A tap is acknowledged instantly by its label; the
+ * busy furniture (the putt, the masthead sweep) waits until the wait has
+ * earned it, then holds long enough that a 420ms action never flashes it.
+ */
+export const BUSY_DELAY_MS = 400;
+export const BUSY_MIN_VISIBLE_MS = 300;
+
+/** How long until the busy mark may come up; 0 once it is due. */
+export function busyDelayRemaining(startedAt: number, now: number): number {
+  return Math.max(0, startedAt + BUSY_DELAY_MS - now);
+}
+
+/** How long a shown busy mark must stay up, so it never flashes. */
+export function busyHoldRemaining(shownAt: number, now: number): number {
+  return Math.max(0, shownAt + BUSY_MIN_VISIBLE_MS - now);
+}
+
 /** Whole seconds left, rounding up so a countdown never shows 0:00 early. */
 export function remainingSeconds(remainingMs: number | null): number | null {
   return remainingMs === null ? null : Math.ceil(remainingMs / 1000);

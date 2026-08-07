@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Egg, Flag, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Screen } from "@/components/shell/screen";
@@ -16,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { Medallion } from "@/components/ui/medallion";
+import { PendingLabel } from "@/components/ui/pending-label";
 import { RuleDouble } from "@/components/ui/rule";
+import { useAction } from "@/hooks/use-action";
 import { usePresence } from "@/hooks/use-presence";
 import {
   advanceHole,
@@ -34,7 +36,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, scores, penalties, me } = bundle;
   useLiveRound(round.id);
   const { present, synced } = usePresence(round.id, me?.id ?? null);
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
   const [breakfastBallOpen, setBreakfastBallOpen] = useState(false);
 
@@ -102,16 +104,13 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
    * that has, and only then reset.
    */
   function takeHalfPint() {
-    startTransition(async () => {
+    run(async () => {
       clearTimeout(debounce.current);
       await inFlight.current;
       syncing.current = false;
 
       const result = await takeBreakfastBall(round.code, round.current_hole);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
+      if (result.error) return result;
       setSwigs(0);
       lastServer.current = 0;
       setBreakfastBallOpen(false);
@@ -120,10 +119,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   }
 
   function holeOut() {
-    startTransition(async () => {
-      const result = await advanceHole(round.code);
-      if (result.error) toast.error(result.error);
-    });
+    run(() => advanceHole(round.code));
   }
 
   const ruleset = readRuleset(round.ruleset);
@@ -159,7 +155,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
   return (
     <Screen>
-      <RuleDouble />
+      <RuleDouble busy={busy} />
       <HoleStrip
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}
@@ -235,16 +231,18 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
                 type="button"
                 disabled={pending}
                 data-testid="reset-timer"
-                onClick={() =>
-                  startTransition(async () => {
-                    const result = await resetHoleTimer(round.code);
-                    if (result.error) toast.error(result.error);
-                    else toast("Timer re-armed on every card.");
-                  })
-                }
+                // No success toast: the ring sweeping back to full IS the
+                // confirmation, and it's the one every player gets.
+                onClick={() => run(() => resetHoleTimer(round.code))}
                 className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-border text-xs font-bold disabled:opacity-40"
               >
-                Reset timer
+                <PendingLabel
+                  pending={pending}
+                  busy={busy}
+                  putt={false}
+                  label="Reset timer"
+                  pendingLabel="Re-arming…"
+                />
               </button>
             ) : null}
             <Button
@@ -254,7 +252,17 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
               onClick={holeOut}
               data-testid="hole-out"
             >
-              Hole out
+              <PendingLabel
+                pending={pending}
+                busy={busy}
+                putt={false}
+                label="Hole out"
+                pendingLabel={
+                  round.current_hole >= holes.length
+                    ? "Filing the card…"
+                    : `Filing hole ${round.current_hole}…`
+                }
+              />
             </Button>
           </div>
         ) : (
@@ -332,6 +340,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         onOpenChange={setBreakfastBallOpen}
         onConfirm={takeHalfPint}
         pending={pending}
+        busy={busy}
         holeNumber={round.current_hole}
         swigs={swigs}
         strokes={ruleset.breakfastBallStrokes}

@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
+import { PendingLabel } from "@/components/ui/pending-label";
 import { RuleDouble } from "@/components/ui/rule";
 import { usePresence } from "@/hooks/use-presence";
 import { Stepper } from "@/components/ui/stepper";
+import { useAction } from "@/hooks/use-action";
+import { useDraftFigures } from "@/hooks/use-draft-figures";
 import {
   setPlayerHandicap,
   setPlayerRole,
@@ -22,9 +25,16 @@ import { cn } from "@/lib/utils";
 export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, me } = bundle;
   useLiveRound(round.id);
+  const router = useRouter();
   const { present, synced } = usePresence(round.id, me?.id ?? null);
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [copied, setCopied] = useState(false);
+
+  // Tee off ends with a navigation to /play that refetches everything —
+  // warm that route while the lobby idles so the arrival is out of cache.
+  useEffect(() => {
+    router.prefetch(`/round/${round.code}/play`);
+  }, [router, round.code]);
 
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
   const isHost = me?.role === "host";
@@ -36,6 +46,16 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const localRuleHoles = holes
     .filter((hole) => readHolePenalties(hole.penalties).length > 0)
     .map((hole) => hole.number);
+
+  // Optimistic handicaps: the figure moves on the host's tap, and a
+  // "tap-tap" to two becomes one write.
+  const handicaps = useDraftFigures({
+    server: Object.fromEntries(
+      players.map((player) => [player.id, player.handicap]),
+    ),
+    write: (playerId, value) =>
+      setPlayerHandicap(round.code, playerId, value),
+  });
 
   function share() {
     const url = `${window.location.origin}/round/${round.code}`;
@@ -53,34 +73,23 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   }
 
   function teeOff() {
-    startTransition(async () => {
-      const result = await startRound(round.code);
-      if (result.error) toast.error(result.error);
-    });
+    run(() => startRound(round.code));
   }
 
   function toggleCaddy(playerId: string, currentRole: string) {
     if (!isHost) return;
-    startTransition(async () => {
-      const result = await setPlayerRole(
+    run(() =>
+      setPlayerRole(
         round.code,
         playerId,
         currentRole === "caddy" ? "player" : "caddy",
-      );
-      if (result.error) toast.error(result.error);
-    });
-  }
-
-  function changeHandicap(playerId: string, next: number) {
-    startTransition(async () => {
-      const result = await setPlayerHandicap(round.code, playerId, next);
-      if (result.error) toast.error(result.error);
-    });
+      ),
+    );
   }
 
   return (
     <Screen>
-      <RuleDouble />
+      <RuleDouble busy={busy} />
       <ScreenHeader eyebrow={`Lobby · ${round.name}`} title="The first tee" />
 
       {/* The letterpress plate: entry code, optically centered against its
@@ -125,13 +134,19 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
               {ruleset.handicaps ? (
                 isOfficial ? (
                   <span className="mt-1 flex items-center gap-1.5">
-                    <span className="eyebrow">Hcp</span>
+                    <span
+                      className={cn(
+                        "eyebrow",
+                        handicaps.settling(player.id) && "text-marker",
+                      )}
+                    >
+                      Hcp
+                    </span>
                     <Stepper
                       className="min-h-9 w-24 px-1"
-                      value={player.handicap}
-                      onChange={(next) => changeHandicap(player.id, next)}
+                      value={handicaps.valueOf(player.id)}
+                      onChange={(next) => handicaps.set(player.id, next)}
                       max={MAX_HANDICAP}
-                      disabled={pending}
                       decrementLabel={`Lower ${player.display_name}'s handicap`}
                       incrementLabel={`Raise ${player.display_name}'s handicap`}
                       label="handicap"
@@ -235,7 +250,12 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
           data-testid="tee-off"
           className="mt-auto"
         >
-          {pending ? "Counting everyone in…" : "Tee off — all cards go live"}
+          <PendingLabel
+            pending={pending}
+            busy={busy}
+            label="Tee off — all cards go live"
+            pendingLabel="Counting everyone in"
+          />
         </Button>
       ) : (
         <p className="mt-auto text-center text-sm text-muted-foreground">

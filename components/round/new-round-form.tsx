@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { toast } from "sonner";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { PendingLabel } from "@/components/ui/pending-label";
 import { RuleDouble } from "@/components/ui/rule";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
+import { useAction } from "@/hooks/use-action";
 import { createRound } from "@/lib/actions/rounds";
 import type { MyCourse } from "@/lib/data/courses";
 import {
@@ -35,7 +36,7 @@ const TOGGLES = [
 ] as const;
 
 export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [name, setName] = useState("The Glyn Invitational XXX");
   const [holes, setHoles] = useState(9);
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
   const selectedCourse = courses.find((course) => course.id === courseId);
 
   function submit() {
-    startTransition(async () => {
+    run(async () => {
       try {
         await createRound({
           name,
@@ -75,8 +76,8 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
       } catch (error) {
         // createRound redirects on success; only real failures land here.
         if (error instanceof Error && !error.message.includes("NEXT_REDIRECT"))
-          toast.error(error.message);
-        else throw error;
+          return { error: error.message };
+        throw error;
       }
     });
   }
@@ -221,13 +222,16 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
       </div>
 
       <Button onClick={submit} disabled={pending || !name.trim()}>
-        {pending
-          ? "Setting up the course…"
-          : `Create round · ${
-              selectedCourse
-                ? `${selectedCourse.hole_count} holes on ${selectedCourse.name}`
-                : `${holes} holes on the Invitational course`
-            }`}
+        <PendingLabel
+          pending={pending}
+          busy={busy}
+          label={`Create round · ${
+            selectedCourse
+              ? `${selectedCourse.hole_count} holes on ${selectedCourse.name}`
+              : `${holes} holes on the Invitational course`
+          }`}
+          pendingLabel="Setting up the course"
+        />
       </Button>
     </Screen>
   );

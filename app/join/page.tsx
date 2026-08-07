@@ -7,6 +7,8 @@ import { Screen } from "@/components/shell/screen";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { PendingLabel } from "@/components/ui/pending-label";
+import { useAction } from "@/hooks/use-action";
 import { joinRound } from "@/lib/actions/rounds";
 import { createClient } from "@/lib/supabase/client";
 
@@ -29,7 +31,7 @@ function JoinForm() {
   );
   const [name, setName] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { run, pending, busy } = useAction();
 
   // Live round preview once six characters are in; while the code is
   // short the stale preview is simply not rendered.
@@ -47,7 +49,7 @@ function JoinForm() {
     };
   }, [code]);
 
-  async function handleSubmit(event: React.FormEvent) {
+  function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (code.length < CODE_LENGTH) {
       toast.error("The round code is six characters.");
@@ -57,32 +59,25 @@ function JoinForm() {
       toast.error("Put a name on the card first.");
       return;
     }
-    setBusy(true);
-    const supabase = createClient();
+    run(async () => {
+      const supabase = createClient();
 
-    // Guests play without an account: an anonymous session gives RLS an
-    // auth.uid() and can be upgraded to a real account later.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      const { error } = await supabase.auth.signInAnonymously({
-        options: { data: { display_name: name.trim() } },
-      });
-      if (error) {
-        setBusy(false);
-        toast.error(error.message);
-        return;
+      // Guests play without an account: an anonymous session gives RLS an
+      // auth.uid() and can be upgraded to a real account later.
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        const { error } = await supabase.auth.signInAnonymously({
+          options: { data: { display_name: name.trim() } },
+        });
+        if (error) return { error: error.message };
       }
-    }
 
-    const result = await joinRound(code, name);
-    setBusy(false);
-    if (result.error) {
-      toast.error(result.error);
-      return;
-    }
-    router.push(`/round/${result.code}`);
+      const result = await joinRound(code, name);
+      if (result.error) return { error: result.error };
+      router.push(`/round/${result.code}`);
+    });
   }
 
   return (
@@ -146,8 +141,13 @@ function JoinForm() {
           </Card>
         ) : null}
 
-        <Button type="submit" disabled={busy}>
-          {busy ? "Taking you to the tee…" : "Join the round"}
+        <Button type="submit" disabled={pending}>
+          <PendingLabel
+            pending={pending}
+            busy={busy}
+            label="Join the round"
+            pendingLabel="Taking you to the tee"
+          />
         </Button>
       </form>
 

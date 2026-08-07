@@ -1,15 +1,15 @@
 "use client";
 
-import { useTransition } from "react";
 import { ArrowUpRight } from "lucide-react";
-import { toast } from "sonner";
 import { Screen } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
+import { Putt } from "@/components/ui/putt";
 import { RuleDouble } from "@/components/ui/rule";
+import { useAction } from "@/hooks/use-action";
 import { useCountdown } from "@/hooks/use-countdown";
 import { usePresence } from "@/hooks/use-presence";
 import { teeUpHole } from "@/lib/actions/rounds";
@@ -48,7 +48,7 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, me } = bundle;
   useLiveRound(round.id);
   const { present, synced } = usePresence(round.id, me?.id ?? null);
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
 
   const nextHole =
     holes.find((h) => h.number === round.current_hole) ?? holes[0];
@@ -59,15 +59,12 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
     : null;
 
   function teeUp() {
-    startTransition(async () => {
-      const result = await teeUpHole(round.code);
-      if (result.error) toast.error(result.error);
-    });
+    run(() => teeUpHole(round.code));
   }
 
   return (
     <Screen data-testid="walking-view">
-      <RuleDouble />
+      <RuleDouble busy={busy} />
       <HoleStrip
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}
@@ -141,10 +138,24 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
             data-testid="tee-up"
             className={cn("min-h-14 flex-col gap-0")}
           >
-            <span>Tee up hole {nextHole.number}</span>
-            <span className="text-[9px] font-extrabold tracking-[0.16em] opacity-70">
-              ARMS EVERY TIMER
-            </span>
+            {pending ? (
+              <>
+                <span className="inline-flex items-baseline gap-2">
+                  Calling everyone to the tee
+                  <Putt className={cn(!busy && "invisible")} />
+                </span>
+                <span className="text-[9px] font-extrabold tracking-[0.16em] opacity-70">
+                  ARMING ON EVERY PHONE
+                </span>
+              </>
+            ) : (
+              <>
+                <span>Tee up hole {nextHole.number}</span>
+                <span className="text-[9px] font-extrabold tracking-[0.16em] opacity-70">
+                  ARMS EVERY TIMER
+                </span>
+              </>
+            )}
           </Button>
         ) : (
           <p className="pb-2 text-center text-[11px] text-muted-foreground">

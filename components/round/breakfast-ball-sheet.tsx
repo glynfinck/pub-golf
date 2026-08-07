@@ -1,5 +1,6 @@
 "use client";
 
+import { PendingLabel } from "@/components/ui/pending-label";
 import {
   Sheet,
   SheetContent,
@@ -22,6 +23,7 @@ export function BreakfastBallSheet({
   onOpenChange,
   onConfirm,
   pending,
+  busy,
   holeNumber,
   swigs,
   strokes,
@@ -31,6 +33,8 @@ export function BreakfastBallSheet({
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   pending: boolean;
+  /** The wait has earned the putt (useAction's delayed flag). */
+  busy: boolean;
   holeNumber: number;
   /** What's on the hole right now, and about to be wiped. */
   swigs: number;
@@ -64,7 +68,12 @@ export function BreakfastBallSheet({
             data-testid="take-breakfast-ball"
             className="flex min-h-12 items-center justify-center rounded-xl border-[1.5px] border-marker bg-marker/10 text-sm font-bold text-marker disabled:opacity-40"
           >
-            {pending ? "Pouring the half…" : "Take it — wipe the hole"}
+            <PendingLabel
+              pending={pending}
+              busy={busy}
+              label="Take it — wipe the hole"
+              pendingLabel="Pouring the half"
+            />
           </button>
           <button
             type="button"

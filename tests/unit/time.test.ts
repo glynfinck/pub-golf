@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BUSY_DELAY_MS,
+  BUSY_MIN_VISIBLE_MS,
+  busyDelayRemaining,
+  busyHoldRemaining,
   deadlineFrom,
   formatClock,
   isUrgent,
@@ -83,6 +87,32 @@ describe("ringFraction", () => {
   it("clamps at both ends", () => {
     expect(ringFraction(90_000, 60_000)).toBe(1);
     expect(ringFraction(-1_000, 60_000)).toBe(0);
+  });
+});
+
+describe("busy thresholds", () => {
+  const T0 = 1_000_000;
+
+  it("holds the furniture back until the wait has earned it", () => {
+    expect(busyDelayRemaining(T0, T0)).toBe(BUSY_DELAY_MS);
+    expect(busyDelayRemaining(T0, T0 + 399)).toBe(1);
+  });
+
+  it("shows it exactly at the threshold, never late-negative", () => {
+    expect(busyDelayRemaining(T0, T0 + BUSY_DELAY_MS)).toBe(0);
+    expect(busyDelayRemaining(T0, T0 + 5_000)).toBe(0);
+  });
+
+  it("once shown, holds long enough not to flash", () => {
+    // A 420ms action shows the mark at 400 and must keep it to 700.
+    expect(busyHoldRemaining(T0 + BUSY_DELAY_MS, T0 + 420)).toBe(
+      BUSY_MIN_VISIBLE_MS - 20,
+    );
+  });
+
+  it("costs nothing once the minimum has passed", () => {
+    expect(busyHoldRemaining(T0, T0 + BUSY_MIN_VISIBLE_MS)).toBe(0);
+    expect(busyHoldRemaining(T0, T0 + 10_000)).toBe(0);
   });
 });
 

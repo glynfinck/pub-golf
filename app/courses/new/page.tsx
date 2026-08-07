@@ -1,14 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { PendingLabel } from "@/components/ui/pending-label";
 import { RuleDouble } from "@/components/ui/rule";
+import { useAction } from "@/hooks/use-action";
 import { createCourse } from "@/lib/actions/courses";
 
 /** The course builder: search Google for the pubs, dress each hole with
@@ -16,7 +18,7 @@ import { createCourse } from "@/lib/actions/courses";
  * night. */
 export default function NewCoursePage() {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [name, setName] = useState("");
   const [holes, setHoles] = useState<DraftHole[]>([]);
 
@@ -35,7 +37,7 @@ export default function NewCoursePage() {
   }
 
   function save() {
-    startTransition(async () => {
+    run(async () => {
       const result = await createCourse({
         name,
         holes: holes.map((hole) => ({
@@ -51,11 +53,9 @@ export default function NewCoursePage() {
           lng: hole.lng,
         })),
       });
-      if (result.error) toast.error(result.error);
-      else {
-        toast.success("Course saved to the book.");
-        router.push("/courses");
-      }
+      if (result.error) return result;
+      toast.success("Course saved to the book.");
+      router.push("/courses");
     });
   }
 
@@ -108,9 +108,12 @@ export default function NewCoursePage() {
         disabled={pending || !name.trim() || holes.length === 0}
         className="mt-auto"
       >
-        {pending
-          ? "Filing the course…"
-          : `Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`}
+        <PendingLabel
+          pending={pending}
+          busy={busy}
+          label={`Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`}
+          pendingLabel="Filing the course"
+        />
       </Button>
     </Screen>
   );
