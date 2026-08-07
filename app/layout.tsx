@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { APP_NAME, FLAGSHIP_GAME, SITE_URL, TAGLINE } from "@/lib/config";
+import { APP_NAME, FLAGSHIP_GAME, TAGLINE } from "@/lib/config";
+import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
 
 export const metadata: Metadata = {
