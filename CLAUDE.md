@@ -27,9 +27,10 @@ is this Next version's middleware convention (see the `home` sibling repo).
   body) — no `Date.now()` in render; `hooks/use-countdown.ts` is the
   sanctioned timer pattern (rAF before setInterval, null-initial state).
   For hydration guards use `useSyncExternalStore`, not a mounted effect.
-- Dark ("Midnight Invitational") is the default theme; cream is the light
-  theme, and `.theme-cream` re-asserts it inside dark subtrees (the results
-  recap). Engraving utilities: `rule-double`, `leader`, `engraved`.
+- Cream is the default theme (it lives on `:root`, so there is no `.light`
+  class to write); dark ("Midnight Invitational") is the opt-in, and
+  `.theme-cream` re-asserts cream inside dark subtrees (the results recap).
+  Engraving utilities: `rule-double`, `leader`, `engraved`.
 - To-par renders as `−2 / +3 / even` (formatToPar) — never golf's lone "E".
 - The mark is a **pint with a flagstick in it**, and it is artwork rather
   than code: the masters live in `public/brand/` (`icon-dark`, `icon-cream`,
