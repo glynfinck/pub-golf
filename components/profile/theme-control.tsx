@@ -12,8 +12,8 @@ const OPTIONS = [
   { value: "system", label: "Auto" },
 ] as const;
 
-/** Night / Day / Auto segmented control. Night is the house default —
- * the game is played after dark. */
+/** Night / Day / Auto segmented control. Day is the house default — cream
+ * stock, the same as the printed scorecard. */
 export function ThemeControl() {
   const { theme, setTheme } = useTheme();
   // next-themes is undefined on the server; render a neutral shell until
