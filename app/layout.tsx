@@ -1,15 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { APP_NAME, FLAGSHIP_GAME, TAGLINE } from "@/lib/config";
+import { APP_NAME, FLAGSHIP_GAME, SITE_URL, TAGLINE } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  // Open Graph image URLs have to be absolute, so this is load-bearing rather
+  // than decorative: without it every generated card resolves to a relative
+  // path and nothing unfurls.
+  metadataBase: new URL(SITE_URL),
   title: {
     default: `${APP_NAME} — ${FLAGSHIP_GAME}`,
     template: `%s · ${APP_NAME}`,
   },
   description: TAGLINE,
+  openGraph: {
+    siteName: APP_NAME,
+    type: "website",
+    url: "/",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

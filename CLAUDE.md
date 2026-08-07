@@ -31,6 +31,23 @@ is this Next version's middleware convention (see the `home` sibling repo).
   theme, and `.theme-cream` re-asserts it inside dark subtrees (the results
   recap). Engraving utilities: `rule-double`, `leader`, `engraved`.
 - To-par renders as `−2 / +3 / even` (formatToPar) — never golf's lone "E".
+- The house mark (pennant, flagstick, green) has one definition in
+  `lib/mark.ts`. `ParlourMark` inks it with the semantic tokens; the favicon
+  and the generated images take literals, because neither an icon file nor
+  Satori can resolve a `var()`. `app/icon.svg` is the one copy that cannot
+  import it and is pinned to `markSvg(32)` by `tests/unit/mark.test.ts` —
+  regenerate the file rather than hand-editing it.
+- Open Graph cards live in `lib/og.tsx` (mirroring the `home` repo's module)
+  and always render on **cream stock**, whatever the app theme, for the reason
+  the recap card does: what you hand round is printed. Satori draws no
+  `border: double`, no `outline` and no `box-shadow: inset`, so the engraving
+  kit is rebuilt out of stacked divs. It also cannot use a CSS font stack —
+  real TTFs are vendored in `assets/fonts/`.
+- A card route must answer with an image even when its round does not exist;
+  throwing there is a broken preview, not a 404. Round data comes from
+  `get_round_card` (SECURITY DEFINER, anon-executable) because a crawler has
+  no session — deliberately no player names and no scores, since the round
+  routes redirect a signed-out visitor.
 - Zero swigs = the drink never happened. On FILED holes computeStandings
   substitutes par (softSubstituteScoresPar, default) or double par (max
   score) — a 0 never scores as a free under-par hole. The in-progress hole

@@ -514,6 +514,16 @@ export type Database = {
     }
     Functions: {
       generate_round_code: { Args: never; Returns: string }
+      get_round_card: {
+        Args: { join_code: string }
+        Returns: {
+          created_at: string
+          hole_count: number
+          name: string
+          par: number
+          status: string
+        }[]
+      }
       get_round_preview: {
         Args: { join_code: string }
         Returns: {
