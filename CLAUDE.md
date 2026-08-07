@@ -91,7 +91,16 @@ more rules live in triggers for the same reason: `round_players.handicap` is
 officials-only (a player editing their own passes the self policy, so only
 OLD-vs-NEW can tell), and `scores.mulligans` is capped at the round's
 allowance (a count across sibling rows, which WITH CHECK can never see).
-Both raise `42501` so `expectDenied` recognises them. Regenerate types after schema changes:
+A third — `guard_score_hole_window` — is the cheatproofing pass
+(`20260814000000`): non-officials cannot write future holes, cannot lower
+or first-write a filed hole (the substitute stands), cannot lower the last
+hole once the card is filed, and never take a mulligan off their own row;
+increases stay open because the play screen's 400ms debounce means an
+honest write can land just after the caddy files. `penalties.strokes` is
+schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
+retraction follows `called_by`, not whose card it sits on. All raise
+`42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
+is the adversarial suite. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Two hosted environments, both deployed by the platforms rather than from this

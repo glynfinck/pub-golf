@@ -167,10 +167,10 @@ describe("scores and penalties", () => {
       expectDenied(error);
     });
 
-    it("lets a player retract a penalty called on them", async () => {
-      // Documented as open: the delete policy keys on who the penalty is
-      // against, not who called it, so an official's call can be retracted by
-      // its subject. The app's undo depends on this.
+    it("keeps the marker's call out of the subject's reach", async () => {
+      // The delete policy follows called_by since the cheatproofing
+      // migration: your own mis-tap comes back off, the marker's call does
+      // not — its subject retracting it was the quietest cheat on the card.
       const { data } = await adminClient()
         .from("penalties")
         .insert({
@@ -184,6 +184,7 @@ describe("scores and penalties", () => {
         .select("id")
         .single();
 
+      // Filtered, not raised: no error, no rows — the row is the witness.
       const { error } = await player.db
         .from("penalties")
         .delete()
@@ -194,7 +195,7 @@ describe("scores and penalties", () => {
         .from("penalties")
         .select("id", { count: "exact", head: true })
         .eq("id", data!.id);
-      expect(count).toBe(0);
+      expect(count).toBe(1);
     });
   });
 
@@ -268,9 +269,20 @@ describe("mulligans", () => {
     expect(await storedBalls(round.seatOf[player.userId])).toBe(0);
   });
 
+  /** Walk the round on: the hole-window guard scopes a player's writes to
+   * the live hole, so a take on hole N needs the round stood on hole N. */
+  async function advanceTo(hole: number) {
+    const { error } = await adminClient()
+      .from("rounds")
+      .update({ current_hole: hole })
+      .eq("id", round.id);
+    if (error) throw error;
+  }
+
   it("lets a player take one, and take the last one", async () => {
     const seat = round.seatOf[player.userId];
     for (const hole of [1, 2]) {
+      await advanceTo(hole);
       const { error } = await player.db.from("scores").insert({
         round_id: round.id,
         player_id: seat,
@@ -285,11 +297,17 @@ describe("mulligans", () => {
 
   it("refuses the one that would go over the allowance", async () => {
     const seat = round.seatOf[player.userId];
-    await player.db.from("scores").insert([
-      { round_id: round.id, player_id: seat, hole_number: 1, mulligans: 1 },
-      { round_id: round.id, player_id: seat, hole_number: 2, mulligans: 1 },
-    ]);
+    for (const hole of [1, 2]) {
+      await advanceTo(hole);
+      await player.db.from("scores").insert({
+        round_id: round.id,
+        player_id: seat,
+        hole_number: hole,
+        mulligans: 1,
+      });
+    }
 
+    await advanceTo(3);
     const { error } = await player.db.from("scores").insert({
       round_id: round.id,
       player_id: seat,
