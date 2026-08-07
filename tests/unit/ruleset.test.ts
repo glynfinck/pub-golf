@@ -52,7 +52,9 @@ describe("readRuleset — a full ruleset", () => {
     const written = {
       format: "stableford" as const,
       hazards: false,
-      holeTimerMinutes: 20,
+      holeTimerMinutes: 25,
+      minutesPerPub: 25,
+      scheduledTeeOff: "2026-08-15T18:00:00.000Z",
       softSubstituteScoresPar: false,
       penalties: [{ strokes: 3, reason: "Spilling someone else's drink" }],
       handicaps: true,
@@ -114,5 +116,34 @@ describe("readHolePenalties", () => {
     expect(readHolePenalties([])).toEqual([]);
     expect(readHolePenalties(null)).toEqual([]);
     expect(readHolePenalties(undefined)).toEqual([]);
+  });
+});
+
+describe("the schedule on the snapshot", () => {
+  it("reads a round from before the schedule existed as the old fixed pace, unscheduled", () => {
+    const ruleset = readRuleset({ format: "stroke", hazards: true });
+    expect(ruleset.minutesPerPub).toBe(20);
+    expect(ruleset.scheduledTeeOff).toBeNull();
+  });
+
+  it("keeps the pace and the advertised tee a round was created with", () => {
+    const ruleset = readRuleset({
+      minutesPerPub: 25,
+      scheduledTeeOff: "2026-08-15T18:00:00.000Z",
+    });
+    expect(ruleset.minutesPerPub).toBe(25);
+    expect(ruleset.scheduledTeeOff).toBe("2026-08-15T18:00:00.000Z");
+  });
+
+  it("refuses a pace that could not run a round", () => {
+    expect(readRuleset({ minutesPerPub: 0 }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: -5 }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: NaN }).minutesPerPub).toBe(20);
+    expect(readRuleset({ minutesPerPub: "half an hour" }).minutesPerPub).toBe(20);
+  });
+
+  it("reads an empty or non-string tee as unscheduled", () => {
+    expect(readRuleset({ scheduledTeeOff: "" }).scheduledTeeOff).toBeNull();
+    expect(readRuleset({ scheduledTeeOff: 1755280800000 }).scheduledTeeOff).toBeNull();
   });
 });

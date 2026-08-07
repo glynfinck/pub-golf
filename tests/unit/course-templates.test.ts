@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   INVITATIONAL_COURSE,
+  reverseCourse,
   templateForHoleCount,
 } from "@/lib/course-templates";
 
@@ -120,5 +121,69 @@ describe("templateForHoleCount", () => {
     holes[source].penalties[0].strokes = 99;
     expect(holes[source + 9].penalties[0].strokes).not.toBe(99);
     expect(INVITATIONAL_COURSE[source].penalties[0].strokes).not.toBe(99);
+  });
+});
+
+describe("reverseCourse", () => {
+  it("plays the pubs back down the card, renumbered 1..N", () => {
+    const reversed = reverseCourse(templateForHoleCount(9));
+    expect(reversed.map((hole) => hole.venue_name)).toEqual(
+      [...INVITATIONAL_COURSE].reverse().map((hole) => hole.venue_name),
+    );
+    expect(reversed.map((hole) => hole.number)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+  });
+
+  it("keeps par, drink and local rules with their pub", () => {
+    const reversed = reverseCourse(templateForHoleCount(9));
+    // The printed 6th — the Auld Shillelagh and its water hazard — is now
+    // the 4th, rule and all.
+    const shillelagh = reversed.find(
+      (hole) => hole.venue_name === "The Auld Shillelagh",
+    );
+    expect(shillelagh?.number).toBe(4);
+    expect(shillelagh?.par).toBe(6);
+    expect(shillelagh?.penalties).toEqual([
+      { strokes: 3, reason: "Using the toilet on a water hazard" },
+    ]);
+  });
+
+  it("walks the same legs the other way", () => {
+    // A walk is the same in either direction and lives on the earlier hole
+    // of its pair — so the reversed card's walks are the original list
+    // reversed and shifted one pub along, ending with nowhere to walk.
+    const reversed = reverseCourse(templateForHoleCount(9));
+    const originalWalks = INVITATIONAL_COURSE.map(
+      (hole) => hole.walk_minutes_to_next,
+    );
+    expect(reversed.map((hole) => hole.walk_minutes_to_next)).toEqual([
+      2, 23, 13, 22, 7, 14, 12, 8, null,
+    ]);
+    // Same set of legs, so the 19th-hole estimate is direction-blind.
+    expect(
+      reversed.reduce((sum, hole) => sum + (hole.walk_minutes_to_next ?? 0), 0),
+    ).toBe(originalWalks.reduce((sum: number, walk) => sum + (walk ?? 0), 0));
+  });
+
+  it("does not touch the card it was handed", () => {
+    const original = templateForHoleCount(9);
+    const before = original.map((hole) => hole.venue_name);
+    reverseCourse(original);
+    expect(original.map((hole) => hole.venue_name)).toEqual(before);
+    expect(original.map((hole) => hole.number)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+  });
+
+  it("reverses a two-pub course without inventing a walk", () => {
+    const reversed = reverseCourse([
+      { number: 1, walk_minutes_to_next: 8 },
+      { number: 2, walk_minutes_to_next: null },
+    ]);
+    expect(reversed).toEqual([
+      { number: 1, walk_minutes_to_next: 8 },
+      { number: 2, walk_minutes_to_next: null },
+    ]);
   });
 });

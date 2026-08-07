@@ -5,11 +5,15 @@ import {
   BUSY_MIN_VISIBLE_MS,
   busyDelayRemaining,
   busyHoldRemaining,
+  clockTime12,
   deadlineFrom,
+  estimatedFinishMs,
   formatClock,
+  formatDuration,
   isUrgent,
   remainingSeconds,
   ringFraction,
+  roundMinutes,
   spokenClock,
 } from "@/lib/time";
 
@@ -127,5 +131,47 @@ describe("deadlineFrom", () => {
     expect(deadlineFrom(NOON, null)).toBeNull();
     expect(deadlineFrom(NOON, undefined)).toBeNull();
     expect(deadlineFrom(NOON, 0)).toBeNull();
+  });
+});
+
+describe("the 19th-hole estimate", () => {
+  it("adds the pubs at pace to the walks between them", () => {
+    // The printed Invitational: 9 pubs, 101 minutes of walking.
+    expect(roundMinutes(9, 20, 101)).toBe(281);
+    expect(roundMinutes(2, 15, 8)).toBe(38);
+  });
+
+  it("lands the finish that many minutes past the tee", () => {
+    const NOON = Date.UTC(2026, 0, 1, 12, 0, 0);
+    expect(estimatedFinishMs(NOON, 90)).toBe(NOON + 90 * 60_000);
+  });
+});
+
+describe("formatDuration", () => {
+  it("reads as hours and minutes, dropping what is zero", () => {
+    expect(formatDuration(235)).toBe("3h 55m");
+    expect(formatDuration(120)).toBe("2h");
+    expect(formatDuration(55)).toBe("55m");
+  });
+
+  it("never runs negative and rounds stray fractions", () => {
+    expect(formatDuration(-10)).toBe("0m");
+    expect(formatDuration(90.4)).toBe("1h 30m");
+  });
+});
+
+describe("clockTime12", () => {
+  it("prints the tee times the way the card says them", () => {
+    expect(clockTime12(19 * 60)).toBe("7:00pm");
+    expect(clockTime12(18 * 60 + 30)).toBe("6:30pm");
+  });
+
+  it("handles noon and midnight without a 0 o'clock", () => {
+    expect(clockTime12(0)).toBe("12:00am");
+    expect(clockTime12(12 * 60)).toBe("12:00pm");
+  });
+
+  it("wraps a finish past midnight — its own warning", () => {
+    expect(clockTime12(24 * 60 + 40)).toBe("12:40am");
   });
 });

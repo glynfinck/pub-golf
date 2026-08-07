@@ -30,6 +30,25 @@ export const INVITATIONAL_COURSE: TemplateHole[] = [
   { number: 9, venue_name: "The Faltering Fullback", drink: "Pint of your choosing", par: 5, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: null },
 ];
 
+/**
+ * The same pubs, walked the other way — the 19th becomes the 1st tee.
+ *
+ * Everything a hole owns (par, drink, hazard, local rules) stays with its
+ * pub; only the numbers and the walks move. A walk is the same leg in either
+ * direction, and it is stored on the EARLIER hole of its pair — which, after
+ * reversing, is the next element along. The new last hole walks nowhere.
+ */
+export function reverseCourse<
+  T extends { number: number; walk_minutes_to_next: number | null },
+>(holes: T[]): T[] {
+  const reversed = [...holes].reverse();
+  return reversed.map((hole, index) => ({
+    ...hole,
+    number: index + 1,
+    walk_minutes_to_next: reversed[index + 1]?.walk_minutes_to_next ?? null,
+  }));
+}
+
 /** Trim or repeat the template to the requested hole count. */
 export function templateForHoleCount(count: number): TemplateHole[] {
   const holes: TemplateHole[] = [];

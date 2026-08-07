@@ -13,6 +13,7 @@ export function Stepper({
   onChange,
   min = 0,
   max = 99,
+  step = 1,
   label,
   decrementLabel,
   incrementLabel,
@@ -25,6 +26,8 @@ export function Stepper({
   onChange: (next: number) => void;
   min?: number;
   max?: number;
+  /** How far one tap moves the figure — 5 for minutes, 1 for counts. */
+  step?: number;
   /** Used to build the button aria-labels, e.g. "breakfast balls". */
   label: string;
   decrementLabel?: string;
@@ -47,7 +50,7 @@ export function Stepper({
         type="button"
         aria-label={decrementLabel ?? `Fewer ${label}`}
         disabled={disabled || value <= min}
-        onClick={() => onChange(Math.max(min, value - 1))}
+        onClick={() => onChange(Math.max(min, value - step))}
         className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary disabled:opacity-30"
       >
         <Minus size={15} aria-hidden />
@@ -59,7 +62,7 @@ export function Stepper({
         type="button"
         aria-label={incrementLabel ?? `More ${label}`}
         disabled={disabled || value >= max}
-        onClick={() => onChange(Math.min(max, value + 1))}
+        onClick={() => onChange(Math.min(max, value + step))}
         className={cn(
           "flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-secondary disabled:opacity-30",
           tone === "hazard" ? "text-hazard" : "text-fairway",

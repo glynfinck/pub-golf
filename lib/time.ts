@@ -81,3 +81,47 @@ export function deadlineFrom(
 ): string | null {
   return minutes ? new Date(now + minutes * 60_000).toISOString() : null;
 }
+
+/**
+ * The 19th-hole estimate: minutes a round takes end to end — the pubs plus
+ * the walks between them. Walk minutes come from the course (measured by
+ * Google when it was built), so the estimate costs nothing at round time.
+ */
+export function roundMinutes(
+  holeCount: number,
+  minutesPerPub: number,
+  walkMinutesTotal: number,
+): number {
+  return holeCount * minutesPerPub + walkMinutesTotal;
+}
+
+/** When the 19th hole lands, given a tee-off instant. */
+export function estimatedFinishMs(
+  teeOffMs: number,
+  totalMinutes: number,
+): number {
+  return teeOffMs + totalMinutes * 60_000;
+}
+
+/** "3h 55m" (or "55m", or "4h") — the pace line for an unscheduled round. */
+export function formatDuration(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+/**
+ * "7:00pm" from minutes since midnight, wrapping past it — a finish that
+ * runs long reads as "12:40am", which is its own warning.
+ */
+export function clockTime12(minutesOfDay: number): string {
+  const wrapped = ((Math.round(minutesOfDay) % 1440) + 1440) % 1440;
+  const hours = Math.floor(wrapped / 60);
+  const minutes = wrapped % 60;
+  const half = hours >= 12 ? "pm" : "am";
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+  return `${hour12}:${minutes.toString().padStart(2, "0")}${half}`;
+}

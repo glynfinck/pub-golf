@@ -20,6 +20,7 @@ import {
 import type { RoundBundle } from "@/lib/data/rounds";
 import { MAX_HANDICAP } from "@/lib/rules";
 import { readHolePenalties, readRuleset } from "@/lib/ruleset";
+import { clockTime12, formatDuration, roundMinutes } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function LobbyView({ bundle }: { bundle: RoundBundle }) {
@@ -46,6 +47,25 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const localRuleHoles = holes
     .filter((hole) => readHolePenalties(hole.penalties).length > 0)
     .map((hole) => hole.number);
+
+  // The 19th-hole estimate: pubs at the planned pace plus the walks the
+  // course already carries. Advisory, like the tee time it hangs off.
+  const walkTotal = holes.reduce(
+    (sum, hole) => sum + (hole.walk_minutes_to_next ?? 0),
+    0,
+  );
+  const totalMinutes = roundMinutes(
+    holes.length,
+    ruleset.minutesPerPub,
+    walkTotal,
+  );
+  const scheduledTee = ruleset.scheduledTeeOff
+    ? new Date(ruleset.scheduledTeeOff)
+    : null;
+  const teeValid = scheduledTee !== null && !isNaN(scheduledTee.getTime());
+  const teeMinutesOfDay = teeValid
+    ? scheduledTee.getHours() * 60 + scheduledTee.getMinutes()
+    : null;
 
   // Optimistic handicaps: the figure moves on the host's tap, and a
   // "tap-tap" to two becomes one write.
@@ -199,6 +219,30 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
           value={`par ${par}`}
           className="text-xs"
         />
+        {teeValid && teeMinutesOfDay !== null ? (
+          <>
+            <DotLeaderRow
+              label="First tee"
+              value={`${scheduledTee.toLocaleDateString("en-GB", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              })} · ${clockTime12(teeMinutesOfDay)}`}
+              className="text-xs"
+            />
+            <DotLeaderRow
+              label="Expected 19th hole"
+              value={`~${clockTime12(teeMinutesOfDay + totalMinutes)}`}
+              className="text-xs"
+            />
+          </>
+        ) : (
+          <DotLeaderRow
+            label="Expected pace"
+            value={`~${formatDuration(totalMinutes)}`}
+            className="text-xs"
+          />
+        )}
         {ruleset.hazards && hazardHoles.length > 0 ? (
           <DotLeaderRow
             label="Hazards in force"

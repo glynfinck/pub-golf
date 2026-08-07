@@ -44,7 +44,9 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await host.getByRole("link", { name: /new round/i }).click();
   await host.getByLabel(/round name/i).fill(`E2E Invitational ${stamp}`);
   // Play this one with handicaps and a breakfast ball each, so the lobby
-  // stepper and the half-pint button are both on the card.
+  // stepper and the half-pint button are both on the card. Both live in the
+  // House rules section, which reads closed until opened.
+  await host.getByRole("button", { name: /house rules/i }).click();
   await host.getByLabel(/player handicaps/i).click();
   await host.getByRole("button", { name: /more breakfast balls/i }).click();
   await host.getByRole("button", { name: /create round/i }).click();

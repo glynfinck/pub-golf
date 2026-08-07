@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { templateForHoleCount } from "@/lib/course-templates";
+import { reverseCourse, templateForHoleCount } from "@/lib/course-templates";
 import {
   BREAKFAST_BALL_STROKES,
   MAX_BREAKFAST_BALLS,
@@ -14,8 +14,6 @@ import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
 import type { Json } from "@/types/database";
 
-const HOLE_TIMER_MINUTES = 20;
-
 export type ActionResult = { error?: string; finished?: boolean };
 
 const createRoundSchema = z.object({
@@ -23,10 +21,18 @@ const createRoundSchema = z.object({
   holes: z.coerce.number().int().min(1).max(18),
   /** A saved course to copy; null plays the Invitational template. */
   courseId: z.string().uuid().nullable().optional(),
+  /** Play the course back down — last pub first, walks intact. */
+  reversed: z.boolean().default(false),
   format: z.enum(["stroke", "stableford", "match", "scramble"]),
   hazards: z.boolean(),
   timer: z.boolean(),
   softSub: z.boolean(),
+  /** Planned minutes at each pub — the 19th-hole estimate, and the shot
+   * clock's length when `timer` is on. */
+  minutesPerPub: z.coerce.number().int().min(5).max(60).default(20),
+  /** The advertised first tee (ISO). Advisory — printed on the lobby and
+   * the invite; the host still tees off whenever the group is stood there. */
+  scheduledTeeOff: z.string().nullable().optional(),
   /** Whether the host is handicapping this round at all. */
   handicaps: z.boolean().default(false),
   /** Breakfast balls per player for the whole round; 0 turns them off. */
@@ -63,7 +69,10 @@ export async function createRound(input: CreateRoundInput) {
       ruleset: {
         format: parsed.format,
         hazards: parsed.hazards,
-        holeTimerMinutes: parsed.timer ? HOLE_TIMER_MINUTES : null,
+        // The shot clock runs at the planned pub pace — one number, two jobs.
+        holeTimerMinutes: parsed.timer ? parsed.minutesPerPub : null,
+        minutesPerPub: parsed.minutesPerPub,
+        scheduledTeeOff: parsed.scheduledTeeOff ?? null,
         softSubstituteScoresPar: parsed.softSub,
         penalties: parsed.penalties,
         handicaps: parsed.handicaps,
@@ -123,6 +132,7 @@ export async function createRound(input: CreateRoundInput) {
   } else {
     template = templateForHoleCount(parsed.holes);
   }
+  if (parsed.reversed) template = reverseCourse(template);
   if (!parsed.hazards)
     template = template.map((hole) => ({
       ...hole,
