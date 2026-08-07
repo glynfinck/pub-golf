@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * The putt — the house busy mark, shown beside pending copy once a wait
  * has earned furniture (useAction's `busy`). The leader dots become the
- * green, the flag is the Parlour mark's own geometry (lib/mark.ts, the
+ * green, the flag is the house mark's own geometry (lib/mark.ts, the
  * favicon's flag), and the ball rolls the text baseline toward the cup:
  * dies at the lip, hangs a beat, drops. Keyframes live in globals.css.
  *

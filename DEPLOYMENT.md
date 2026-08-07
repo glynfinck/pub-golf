@@ -1,4 +1,4 @@
-# Deploying Parlour
+# Deploying Pub Golf
 
 Two environments, both deployed by the platforms themselves:
 
@@ -229,7 +229,7 @@ public and `pub-golf-preview.glyn.dev` sits behind a Vercel login — staging is
 reachable only by someone signed in with access to the team.
 
 The consequence worth knowing before you plan a test: you cannot hand the
-staging link to anyone. Parlour is multiplayer, and its core loop is other
+staging link to anyone. Pub Golf is multiplayer, and its core loop is other
 people joining a round by code. Two browser profiles on your own account will
 exercise it; a friend's phone will not. Crawlers can't reach it either, so
 staging Open Graph cards never unfurl — that is the gate, not a bug.

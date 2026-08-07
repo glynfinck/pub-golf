@@ -20,7 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Masthead } from "@/components/shell/masthead";
-import { ParlourMark } from "@/components/ui/parlour-mark";
+import { HouseMark } from "@/components/ui/house-mark";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { useAction } from "@/hooks/use-action";
@@ -209,7 +209,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
     <Screen>
       <Masthead
         back={{ href: "/", label: "Clubhouse" }}
-        center={<ParlourMark className="mx-auto size-6" />}
+        center={<HouseMark className="mx-auto size-6" />}
         busy={busy}
       />
       <ScreenHeader eyebrow="New round" title="Set the table" />

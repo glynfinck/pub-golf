@@ -1,4 +1,4 @@
-# Parlour (pub-golf)
+# Pub Golf
 
 This is NOT the Next.js you know: v16 has breaking changes — check
 `node_modules/next/dist/docs/` before writing framework code. `proxy.ts`
@@ -32,7 +32,7 @@ is this Next version's middleware convention (see the `home` sibling repo).
   recap). Engraving utilities: `rule-double`, `leader`, `engraved`.
 - To-par renders as `−2 / +3 / even` (formatToPar) — never golf's lone "E".
 - The house mark (pennant, flagstick, green) has one definition in
-  `lib/mark.ts`. `ParlourMark` inks it with the semantic tokens; the favicon
+  `lib/mark.ts`. `HouseMark` inks it with the semantic tokens; the favicon
   and the generated images take literals, because neither an icon file nor
   Satori can resolve a `var()`. `app/icon.svg` is the one copy that cannot
   import it and is pinned to `markSvg(32)` by `tests/unit/mark.test.ts` —

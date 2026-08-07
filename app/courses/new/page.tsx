@@ -9,7 +9,7 @@ import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
-import { ParlourMark } from "@/components/ui/parlour-mark";
+import { HouseMark } from "@/components/ui/house-mark";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { useAction } from "@/hooks/use-action";
 import { createCourse } from "@/lib/actions/courses";
@@ -66,7 +66,7 @@ export default function NewCoursePage() {
     <Screen>
       <Masthead
         back={{ href: "/courses", label: "Courses" }}
-        center={<ParlourMark className="mx-auto size-6" />}
+        center={<HouseMark className="mx-auto size-6" />}
         busy={busy}
       />
       <ScreenHeader

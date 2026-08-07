@@ -1,10 +1,10 @@
-# Parlour — Pub Golf
+# Pub Golf
 
 Mobile-first PWA for social bar-crawl games. Pub Golf is the flagship game:
 nine pubs, park to park, order the club listed for the hole, count every
 swallow — your swigs are your score. Lowest total wins.
 
-"Parlour" is the working platform name (availability unverified); the
+Pub Golf is the app; the
 platform will eventually carry other curated and custom game formats.
 
 ## Stack

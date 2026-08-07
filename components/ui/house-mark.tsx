@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
  * rather than literals, because in here we can have them and the mark should
  * turn with the theme.
  */
-export function ParlourMark({ className }: { className?: string }) {
+export function HouseMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}
