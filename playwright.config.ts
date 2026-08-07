@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local", quiet: true });
 
 /**
- * E2E against the local Supabase stack (ports 54330-54334). Two browser
+ * E2E against the local Supabase stack (ports 54330-54334). Multiple browser
  * contexts play a real round against real Postgres + Realtime, so
  * `supabase start` must be running first.
  */
@@ -23,8 +23,17 @@ export default defineConfig({
   workers: 1,
   use: {
     baseURL: "http://localhost:3105",
-    ...devices["Pixel 7"],
   },
+  // The platform matrix: every spec runs once per row, engine × form factor.
+  // A round is played on whatever the table pulls out of their pockets, so
+  // the suite drinks in all three engines — Android Chrome (Blink), iOS
+  // Safari (WebKit, the one that cannot be swapped out on an iPhone), and a
+  // laptop at the table (Gecko). Projects run in sequence under workers: 1.
+  projects: [
+    { name: "android-chrome", use: { ...devices["Pixel 7"] } },
+    { name: "iphone-safari", use: { ...devices["iPhone 15"] } },
+    { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] } },
+  ],
   webServer: {
     command: "npx next dev -p 3105",
     url: "http://localhost:3105/signin",
