@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
  * A −/+ counter sized for a thumb. The house has several of these — holes,
  * par, allowances, handicaps — and they are all the same shape: two 44px
  * targets either side of a tabular figure that never reflows as it changes.
+ *
+ * `min-w-max` is load-bearing, not tidiness. Both targets are shrink-0, so
+ * a caller passing a width below the content's own minimum (padding + two
+ * 36px buttons + the figure + the gaps) does not squeeze the row — it sends
+ * the + straight out through the rounded border. The frame now refuses to
+ * be smaller than what it holds, whatever a call site asks for.
  */
 export function Stepper({
   value,
@@ -42,7 +48,7 @@ export function Stepper({
   return (
     <div
       className={cn(
-        "flex min-h-12 items-center justify-between gap-1 rounded-lg border border-input bg-card px-1.5",
+        "flex min-h-12 min-w-max items-center justify-between gap-1 rounded-lg border border-input bg-card px-1.5",
         className,
       )}
     >
