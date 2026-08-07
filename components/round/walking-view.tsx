@@ -3,12 +3,12 @@
 import { ArrowUpRight } from "lucide-react";
 import { Screen } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
+import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { Putt } from "@/components/ui/putt";
-import { RuleDouble } from "@/components/ui/rule";
 import { useAction } from "@/hooks/use-action";
 import { useCountdown } from "@/hooks/use-countdown";
 import { usePresence } from "@/hooks/use-presence";
@@ -64,7 +64,12 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
 
   return (
     <Screen data-testid="walking-view">
-      <RuleDouble busy={busy} />
+      <RoundBar
+        round={round}
+        holes={holes}
+        hole={round.current_hole}
+        busy={busy}
+      />
       <HoleStrip
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}

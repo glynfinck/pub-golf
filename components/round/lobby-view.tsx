@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
+import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { RuleDouble } from "@/components/ui/rule";
 import { usePresence } from "@/hooks/use-presence";
 import { Stepper } from "@/components/ui/stepper";
 import { useAction } from "@/hooks/use-action";
@@ -18,9 +18,10 @@ import {
   startRound,
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { roundRuleLines } from "@/lib/round-rules";
 import { MAX_HANDICAP } from "@/lib/rules";
-import { readHolePenalties, readRuleset } from "@/lib/ruleset";
-import { clockTime12, formatDuration, roundMinutes } from "@/lib/time";
+import { readRuleset } from "@/lib/ruleset";
+import { clockTime12, roundMinutes } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function LobbyView({ bundle }: { bundle: RoundBundle }) {
@@ -39,14 +40,7 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
 
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
   const isHost = me?.role === "host";
-  const par = holes.reduce((sum, hole) => sum + hole.par, 0);
   const ruleset = readRuleset(round.ruleset);
-  const hazardHoles = holes
-    .filter((hole) => hole.hazard)
-    .map((hole) => hole.number);
-  const localRuleHoles = holes
-    .filter((hole) => readHolePenalties(hole.penalties).length > 0)
-    .map((hole) => hole.number);
 
   // The 19th-hole estimate: pubs at the planned pace plus the walks the
   // course already carries. Advisory, like the tee time it hangs off.
@@ -66,6 +60,31 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const teeMinutesOfDay = teeValid
     ? scheduledTee.getHours() * 60 + scheduledTee.getMinutes()
     : null;
+
+  // The lobby prints the diary, not the abstraction: with a first tee on
+  // the card, the pace line becomes the tee time and the expected finish.
+  // Everything else comes straight from roundRuleLines, the same door the
+  // mid-round rules sheet reads.
+  const ruleLines = roundRuleLines(ruleset, holes).flatMap((line) =>
+    line.id === "pace" && teeValid && teeMinutesOfDay !== null
+      ? [
+          {
+            id: "first-tee",
+            label: "First tee",
+            value: `${scheduledTee.toLocaleDateString("en-GB", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+            })} · ${clockTime12(teeMinutesOfDay)}`,
+          },
+          {
+            id: "finish",
+            label: "Expected 19th hole",
+            value: `~${clockTime12(teeMinutesOfDay + totalMinutes)}`,
+          },
+        ]
+      : [line],
+  );
 
   // Optimistic handicaps: the figure moves on the host's tap, and a
   // "tap-tap" to two becomes one write.
@@ -109,7 +128,7 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
 
   return (
     <Screen>
-      <RuleDouble busy={busy} />
+      <RoundBar round={round} holes={holes} busy={busy} />
       <ScreenHeader eyebrow={`Lobby · ${round.name}`} title="The first tee" />
 
       {/* The letterpress plate: entry code, optically centered against its
@@ -214,77 +233,14 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <DotLeaderRow
-          label={`${holes.length} holes`}
-          value={`par ${par}`}
-          className="text-xs"
-        />
-        {teeValid && teeMinutesOfDay !== null ? (
-          <>
-            <DotLeaderRow
-              label="First tee"
-              value={`${scheduledTee.toLocaleDateString("en-GB", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-              })} · ${clockTime12(teeMinutesOfDay)}`}
-              className="text-xs"
-            />
-            <DotLeaderRow
-              label="Expected 19th hole"
-              value={`~${clockTime12(teeMinutesOfDay + totalMinutes)}`}
-              className="text-xs"
-            />
-          </>
-        ) : (
+        {ruleLines.map((line) => (
           <DotLeaderRow
-            label="Expected pace"
-            value={`~${formatDuration(totalMinutes)}`}
+            key={line.id}
+            label={line.label}
+            value={line.value}
             className="text-xs"
           />
-        )}
-        {ruleset.hazards && hazardHoles.length > 0 ? (
-          <DotLeaderRow
-            label="Hazards in force"
-            value={hazardHoles.join(" · ")}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.holeTimerMinutes ? (
-          <DotLeaderRow
-            label="Timed holes"
-            value={`${ruleset.holeTimerMinutes} min`}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.softSubstituteScoresPar ? (
-          <DotLeaderRow
-            label="Soft substitutes"
-            value="score par"
-            className="text-xs"
-          />
-        ) : null}
-        {localRuleHoles.length > 0 ? (
-          <DotLeaderRow
-            label="Local rules"
-            value={localRuleHoles.join(" · ")}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.breakfastBalls > 0 ? (
-          <DotLeaderRow
-            label="Breakfast balls"
-            value={`${ruleset.breakfastBalls} each · +${ruleset.breakfastBallStrokes}`}
-            className="text-xs"
-          />
-        ) : null}
-        {ruleset.handicaps ? (
-          <DotLeaderRow
-            label="Handicaps"
-            value="net scoring"
-            className="text-xs"
-          />
-        ) : null}
+        ))}
       </div>
 
       {isOfficial ? (

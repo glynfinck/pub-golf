@@ -10,6 +10,7 @@ import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { PositionRibbon } from "@/components/round/position-ribbon";
+import { RoundBar } from "@/components/round/round-bar";
 import { TimerRing } from "@/components/round/timer-ring";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,6 @@ import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { Medallion } from "@/components/ui/medallion";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { RuleDouble } from "@/components/ui/rule";
 import { useAction } from "@/hooks/use-action";
 import { usePresence } from "@/hooks/use-presence";
 import {
@@ -155,7 +155,12 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
   return (
     <Screen>
-      <RuleDouble busy={busy} />
+      <RoundBar
+        round={round}
+        holes={holes}
+        hole={round.current_hole}
+        busy={busy}
+      />
       <HoleStrip
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}

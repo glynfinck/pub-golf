@@ -9,11 +9,11 @@ import { HoleStrip } from "@/components/round/hole-strip";
 import { MarkerPlayerSheet } from "@/components/round/marker-player-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { useLiveRound } from "@/components/round/use-live-round";
+import { RoundBar } from "@/components/round/round-bar";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { RuleDouble } from "@/components/ui/rule";
 import { useAction } from "@/hooks/use-action";
 import { useDraftFigures } from "@/hooks/use-draft-figures";
 import { reopenHole, setPlayerScore } from "@/lib/actions/rounds";
@@ -109,7 +109,7 @@ export function MarkersCardView({
 
   return (
     <Screen>
-      <RuleDouble busy={busy} />
+      <RoundBar round={round} holes={holes} hole={viewedHole} busy={busy} />
       <ScreenHeader
         eyebrow={`Caddy · ${roaming ? "reviewing" : "hole"} ${viewedHole}`}
         title="The marker's card"

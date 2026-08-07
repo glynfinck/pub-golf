@@ -101,6 +101,18 @@ test("a full round: create, join, caddy controls, live scores, results", async (
     guest.getByTestId("standings").getByText("Glyn"),
   ).toBeVisible();
 
+  // ---- The masthead: rules one tap away, the way out beside them ----
+  // This round was created with handicaps and a breakfast ball, so the
+  // sheet must read both back; the exit is a plain link to the clubhouse.
+  await expect(host.getByTestId("round-exit")).toHaveAttribute("href", "/");
+  await host.getByTestId("round-help").click();
+  await expect(host.getByTestId("rules-sheet")).toContainText(
+    "Breakfast balls",
+  );
+  await expect(host.getByTestId("rules-sheet")).toContainText("net scoring");
+  await host.keyboard.press("Escape");
+  await expect(host.getByTestId("rules-sheet")).toBeHidden();
+
   // ---- Penalties: open the sheet, call one, then undo the mis-tap ----
   await host.getByRole("button", { name: /penalties/i }).click();
   await host.getByRole("button", { name: /call spill \+1/i }).click();

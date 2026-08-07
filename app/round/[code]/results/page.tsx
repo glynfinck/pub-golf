@@ -6,10 +6,10 @@ import { ClaimCard } from "@/components/round/claim-card";
 import { Podium } from "@/components/round/podium";
 import { RecapCard } from "@/components/round/recap-card";
 import { ReopenRound, ResultsLive } from "@/components/round/results-live";
+import { RoundBar } from "@/components/round/round-bar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
-import { RuleDouble } from "@/components/ui/rule";
 import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
 import { getRoundCard } from "@/lib/data/round-card";
 import { readRuleset } from "@/lib/ruleset";
@@ -70,7 +70,7 @@ export default async function ResultsPage({
   return (
     <Screen>
       <ResultsLive roundId={round.id} />
-      <RuleDouble />
+      <RoundBar round={round} holes={holes} />
       <ScreenHeader eyebrow={`Final · ${round.name}`} title="The 19th hole" />
 
       <Podium standings={standings} />
