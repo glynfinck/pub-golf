@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, RotateCcw } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { countWord, ordinal, toParClass } from "@/lib/format";
 import type { StandingRow } from "@/lib/scoring";
 import { cn, formatToPar } from "@/lib/utils";
+
+/** How long the ribbon calls a mulligan before going back to business. */
+const MULLIGAN_FLASH_MS = 5_000;
 
 /**
  * "level with Soph" | "one behind Soph" | "two clear of Soph"
@@ -34,10 +37,41 @@ function gapPhrase(rows: StandingRow[], me: StandingRow) {
 /**
  * One line of standing that expands to the full card on tap — the play
  * screen shows position, not a table, until you ask.
+ *
+ * The ribbon also calls a mulligan to the table: a score falling to zero
+ * with no explanation reads as a glitch, so when anyone's mulligan count
+ * rises the strip rings amber and says who, then goes back to business.
+ * The expanded card keeps the permanent record as an ↺ ×N mark.
  */
 export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
   const [expanded, setExpanded] = useState(false);
   const me = standings.find((row) => row.isYou);
+
+  // Who most recently took a mulligan, while the ribbon is calling it.
+  const [mulliganCall, setMulliganCall] = useState<string | null>(null);
+  const prevCounts = useRef<Map<string, number> | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    const next = new Map(standings.map((row) => [row.playerId, row.mulligans]));
+    const prev = prevCounts.current;
+    prevCounts.current = next;
+    // First render is the baseline, not an event — a reload mid-round must
+    // not re-announce every mulligan already on the card.
+    if (!prev) return;
+    const taker = standings.find(
+      (row) => row.mulligans > (prev.get(row.playerId) ?? 0),
+    );
+    if (!taker) return;
+    setMulliganCall(taker.name);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(
+      () => setMulliganCall(null),
+      MULLIGAN_FLASH_MS,
+    );
+  }, [standings]);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   return (
     <div className="flex flex-col gap-2">
@@ -46,19 +80,36 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
         data-testid="position-ribbon"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        className="flex min-h-11 items-center justify-between rounded-xl bg-fairway px-4 text-background"
+        className={cn(
+          "flex min-h-11 items-center justify-between rounded-xl bg-fairway px-4 text-background",
+          mulliganCall && "outline-2 -outline-offset-1 outline-marker",
+        )}
       >
-        <span className="text-sm">
-          {me ? `${ordinal(me.rank)} on the card` : "The card so far"}
-        </span>
-        <span className="flex items-center gap-1.5 font-serif text-base">
-          {me ? gapPhrase(standings, me) : `${standings.length} playing`}
-          <ChevronDown
-            size={15}
-            aria-hidden
-            className={cn("transition-transform", expanded && "rotate-180")}
-          />
-        </span>
+        {mulliganCall ? (
+          <>
+            <span className="flex items-center gap-1.5 text-sm font-bold">
+              <RotateCcw size={14} aria-hidden />
+              Mulligan
+            </span>
+            <span className="font-serif text-base">
+              {mulliganCall} starts the hole again
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-sm">
+              {me ? `${ordinal(me.rank)} on the card` : "The card so far"}
+            </span>
+            <span className="flex items-center gap-1.5 font-serif text-base">
+              {me ? gapPhrase(standings, me) : `${standings.length} playing`}
+              <ChevronDown
+                size={15}
+                aria-hidden
+                className={cn("transition-transform", expanded && "rotate-180")}
+              />
+            </span>
+          </>
+        )}
       </button>
 
       {/* One gutter everywhere: the card pads the same 6px that separates
@@ -82,6 +133,11 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
                 <b className="text-sm">{row.name}</b>
                 {row.isYou ? (
                   <span className="text-[10px] text-muted-foreground">you</span>
+                ) : null}
+                {row.mulligans > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 rounded-full bg-marker/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-marker">
+                    <RotateCcw size={9} aria-hidden />×{row.mulligans}
+                  </span>
                 ) : null}
               </span>
               <span className="tabular font-mono text-sm">

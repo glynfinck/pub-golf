@@ -94,3 +94,28 @@ export function roundRuleLines(
   }
   return lines;
 }
+
+/**
+ * The same rules compressed to chip length for the live play screen — a
+ * glance, not a sentence, so every label has to survive a 10px uppercase
+ * setting without wrapping. Card facts (hole count, pace) are not rules
+ * and stay off; a round with nothing in force gets an empty list and the
+ * screen shows no chip row at all.
+ */
+export function roundRuleChips(
+  ruleset: RoundRuleset,
+  holes: RuleHole[],
+): RuleLine[] {
+  const compact: Record<string, (line: RuleLine) => string> = {
+    timer: (line) => line.value,
+    hazards: (line) => `hazards ${line.value}`,
+    "soft-substitute": () => "0 scores par",
+    "local-rules": (line) => `local ${line.value}`,
+    mulligans: () => `mulligans ×${ruleset.mulligans}`,
+    handicaps: () => "net",
+  };
+  return roundRuleLines(ruleset, holes).flatMap((line) => {
+    const label = compact[line.id]?.(line);
+    return label ? [{ ...line, label }] : [];
+  });
+}

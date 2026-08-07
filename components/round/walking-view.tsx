@@ -14,6 +14,8 @@ import { useCountdown } from "@/hooks/use-countdown";
 import { usePresence } from "@/hooks/use-presence";
 import { teeUpHole } from "@/lib/actions/rounds";
 import type { HoleWithVenue, RoundBundle } from "@/lib/data/rounds";
+import { roundRuleLines } from "@/lib/round-rules";
+import { readRuleset } from "@/lib/ruleset";
 import { formatClock, remainingSeconds } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -128,6 +130,19 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
         <ArrowUpRight size={15} aria-hidden />
         Directions in Google Maps
       </a>
+
+      {/* The walk is the one screen with time to read, so it carries the
+          whole card — the same lines the lobby and the rules sheet print. */}
+      <div className="flex flex-col gap-1.5">
+        {roundRuleLines(readRuleset(round.ruleset), holes).map((line) => (
+          <DotLeaderRow
+            key={line.id}
+            label={line.label}
+            value={line.value}
+            className="text-xs"
+          />
+        ))}
+      </div>
 
       {synced ? (
         <p className="tabular text-center font-mono text-[10px] tracking-[0.14em] text-muted-foreground">

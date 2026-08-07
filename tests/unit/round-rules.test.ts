@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { roundRuleLines, type RuleHole } from "@/lib/round-rules";
+import {
+  roundRuleChips,
+  roundRuleLines,
+  type RuleHole,
+} from "@/lib/round-rules";
 import { RULESET_DEFAULTS } from "@/lib/ruleset";
 
 function hole(number: number, over: Partial<RuleHole> = {}): RuleHole {
@@ -107,5 +111,44 @@ describe("roundRuleLines", () => {
       hole(2, { penalties: "not an array" }),
     ]);
     expect(ids(lines)).not.toContain("local-rules");
+  });
+});
+
+describe("roundRuleChips", () => {
+  it("keeps card facts off the chips — rules only", () => {
+    const chips = roundRuleChips({ ...RULESET_DEFAULTS }, [hole(1)]);
+    expect(ids(chips)).toEqual(["soft-substitute"]);
+    expect(chips[0].label).toBe("0 scores par");
+  });
+
+  it("compresses every in-force rule to chip length", () => {
+    const chips = roundRuleChips(
+      {
+        ...RULESET_DEFAULTS,
+        holeTimerMinutes: 12,
+        handicaps: true,
+        mulligans: 2,
+      },
+      [
+        hole(1, { hazard: "water" }),
+        hole(3, { penalties: [{ strokes: 2, reason: "Local" }] }),
+      ],
+    );
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "hazards 1",
+      "12 min",
+      "0 scores par",
+      "local 3",
+      "mulligans ×2",
+      "net",
+    ]);
+  });
+
+  it("goes silent when nothing is in force", () => {
+    const chips = roundRuleChips(
+      { ...RULESET_DEFAULTS, softSubstituteScoresPar: false },
+      [hole(1)],
+    );
+    expect(chips).toEqual([]);
   });
 });

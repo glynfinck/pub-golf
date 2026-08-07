@@ -27,7 +27,9 @@ import {
   upsertScore,
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { RulesSheet } from "@/components/round/rules-sheet";
 import { underOverPhrase } from "@/lib/format";
+import { roundRuleChips } from "@/lib/round-rules";
 import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { computeStandings } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
@@ -39,6 +41,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { run, pending, busy } = useAction();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
   const [mulliganOpen, setMulliganOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const hole = holes.find((h) => h.number === round.current_hole) ?? holes[0];
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
@@ -143,6 +146,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       row.player_id === me?.id && row.hole_number === round.current_hole,
   );
 
+  const ruleChips = roundRuleChips(ruleset, holes);
+
   // Mulligans are an allowance for the whole round, so what's left is a
   // count across every hole on the card, not just this one.
   const mulligansUsed = scores
@@ -190,6 +195,27 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       </header>
 
       <DotLeaderRow label={hole.drink} value={`par ${hole.par}`} />
+
+      {/* The rules in force, at a glance — chips, not sentences. The whole
+          row is a second door onto the rules sheet the masthead's ? opens. */}
+      {ruleChips.length > 0 ? (
+        <button
+          type="button"
+          data-testid="rule-chips"
+          aria-label="This round's rules"
+          onClick={() => setRulesOpen(true)}
+          className="-mt-1 flex flex-wrap items-center gap-1.5"
+        >
+          {ruleChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="rounded-full border border-border px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-muted-foreground uppercase"
+            >
+              {chip.label}
+            </span>
+          ))}
+        </button>
+      ) : null}
 
       {hole.hazard ? (
         <div className="rounded-md border border-hazard border-l-4 bg-hazard/5 px-3 py-2 text-[11px] text-hazard">
@@ -287,16 +313,36 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
           >
             <Minus size={15} aria-hidden /> Undo
           </button>
+          {/* Stacked like the SWIG button so the long word can never wrap
+              a three-button row on a narrow phone: the label rides small
+              caps on top, the private count is pips underneath — filled
+              still in the pocket, hollow spent. */}
           {ruleset.mulligans > 0 ? (
             <button
               type="button"
               data-testid="mulligan"
               disabled={mulligansLeft === 0}
               onClick={() => setMulliganOpen(true)}
-              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-marker/60 text-sm font-bold text-marker disabled:opacity-30"
+              aria-label={`Take a mulligan — ${mulligansLeft} of ${ruleset.mulligans} left`}
+              className="flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-marker/60 text-marker disabled:opacity-30"
             >
-              <RotateCcw size={14} aria-hidden />
-              Mulligan · {mulligansLeft}
+              <span className="flex items-center gap-1 text-[10px] font-extrabold tracking-[0.14em]">
+                <RotateCcw size={11} aria-hidden />
+                MULLIGAN
+              </span>
+              <span className="flex items-center gap-1" aria-hidden>
+                {Array.from({ length: ruleset.mulligans }, (_, pip) => (
+                  <span
+                    key={pip}
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      pip < mulligansLeft
+                        ? "bg-marker"
+                        : "border border-marker/50",
+                    )}
+                  />
+                ))}
+              </span>
             </button>
           ) : null}
           <button
@@ -338,6 +384,14 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         holeNumber={round.current_hole}
         options={options}
         myPenalties={myHolePenalties}
+      />
+
+      <RulesSheet
+        open={rulesOpen}
+        onOpenChange={setRulesOpen}
+        round={round}
+        holes={holes}
+        hole={round.current_hole}
       />
 
       <MulliganSheet

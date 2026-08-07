@@ -137,6 +137,8 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // Both phones enter the walking phase together, pointed at the next pub.
   await expect(guest.getByTestId("walking-view")).toBeVisible();
   await expect(host.getByTestId("walking-view")).toBeVisible();
+  // The walk carries the whole card: the same rule lines the lobby printed.
+  await expect(guest.getByTestId("walking-view")).toContainText("Mulligans");
   await expect(guest.getByTestId("walking-next-venue")).toHaveText(
     "Pub on the Park",
   );
@@ -154,6 +156,16 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // The hole is back to nothing, and that was the only one on the card.
   await expect(host.getByTestId("swig-count")).toHaveText("0");
   await expect(host.getByTestId("mulligan")).toBeDisabled();
+
+  // The table finds out: the caddy's standings carry the permanent ↺ ×1
+  // mark against the host's name.
+  await guest.getByTestId("position-ribbon").click();
+  await expect(guest.getByTestId("standings")).toContainText("×1");
+  await guest.getByTestId("position-ribbon").click();
+
+  // And the rule chips under the hole header read the round at a glance —
+  // this one plays handicapped, so "net" is on the line.
+  await expect(host.getByTestId("rule-chips")).toContainText("net");
 
   // ---- Local rules: on their own hole and nowhere else ----
   // The Invitational's third hole carries one; the first carries none. Roam
