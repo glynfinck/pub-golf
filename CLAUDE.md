@@ -34,7 +34,21 @@ is this Next version's middleware convention (see the `home` sibling repo).
 - Zero swigs = the drink never happened. On FILED holes computeStandings
   substitutes par (softSubstituteScoresPar, default) or double par (max
   score) — a 0 never scores as a free under-par hole. The in-progress hole
-  only counts once swigs > 0.
+  only counts once swigs > 0. This still holds after a breakfast ball:
+  resetting a hole never buys a free one.
+- `rounds.ruleset` is read through `readRuleset` in `lib/ruleset.ts` and
+  nowhere else — never re-cast the jsonb inline. It fills in defaults, so a
+  round created before a rule existed reads as that rule being off.
+- Three per-round rules ride on the ruleset snapshot: `penalties` (the house
+  table), `breakfastBalls`/`breakfastBallStrokes`, and `handicaps`. Holes
+  carry their own `penalties` jsonb — local rules, merged after the house
+  list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
+  the join key for the undo and the ×N count.
+- Handicaps come off gross to give **net**, and net is what the round is won
+  on — `StandingRow` carries both, and ranking is on `netToPar`. They arrive
+  pro rata (`handicap × holesPlayed / holes.length`) so the live board stays
+  honest; that is the whole handicap once the card is filed. With every
+  handicap at 0, net is gross and nothing on screen changes.
 
 ## Data model (supabase/migrations)
 
@@ -52,7 +66,12 @@ seat: the creator's own `role='host'` row, gated on `is_round_creator`, which
 is what `createRound` writes between the round and the holes. Any future
 re-seat or rejoin flow needs a SECURITY DEFINER function, not a client insert.
 Roles are guarded by a `BEFORE UPDATE` trigger rather than a policy, because
-`WITH CHECK` only sees NEW and "your role may not change" is about OLD. Regenerate types after schema changes:
+`WITH CHECK` only sees NEW and "your role may not change" is about OLD. Two
+more rules live in triggers for the same reason: `round_players.handicap` is
+officials-only (a player editing their own passes the self policy, so only
+OLD-vs-NEW can tell), and `scores.breakfast_balls` is capped at the round's
+allowance (a count across sibling rows, which WITH CHECK can never see).
+Both raise `42501` so `expectDenied` recognises them. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Auth is **Google-only, and deliberately email-free**: hosting a round needs

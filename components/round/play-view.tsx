@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Flag, Minus, Plus } from "lucide-react";
+import { Egg, Flag, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Screen } from "@/components/shell/screen";
+import { BreakfastBallSheet } from "@/components/round/breakfast-ball-sheet";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
@@ -20,6 +21,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { advanceHole, resetHoleTimer, upsertScore } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
 import { underOverPhrase } from "@/lib/format";
+import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { computeStandings } from "@/lib/scoring";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +31,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const [pending, startTransition] = useTransition();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
+  const [breakfastBallOpen, setBreakfastBallOpen] = useState(false);
 
   const hole = holes.find((h) => h.number === round.current_hole) ?? holes[0];
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
@@ -82,24 +85,35 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     });
   }
 
-  const ruleset = round.ruleset as {
-    holeTimerMinutes?: number | null;
-    softSubstituteScoresPar?: boolean;
-    penalties?: { strokes: number; reason: string }[];
-  };
+  const ruleset = readRuleset(round.ruleset);
   const standings = computeStandings(holes, players, scores, penalties, me?.id, {
     filedThrough: round.current_hole - 1,
-    softSubstituteScoresPar: ruleset.softSubstituteScoresPar ?? true,
+    softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
+    breakfastBallStrokes: ruleset.breakfastBallStrokes,
   });
-  const myToPar = standings.find((row) => row.isYou)?.toPar ?? 0;
+  const myRow = standings.find((row) => row.isYou);
+  const myToPar = myRow?.netToPar ?? 0;
   const holeToPar = swigs - hole.par;
   const deadline = round.hole_deadline_at
     ? new Date(round.hole_deadline_at)
     : null;
-  const options = penaltyOptions(ruleset.penalties);
+  const options = penaltyOptions(
+    ruleset.penalties,
+    readHolePenalties(hole.penalties),
+  );
   const myHolePenalties = penalties.filter(
     (row) =>
       row.player_id === me?.id && row.hole_number === round.current_hole,
+  );
+
+  // Breakfast balls are an allowance for the whole round, so what's left is a
+  // count across every hole on the card, not just this one.
+  const breakfastBallsUsed = scores
+    .filter((score) => score.player_id === me?.id)
+    .reduce((sum, score) => sum + score.breakfast_balls, 0);
+  const breakfastBallsLeft = Math.max(
+    0,
+    ruleset.breakfastBalls - breakfastBallsUsed,
   );
 
   return (
@@ -217,8 +231,20 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
             onClick={() => changeSwigs(-1)}
             className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-muted-foreground/60 text-sm font-bold text-muted-foreground disabled:opacity-40"
           >
-            <Minus size={15} aria-hidden /> Undo a swig
+            <Minus size={15} aria-hidden /> Undo
           </button>
+          {ruleset.breakfastBalls > 0 ? (
+            <button
+              type="button"
+              data-testid="breakfast-ball"
+              disabled={breakfastBallsLeft === 0}
+              onClick={() => setBreakfastBallOpen(true)}
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-marker/60 text-sm font-bold text-marker disabled:opacity-30"
+            >
+              <Egg size={14} aria-hidden />
+              Half pint · {breakfastBallsLeft}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setPenaltySheetOpen(true)}
@@ -258,6 +284,16 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         holeNumber={round.current_hole}
         options={options}
         myPenalties={myHolePenalties}
+      />
+
+      <BreakfastBallSheet
+        open={breakfastBallOpen}
+        onOpenChange={setBreakfastBallOpen}
+        code={round.code}
+        holeNumber={round.current_hole}
+        swigs={swigs}
+        strokes={ruleset.breakfastBallStrokes}
+        left={breakfastBallsLeft}
       />
     </Screen>
   );

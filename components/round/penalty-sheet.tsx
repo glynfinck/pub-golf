@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { Fragment, useTransition } from "react";
 import { Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { LocalRulesHeading } from "@/components/round/local-rules-heading";
 import {
   Sheet,
   SheetContent,
@@ -75,43 +76,49 @@ export function PenaltySheet({
             const count = myPenalties.filter(
               (row) => row.reason === option.reason,
             ).length;
+            const opensLocalRules =
+              option.scope === "hole" && options[index - 1]?.scope !== "hole";
             return (
-              <div
-                key={option.reason}
-                className={cn(
-                  "flex min-h-14 items-center gap-3 py-1.5",
-                  index > 0 && "border-t border-dotted border-border",
-                )}
-              >
-                <span className="tabular w-8 shrink-0 font-mono text-xs font-bold text-hazard">
-                  +{option.strokes}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <b className="block text-sm">{option.label}</b>
-                  <span className="block truncate text-[11px] text-muted-foreground">
-                    {option.reason}
-                    {count > 0 ? ` · on the card ×${count}` : ""}
+              <Fragment key={option.reason}>
+                {opensLocalRules ? <LocalRulesHeading /> : null}
+                <div
+                  className={cn(
+                    "flex min-h-14 items-center gap-3 py-1.5",
+                    index > 0 &&
+                      !opensLocalRules &&
+                      "border-t border-dotted border-border",
+                  )}
+                >
+                  <span className="tabular w-8 shrink-0 font-mono text-xs font-bold text-hazard">
+                    +{option.strokes}
                   </span>
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Undo ${option.label}`}
-                  disabled={pending || count === 0}
-                  onClick={() => undo(option)}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard/60 text-hazard disabled:opacity-25"
-                >
-                  <Minus size={17} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Call ${option.label}`}
-                  disabled={pending}
-                  onClick={() => call(option)}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard bg-hazard/10 text-hazard disabled:opacity-25"
-                >
-                  <Plus size={17} aria-hidden />
-                </button>
-              </div>
+                  <span className="min-w-0 flex-1">
+                    <b className="block text-sm">{option.label}</b>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {option.reason}
+                      {count > 0 ? ` · on the card ×${count}` : ""}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Undo ${option.label}`}
+                    disabled={pending || count === 0}
+                    onClick={() => undo(option)}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard/60 text-hazard disabled:opacity-25"
+                  >
+                    <Minus size={17} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Call ${option.label}`}
+                    disabled={pending}
+                    onClick={() => call(option)}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px] border-hazard bg-hazard/10 text-hazard disabled:opacity-25"
+                  >
+                    <Plus size={17} aria-hidden />
+                  </button>
+                </div>
+              </Fragment>
             );
           })}
         </div>

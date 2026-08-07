@@ -16,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
 import { reopenHole, setPlayerScore } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { cn, formatToPar } from "@/lib/utils";
 
 /**
@@ -39,20 +40,23 @@ export function MarkersCardView({
   const hole = holes.find((h) => h.number === viewedHole) ?? holes[0];
   const roaming =
     round.status === "finished" || viewedHole !== round.current_hole;
-  const ruleset = round.ruleset as {
-    penalties?: { strokes: number; reason: string }[];
-  };
-  const options = penaltyOptions(ruleset.penalties);
+  const ruleset = readRuleset(round.ruleset);
+  const options = penaltyOptions(
+    ruleset.penalties,
+    readHolePenalties(hole.penalties),
+  );
   const sheetPlayer =
     players.find((player) => player.id === sheetPlayerId) ?? null;
 
-  function swigsFor(playerId: string) {
-    return (
-      scores.find(
-        (score) =>
-          score.player_id === playerId && score.hole_number === viewedHole,
-      )?.swigs ?? 0
+  function scoreFor(playerId: string) {
+    return scores.find(
+      (score) =>
+        score.player_id === playerId && score.hole_number === viewedHole,
     );
+  }
+
+  function swigsFor(playerId: string) {
+    return scoreFor(playerId)?.swigs ?? 0;
   }
 
   function adjust(playerId: string, delta: number) {
@@ -135,6 +139,7 @@ export function MarkersCardView({
             0,
           );
           const delta = swigs + penaltyStrokes - hole.par;
+          const breakfastBalls = scoreFor(player.id)?.breakfast_balls ?? 0;
           return (
             <div
               key={player.id}
@@ -170,6 +175,11 @@ export function MarkersCardView({
                       : swigs === 0
                         ? "no swigs — scores the substitute"
                         : formatToPar(delta)}
+                    {breakfastBalls > 0
+                      ? ` · ${breakfastBalls} breakfast ${
+                          breakfastBalls === 1 ? "ball" : "balls"
+                        }`
+                      : ""}
                   </span>
                 </span>
                 <ChevronRight
@@ -246,6 +256,10 @@ export function MarkersCardView({
         )}
         players={players}
         options={options}
+        breakfastBalls={
+          sheetPlayerId ? (scoreFor(sheetPlayerId)?.breakfast_balls ?? 0) : 0
+        }
+        breakfastBallsOffered={ruleset.breakfastBalls > 0}
       />
     </Screen>
   );

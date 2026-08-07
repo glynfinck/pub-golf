@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { RuleDouble } from "@/components/ui/rule";
 import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
+import { readRuleset } from "@/lib/ruleset";
 import { computeStandings, computeSuperlatives } from "@/lib/scoring";
 import { cn, formatToPar } from "@/lib/utils";
 
@@ -32,11 +33,14 @@ export default async function ResultsPage({
   if (bundle.round.status !== "finished") redirect(`/round/${normalized}`);
 
   const { round, holes, players, scores, penalties, me } = bundle;
-  const ruleset = round.ruleset as { softSubstituteScoresPar?: boolean };
+  const ruleset = readRuleset(round.ruleset);
   const standings = computeStandings(holes, players, scores, penalties, me?.id, {
     filedThrough: holes.length,
-    softSubstituteScoresPar: ruleset.softSubstituteScoresPar ?? true,
+    softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
+    breakfastBallStrokes: ruleset.breakfastBallStrokes,
   });
+  // Handicaps only earn their column when somebody is actually carrying one.
+  const handicapped = standings.some((row) => row.handicap > 0);
   const superlatives = computeSuperlatives(holes, players, scores, penalties);
   const winner = standings[0];
   const last = standings[standings.length - 1];
@@ -58,7 +62,9 @@ export default async function ResultsPage({
         >
           {winner.name} takes the round
           <span className="block font-sans text-[11px] not-italic text-muted-foreground">
-            {winner.gross} gross · {formatToPar(winner.toPar)} ·{" "}
+            {winner.gross} gross ·{" "}
+            {handicapped ? `${winner.net} net · ` : ""}
+            {formatToPar(winner.netToPar)} ·{" "}
             {winner.penaltyStrokes > 0
               ? `${winner.penaltyStrokes} penalty strokes`
               : "a clean card"}
@@ -87,11 +93,20 @@ export default async function ResultsPage({
                     caddy
                   </span>
                 ) : null}
+                {handicapped && row.handicap > 0 ? (
+                  <span className="ml-1.5 text-[10px] text-muted-foreground">
+                    hcp {row.handicap}
+                  </span>
+                ) : null}
               </span>
             }
             value={
               <span className="tabular font-mono text-xs">
-                <b>{row.gross}</b> · {formatToPar(row.toPar)}
+                <b>{handicapped ? row.net : row.gross}</b>
+                {handicapped ? (
+                  <span className="text-muted-foreground"> ({row.gross})</span>
+                ) : null}{" "}
+                · {formatToPar(row.netToPar)}
               </span>
             }
           />
@@ -110,8 +125,8 @@ export default async function ResultsPage({
         <ClaimCard
           name={me.display_name}
           rank={myRow?.rank ?? standings.length}
-          gross={myRow?.gross ?? 0}
-          toPar={myRow?.toPar ?? 0}
+          gross={myRow ? (handicapped ? myRow.net : myRow.gross) : 0}
+          toPar={myRow?.netToPar ?? 0}
         />
       ) : null}
 

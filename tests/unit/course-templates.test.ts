@@ -24,6 +24,23 @@ describe("INVITATIONAL_COURSE", () => {
   it("has nowhere to walk after the last hole", () => {
     expect(INVITATIONAL_COURSE.at(-1)?.walk_minutes_to_next).toBeNull();
   });
+
+  it("gives every hole a local rules list, even an empty one", () => {
+    // The column is `[]`-defaulted, so a hole without local rules still has
+    // an array to read — the sheet never has to guard for undefined.
+    for (const hole of INVITATIONAL_COURSE) {
+      expect(Array.isArray(hole.penalties)).toBe(true);
+    }
+  });
+
+  it("prices the local rules it does carry", () => {
+    const local = INVITATIONAL_COURSE.flatMap((hole) => hole.penalties);
+    expect(local.length).toBeGreaterThan(0);
+    for (const rule of local) {
+      expect(rule.reason.trim()).not.toBe("");
+      expect(rule.strokes).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("templateForHoleCount", () => {
@@ -74,5 +91,34 @@ describe("templateForHoleCount", () => {
     holes[0].venue_name = "Somewhere else";
     expect(INVITATIONAL_COURSE[0].par).not.toBe(99);
     expect(INVITATIONAL_COURSE[0].venue_name).not.toBe("Somewhere else");
+  });
+
+  it("carries the local rules onto the round's own holes", () => {
+    const holes = templateForHoleCount(9);
+    const source = INVITATIONAL_COURSE.findIndex(
+      (hole) => hole.penalties.length > 0,
+    );
+    expect(holes[source].penalties).toEqual(
+      INVITATIONAL_COURSE[source].penalties,
+    );
+  });
+
+  it("gives each wrapped hole its own copy of the local rules", () => {
+    // The spread that copies a template hole is shallow, so without an
+    // explicit clone holes 6 and 15 would share one array — and editing a
+    // course would reach back into the module constant every later round
+    // reads from.
+    const holes = templateForHoleCount(18);
+    const source = INVITATIONAL_COURSE.findIndex(
+      (hole) => hole.penalties.length > 0,
+    );
+    expect(holes[source].penalties).not.toBe(holes[source + 9].penalties);
+    expect(holes[source].penalties[0]).not.toBe(
+      holes[source + 9].penalties[0],
+    );
+
+    holes[source].penalties[0].strokes = 99;
+    expect(holes[source + 9].penalties[0].strokes).not.toBe(99);
+    expect(INVITATIONAL_COURSE[source].penalties[0].strokes).not.toBe(99);
   });
 });

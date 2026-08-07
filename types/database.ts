@@ -43,6 +43,7 @@ export type Database = {
           id: string
           number: number
           par: number
+          penalties: Json
           venue_id: string | null
           venue_name: string
           walk_minutes_to_next: number | null
@@ -55,6 +56,7 @@ export type Database = {
           id?: string
           number: number
           par: number
+          penalties?: Json
           venue_id?: string | null
           venue_name: string
           walk_minutes_to_next?: number | null
@@ -67,6 +69,7 @@ export type Database = {
           id?: string
           number?: number
           par?: number
+          penalties?: Json
           venue_id?: string | null
           venue_name?: string
           walk_minutes_to_next?: number | null
@@ -146,6 +149,7 @@ export type Database = {
           id: string
           number: number
           par: number
+          penalties: Json
           round_id: string
           venue_id: string | null
           venue_name: string
@@ -158,6 +162,7 @@ export type Database = {
           id?: string
           number: number
           par: number
+          penalties?: Json
           round_id: string
           venue_id?: string | null
           venue_name: string
@@ -170,6 +175,7 @@ export type Database = {
           id?: string
           number?: number
           par?: number
+          penalties?: Json
           round_id?: string
           venue_id?: string | null
           venue_name?: string
@@ -268,6 +274,7 @@ export type Database = {
       round_players: {
         Row: {
           display_name: string
+          handicap: number
           id: string
           joined_at: string
           profile_id: string
@@ -277,6 +284,7 @@ export type Database = {
         }
         Insert: {
           display_name: string
+          handicap?: number
           id?: string
           joined_at?: string
           profile_id: string
@@ -286,6 +294,7 @@ export type Database = {
         }
         Update: {
           display_name?: string
+          handicap?: number
           id?: string
           joined_at?: string
           profile_id?: string
@@ -420,6 +429,7 @@ export type Database = {
       }
       scores: {
         Row: {
+          breakfast_balls: number
           hole_number: number
           id: string
           player_id: string
@@ -428,6 +438,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          breakfast_balls?: number
           hole_number: number
           id?: string
           player_id: string
@@ -436,6 +447,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          breakfast_balls?: number
           hole_number?: number
           id?: string
           player_id?: string

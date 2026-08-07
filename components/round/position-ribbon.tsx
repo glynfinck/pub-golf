@@ -8,19 +8,24 @@ import { countWord, ordinal, toParClass } from "@/lib/format";
 import type { StandingRow } from "@/lib/scoring";
 import { cn, formatToPar } from "@/lib/utils";
 
-/** "level with Soph" | "one behind Soph" | "two clear of Soph" */
+/**
+ * "level with Soph" | "one behind Soph" | "two clear of Soph"
+ *
+ * Measured on netToPar, which is what the rows beside it are ordered by —
+ * a gap quoted in gross would contradict the very list it describes.
+ */
 function gapPhrase(rows: StandingRow[], me: StandingRow) {
   const myIndex = rows.findIndex((row) => row.playerId === me.playerId);
   if (rows.length < 2) return "a quiet round of one";
   if (myIndex === 0) {
     const chaser = rows[1];
-    const lead = chaser.toPar - me.toPar;
+    const lead = chaser.netToPar - me.netToPar;
     return lead === 0
       ? `level with ${chaser.name}`
       : `${countWord(lead)} clear of ${chaser.name}`;
   }
   const ahead = rows[myIndex - 1];
-  const gap = me.toPar - ahead.toPar;
+  const gap = me.netToPar - ahead.netToPar;
   return gap === 0
     ? `level with ${ahead.name}`
     : `${countWord(gap)} behind ${ahead.name}`;
@@ -78,9 +83,9 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
                 ) : null}
               </span>
               <span className="tabular font-mono text-sm">
-                <b>{row.gross}</b>{" "}
-                <span className={cn("font-bold", toParClass(row.toPar))}>
-                  {formatToPar(row.toPar)}
+                <b>{row.handicap > 0 ? row.net : row.gross}</b>{" "}
+                <span className={cn("font-bold", toParClass(row.netToPar))}>
+                  {formatToPar(row.netToPar)}
                 </span>
               </span>
             </div>
