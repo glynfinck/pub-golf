@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
@@ -10,9 +11,27 @@ import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { RuleDouble } from "@/components/ui/rule";
 import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
+import { getRoundCard } from "@/lib/data/round-card";
 import { readRuleset } from "@/lib/ruleset";
 import { computeStandings, computeSuperlatives } from "@/lib/scoring";
 import { cn, formatToPar } from "@/lib/utils";
+
+/** No winner in the title — the results page redirects a signed-out visitor,
+ * and the preview must not hand out what the page will not. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ code: string }>;
+}): Promise<Metadata> {
+  const { code } = await params;
+  const round = await getRoundCard(code.toUpperCase());
+  if (!round) return { title: "The 19th hole" };
+
+  return {
+    title: `${round.name} — the 19th hole`,
+    description: `${round.holeCount} holes, par ${round.par}. The card, filed.`,
+  };
+}
 
 export default async function ResultsPage({
   params,
