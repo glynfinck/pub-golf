@@ -91,6 +91,20 @@ allowance (a count across sibling rows, which WITH CHECK can never see).
 Both raise `42501` so `expectDenied` recognises them. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
+Two hosted environments, both deployed by the platforms rather than from this
+repo — Vercel's git integration builds the app, Supabase's GitHub integration
+applies the migrations, and CI ships nothing (see `DEPLOYMENT.md`). `main` →
+`pub-golf.glyn.dev` on `quncylgcwfiqsjugnvtv`; `preview` → the staging domain
+on the persistent branch project `xssmjzinaghxjncoezez`. Because the two
+integrations do not wait for each other, **migrations must be additive and
+readable by the currently-deployed code** — PostgREST fails a whole request
+with `42703` on a missing column, so a non-additive change is a visible outage
+for the minute or two the deploy takes. `supabase/config.toml` stays
+local-first and is never `config push`ed; the one thing that legitimately
+reaches a hosted project is its `[remotes.preview]` block, which Configure
+applies to the branch on every push. Anything added to `[auth]` for local dev
+must be considered for that block too, or local and preview silently disagree.
+
 Auth is **Google-only, and deliberately email-free**: hosting a round needs
 a Google sign-in (`signInWithOAuth` → `/auth/callback` exchanges the PKCE
 code), joining one needs nothing. Claiming a card is
