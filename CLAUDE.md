@@ -112,6 +112,15 @@ tier: `adminClient()` is for seeding and reading a row back, never the subject
 of a test; and an UPDATE that RLS filters out returns *no error and no rows*,
 so a blocked write is proven by re-reading the row, never by `error === null`.
 
+`adminClient()` drives PostgREST as `service_role`, so **a new table needs a
+grant to `service_role` as well as `authenticated`** — this stack does not
+auto-expose new tables to the Data API roles, and the whole db tier goes dark
+the moment one is missed. Default privileges in
+`20260811000000_service_role_grants.sql` cover tables a later migration
+creates, but a table created by any other owner would still need it by hand.
+Read the error shape: `42501 permission denied` is always the table grant; a
+policy refusal returns no rows and no error at all.
+
 `npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
 real local Supabase stack — two browser contexts play a full round: create,
 guest join, caddy promotion + controls (tee off, back/forward, reset timer,

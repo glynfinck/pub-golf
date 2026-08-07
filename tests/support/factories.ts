@@ -83,6 +83,11 @@ export async function seedRound(
   );
   if (holesError) throw holesError;
 
+  // Every row carries the same keys. PostgREST builds one column list from the
+  // UNION of the keys across a batch and writes NULL into the rows that did
+  // not mention a column — it does not fall back to the column default. So a
+  // host row that simply omitted `handicap` would be inserted as null and
+  // break the not-null constraint the moment any player row named it.
   const { data: seats, error: seatError } = await db
     .from("round_players")
     .insert([
@@ -91,6 +96,7 @@ export async function seedRound(
         profile_id: options.host.userId,
         display_name: options.host.name,
         role: "host",
+        handicap: 0,
       },
       ...(options.players ?? []).map((player) => ({
         round_id: round.id,

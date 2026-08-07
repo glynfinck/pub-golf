@@ -18,7 +18,12 @@ import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { Medallion } from "@/components/ui/medallion";
 import { RuleDouble } from "@/components/ui/rule";
 import { usePresence } from "@/hooks/use-presence";
-import { advanceHole, resetHoleTimer, upsertScore } from "@/lib/actions/rounds";
+import {
+  advanceHole,
+  resetHoleTimer,
+  takeBreakfastBall,
+  upsertScore,
+} from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
 import { underOverPhrase } from "@/lib/format";
 import { readHolePenalties, readRuleset } from "@/lib/ruleset";
@@ -49,6 +54,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const holeRef = useRef(round.current_hole);
   const lastServer = useRef(serverSwigs);
   const syncing = useRef(false);
+  /** The swig write currently on its way to the server, if any. */
+  const inFlight = useRef<Promise<void> | null>(null);
   useEffect(() => {
     // New hole (caddy advanced): reset the local counter to server state.
     if (holeRef.current !== round.current_hole) {
@@ -70,12 +77,46 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     setSwigs(next);
     syncing.current = true;
     clearTimeout(debounce.current);
-    debounce.current = setTimeout(async () => {
-      const result = await upsertScore(round.code, round.current_hole, next);
-      syncing.current = false;
-      lastServer.current = next;
-      if (result.error) toast.error(result.error);
+    debounce.current = setTimeout(() => {
+      // Held so a breakfast ball can wait this out — see takeHalfPint.
+      inFlight.current = upsertScore(round.code, round.current_hole, next)
+        .then((result) => {
+          lastServer.current = next;
+          if (result.error) toast.error(result.error);
+        })
+        .finally(() => {
+          syncing.current = false;
+          inFlight.current = null;
+        });
     }, 400);
+  }
+
+  /**
+   * Take a breakfast ball: wipe the hole and drink a half.
+   *
+   * The debounce is the whole difficulty. Swigs are written 400ms after the
+   * last tap, so "tap, tap, tap, ugh, half pint" leaves a write in the post
+   * that lands AFTER the reset and puts the wiped swigs straight back on the
+   * card — and `syncing` would still be true, so the screen would refuse the
+   * server's zero as well. Drop the write that has not left yet, wait out one
+   * that has, and only then reset.
+   */
+  function takeHalfPint() {
+    startTransition(async () => {
+      clearTimeout(debounce.current);
+      await inFlight.current;
+      syncing.current = false;
+
+      const result = await takeBreakfastBall(round.code, round.current_hole);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      setSwigs(0);
+      lastServer.current = 0;
+      setBreakfastBallOpen(false);
+      toast("Breakfast ball taken — start the hole again.");
+    });
   }
 
   function holeOut() {
@@ -289,7 +330,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       <BreakfastBallSheet
         open={breakfastBallOpen}
         onOpenChange={setBreakfastBallOpen}
-        code={round.code}
+        onConfirm={takeHalfPint}
+        pending={pending}
         holeNumber={round.current_hole}
         swigs={swigs}
         strokes={ruleset.breakfastBallStrokes}
