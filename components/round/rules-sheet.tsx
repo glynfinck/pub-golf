@@ -11,6 +11,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { hazardsOn } from "@/lib/hazards";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { roundRuleLines } from "@/lib/round-rules";
 import { readHolePenalties, readRuleset } from "@/lib/ruleset";
@@ -51,6 +52,7 @@ export function RulesSheet({
 }) {
   const ruleset = readRuleset(round.ruleset);
   const lines = roundRuleLines(ruleset, holes);
+  const hazardsInPlay = ruleset.hazards ? hazardsOn(holes) : [];
   const holeRow =
     hole != null ? holes.find((h) => h.number === hole) : undefined;
   const options = penaltyOptions(
@@ -103,6 +105,32 @@ export function RulesSheet({
               </li>
             ) : null}
           </ul>
+
+          {/* Golf's names, borrowed for the shape of the trouble they
+              cause. Only the hazards actually in force on this course get a
+              line — a rule nobody is playing is just noise on a sheet read
+              in a dark pub. */}
+          {hazardsInPlay.length > 0 ? (
+            <>
+              <SheetHeading>Hazards</SheetHeading>
+              <div className="flex flex-col gap-2">
+                {hazardsInPlay.map(({ hazard, holeNumbers }) => (
+                  <div key={hazard.id}>
+                    <b className="text-xs text-hazard">
+                      {hazard.label}
+                      <span className="ml-1.5 font-normal text-muted-foreground">
+                        hole{holeNumbers.length > 1 ? "s" : ""}{" "}
+                        {holeNumbers.join(" · ")}
+                      </span>
+                    </b>
+                    <p className="text-[11px] text-muted-foreground">
+                      {hazard.meaning}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
 
           <SheetHeading>This round</SheetHeading>
           <div className="flex flex-col gap-1.5">
