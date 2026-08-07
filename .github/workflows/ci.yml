@@ -115,11 +115,11 @@ jobs:
       - name: E2E tests (Playwright)
         run: npm run test:e2e
 
-      # test-results/ as well as the report: the dot reporter CI uses never
-      # writes playwright-report/, so this step has only ever uploaded nothing.
-      # test-results/ holds the per-failure error-context.md — the page
-      # snapshot at the moment of the failure, including any error toast, which
-      # is the one thing the log cannot tell you.
+      # Both halves are real now: playwright-report/ carries the html report
+      # the CI reporter writes, and test-results/ holds each failure's
+      # error-context.md (the page snapshot at the moment it failed, error
+      # toasts included) plus the step-by-step trace.zip recorded for any
+      # test that needed a retry — open it at trace.playwright.dev.
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4

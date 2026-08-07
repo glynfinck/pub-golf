@@ -21,8 +21,20 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 1,
   // One round at a time — tests share the local database.
   workers: 1,
+  // CI's default reporter is `dot`, which buffers a wall of dots while a
+  // three-engine matrix runs for minutes — from the outside that reads as
+  // hung. `list` streams a line per test with its duration as it finishes,
+  // `github` pins failures to the PR diff as annotations, and `html` gives
+  // the report-upload step something real to upload at last.
+  reporter: process.env.CI
+    ? [["list"], ["github"], ["html", { open: "never" }]]
+    : "list",
   use: {
     baseURL: "http://localhost:3105",
+    // A full step-by-step trace, recorded only when a test needs a retry —
+    // the deep dive exactly where it's wanted, free on green runs. Traces
+    // land in test-results/, which CI already uploads.
+    trace: "on-first-retry",
   },
   // The platform matrix: every spec runs once per row, engine × form factor.
   // A round is played on whatever the table pulls out of their pockets, so
