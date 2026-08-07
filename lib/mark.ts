@@ -10,6 +10,9 @@
  *
  * `app/icon.svg` is a static file and so is the one copy that cannot import
  * this — `tests/unit/mark.test.ts` pins it to `markSvg(32)` instead.
+ * `app/favicon.ico` is generated from the same geometry (16/32/48 PNG frames)
+ * and checked by the same test; browsers ask for /favicon.ico whatever the
+ * <link> tags say, and cache a 404 there long enough to look like a bug.
  */
 
 export const MARK_VIEWBOX = 32;
