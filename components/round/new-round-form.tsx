@@ -191,8 +191,11 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
 
   const summaryClass =
     "tabular truncate font-mono text-[11px] font-normal text-muted-foreground group-aria-expanded/accordion-trigger:hidden";
-  const toggleRow =
-    "flex min-h-12 w-full items-center justify-between gap-3 border-t border-border";
+  // A settings row: label left, control right, with breathing room so a
+  // 48px control never presses against the divider above it. Rows stack in
+  // a `divide-y` column, which owns the lines — rows never draw their own.
+  const settingRow =
+    "flex min-h-14 w-full items-center justify-between gap-3 py-2";
 
   return (
     <Screen>
@@ -226,7 +229,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               <span className={summaryClass}>{courseSummary}</span>
             </span>
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className="flex flex-col gap-4 pb-4">
             <div>
               <FieldLabel>Course</FieldLabel>
               <div className="flex flex-wrap gap-2">
@@ -321,13 +324,15 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               </div>
             </div>
 
-            <label className={cn(toggleRow, "border-t-0")}>
-              <span className="text-sm font-semibold">Hazards on course</span>
-              <Switch
-                checked={toggles.hazards}
-                onCheckedChange={(checked) => setToggle("hazards", checked)}
-              />
-            </label>
+            <div className="border-t border-border">
+              <label className={settingRow}>
+                <span className="text-sm font-semibold">Hazards on course</span>
+                <Switch
+                  checked={toggles.hazards}
+                  onCheckedChange={(checked) => setToggle("hazards", checked)}
+                />
+              </label>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -344,9 +349,15 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               <span className={summaryClass}>{clockSummary}</span>
             </span>
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
-            <div className="flex min-h-12 items-center justify-between gap-3">
-              <span className="text-sm font-semibold">First tee</span>
+          <AccordionContent className="flex flex-col gap-4 pb-4">
+            <div className="flex flex-col divide-y divide-border">
+            <div className={settingRow}>
+              <span className="text-sm font-semibold">
+                First tee
+                <span className="block text-[10px] font-normal text-muted-foreground">
+                  Printed on the lobby and the invite · locks nothing
+                </span>
+              </span>
               <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="compact" className="gap-1.5">
@@ -396,12 +407,8 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
                 </PopoverContent>
               </Popover>
             </div>
-            <p className="-mt-3 text-[11px] text-muted-foreground">
-              Printed on the lobby and the invite. Nothing locks — you still
-              tee off when the group is stood there.
-            </p>
 
-            <div className="flex min-h-12 items-center justify-between gap-3">
+            <div className={settingRow}>
               <span className="text-sm font-semibold">Time at each pub</span>
               <Stepper
                 className="w-36 shrink-0"
@@ -415,7 +422,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               />
             </div>
 
-            <label className={toggleRow}>
+            <label className={settingRow}>
               <span className="text-sm font-semibold">
                 Shot clock on the card
                 <span className="block text-[10px] font-normal text-muted-foreground">
@@ -427,6 +434,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
                 onCheckedChange={(checked) => setToggle("timer", checked)}
               />
             </label>
+            </div>
 
             {/* The 19th hole, computed: pubs at pace plus Google's walks. */}
             <div className="engraved rounded-xl bg-card px-4 py-3">
@@ -459,7 +467,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               <span className={summaryClass}>{rulesSummary}</span>
             </span>
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className="flex flex-col gap-4 pb-4">
             <div>
               <FieldLabel>Penalties · the house menu</FieldLabel>
               <div className="flex flex-col">
@@ -550,41 +558,43 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
               </button>
             </div>
 
-            <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border">
-              <span className="text-sm font-semibold">
-                Breakfast balls each
-                <span className="block text-[10px] font-normal text-muted-foreground">
-                  {breakfastBalls === 0
-                    ? "No bail-outs — every drink gets finished."
-                    : `A half pint wipes the hole, for +${BREAKFAST_BALL_STROKES} on the card.`}
+            <div className="flex flex-col divide-y divide-border border-t border-border">
+              <div className={settingRow}>
+                <span className="text-sm font-semibold">
+                  Breakfast balls each
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    {breakfastBalls === 0
+                      ? "No bail-outs — every drink gets finished."
+                      : `A half pint wipes the hole, for +${BREAKFAST_BALL_STROKES} on the card.`}
+                  </span>
                 </span>
-              </span>
-              <Stepper
-                className="w-32 shrink-0"
-                value={breakfastBalls}
-                onChange={setBreakfastBalls}
-                max={MAX_BREAKFAST_BALLS}
-                label="breakfast balls"
-                format={(value) => (value === 0 ? "off" : String(value))}
-              />
-            </div>
+                <Stepper
+                  className="w-32 shrink-0"
+                  value={breakfastBalls}
+                  onChange={setBreakfastBalls}
+                  max={MAX_BREAKFAST_BALLS}
+                  label="breakfast balls"
+                  format={(value) => (value === 0 ? "off" : String(value))}
+                />
+              </div>
 
-            <label className={toggleRow}>
-              <span className="text-sm font-semibold">
-                Soft substitute scores par
-              </span>
-              <Switch
-                checked={toggles.softSub}
-                onCheckedChange={(checked) => setToggle("softSub", checked)}
-              />
-            </label>
-            <label className={cn(toggleRow, "-mt-2")}>
-              <span className="text-sm font-semibold">Player handicaps</span>
-              <Switch
-                checked={toggles.handicaps}
-                onCheckedChange={(checked) => setToggle("handicaps", checked)}
-              />
-            </label>
+              <label className={settingRow}>
+                <span className="text-sm font-semibold">
+                  Soft substitute scores par
+                </span>
+                <Switch
+                  checked={toggles.softSub}
+                  onCheckedChange={(checked) => setToggle("softSub", checked)}
+                />
+              </label>
+              <label className={settingRow}>
+                <span className="text-sm font-semibold">Player handicaps</span>
+                <Switch
+                  checked={toggles.handicaps}
+                  onCheckedChange={(checked) => setToggle("handicaps", checked)}
+                />
+              </label>
+            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
