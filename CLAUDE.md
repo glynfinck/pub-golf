@@ -196,8 +196,21 @@ auth.uid()` for INSERT..RETURNING; the realtime socket must carry the
 user JWT (`supabase.realtime.setAuth`) or RLS silently filters all events;
 after `supabase stop/start` or `db reset`, RESTART the dev server on 3105
 (kill it and let Playwright respawn) or realtime events stop reaching
-pages — and expect the first e2e run after a cold stack boot to flake once
-on the lobby realtime assertion.
+pages.
+
+**A pass on retry is a failure.** CI sets `failOnFlakyTests`, so a test
+that goes green on attempt two fails the run: retries are there to record
+a trace (`trace: "on-first-retry"`), never to launder a red. This is not
+pedantry — a "flaky" line once hid a real scoring bug, where swigs written
+inside the hole-out debounce were refused and the hole silently scored the
+par substitute, behind a green check. Assertions racing a realtime
+`router.refresh()` are the usual suspect: Next mounts the outgoing and
+incoming view together for a beat, so **counting a testid and then acting
+on it must retry as one block** — `expectSettled`/`clickSettled` in
+`e2e/nav.ts` do that with `toPass`; a bare `toHaveCount(1)` followed by a
+separate `await` is the bug it looks like it prevents. In CI the suite
+runs against `next start` (the build the job already made), so `CI=1
+npx playwright test` after `npm run build` reproduces CI exactly.
 
 ## Local ports
 

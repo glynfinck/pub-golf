@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import { signInAs } from "./auth";
+import { expectSettled } from "./nav";
 
 test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
@@ -14,10 +15,8 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   // The builder hangs from the same masthead as every no-tab-bar screen,
   // and its way back is the course book. Count first: mid-navigation the
   // outgoing and incoming screens both hold a masthead for a moment.
-  await expect(page.getByTestId("masthead-back")).toHaveCount(1);
-  await expect(page.getByTestId("masthead-back")).toHaveAttribute(
-    "href",
-    "/courses",
+  await expectSettled(page, "masthead-back", (back) =>
+    expect(back).toHaveAttribute("href", "/courses"),
   );
   await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
 
@@ -54,8 +53,9 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   // ---- The saved course appears in the round wizard and plays ----
   await page.goto("/new");
   // The wizard's masthead walks back to the clubhouse it was opened from.
-  await expect(page.getByTestId("masthead-back")).toHaveCount(1);
-  await expect(page.getByTestId("masthead-back")).toHaveAttribute("href", "/");
+  await expectSettled(page, "masthead-back", (back) =>
+    expect(back).toHaveAttribute("href", "/"),
+  );
   await page.getByLabel(/round name/i).fill(`Course Test ${stamp}`);
   await page
     .getByRole("button", { name: new RegExp(`Two Pub Crawl ${stamp}`) })

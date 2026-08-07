@@ -15,10 +15,14 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  // The realtime assertions race the socket's first subscribe on a cold stack
-  // — a known flake, not a product failure (see CLAUDE.md). Without retries it
-  // would block production deploys, since the deploy job gates on this suite.
+  // Retries exist to produce evidence, not to launder a red run: a retried
+  // test records a trace (see `trace` below), and `failOnFlakyTests` then
+  // fails the run anyway. Green has to mean green — a pass-on-retry once hid
+  // a real scoring bug (swigs written inside the hole-out debounce were
+  // refused, and the hole silently scored the par substitute) behind three
+  // "flaky" lines and a green check.
   retries: process.env.CI ? 2 : 1,
+  failOnFlakyTests: !!process.env.CI,
   // One round at a time — tests share the local database.
   workers: 1,
   // CI's default reporter is `dot`, which buffers a wall of dots while a

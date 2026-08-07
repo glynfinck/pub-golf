@@ -1,13 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
-import { clickSettled, gotoSettled } from "./nav";
+import { clickSettled, expectSettled, gotoSettled } from "./nav";
 
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
 async function holeOutAndTeeUp(caddy: Page, expectVenue?: string | RegExp) {
   await clickSettled(caddy, "hole-out");
-  await expect(caddy.getByTestId("walking-view")).toHaveCount(1);
+  await expectSettled(caddy, "walking-view");
   await clickSettled(caddy, "tee-up");
   if (expectVenue) {
     await expect(caddy.getByTestId("hole-venue")).toHaveText(expectVenue);
@@ -193,8 +193,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Marker's roam: review hole 1 without moving the round ----
   await gotoSettled(guest, `/round/${roundCode}/card?hole=1`);
-  await expect(guest.getByTestId("roaming-banner")).toHaveCount(1);
-  await expect(guest.getByTestId("roaming-banner")).toBeVisible();
+  await expectSettled(guest, "roaming-banner");
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
     .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })
