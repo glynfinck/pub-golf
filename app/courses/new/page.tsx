@@ -63,7 +63,7 @@ export default function NewCoursePage() {
 
   return (
     <Screen>
-      <RuleDouble />
+      <RuleDouble head />
       <ScreenHeader
         eyebrow={`New course · ${holes.length} holes so far`}
         title="Plot the course"

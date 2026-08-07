@@ -206,7 +206,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
 
   return (
     <Screen>
-      <RuleDouble busy={busy} />
+      <RuleDouble head busy={busy} />
       <ScreenHeader eyebrow="New round" title="Set the table" />
 
       <div>
