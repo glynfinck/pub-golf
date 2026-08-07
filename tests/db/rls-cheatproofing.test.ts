@@ -95,17 +95,38 @@ describe("cheating the card", () => {
       expect((await storedScore(1))?.swigs).toBe(7);
     });
 
-    it("refuses a first-ever score against a hole the substitute filed", async () => {
-      // No row on hole 1, so the substitute scored it at par. A late "1"
-      // would undercut that — the whole point of the substitute rule.
+    it("lets a debounced swig land on the hole just filed", async () => {
+      // The most ordinary write in the app, and the one the first cut of
+      // this guard threw away: the play screen debounces taps 400ms, the
+      // caddy calls the hole, and the write arrives aimed at a hole that
+      // is already behind the live one. Refusing it scored the player the
+      // par substitute while their own screen showed their swigs.
       const { error } = await player.db.from("scores").insert({
         round_id: round.id,
         player_id: seat(),
         hole_number: 1,
+        swigs: 3,
+      });
+      expect(error).toBeNull();
+      expect((await storedScore(1))?.swigs).toBe(3);
+    });
+
+    it("refuses a first-ever score against an older filed hole", async () => {
+      // Two holes back is no debounce — it is a backfill, and it would
+      // undercut the substitute that hole has already scored.
+      const onward = await seedRound({
+        host,
+        players: [{ ...player, role: "player" }],
+        holes: 3,
+        currentHole: 3,
+      });
+      const { error } = await player.db.from("scores").insert({
+        round_id: onward.id,
+        player_id: onward.seatOf[player.userId],
+        hole_number: 1,
         swigs: 1,
       });
       expectDenied(error);
-      expect(await storedScore(1)).toBeNull();
     });
 
     it("still lets the live hole move both ways — the undo button", async () => {

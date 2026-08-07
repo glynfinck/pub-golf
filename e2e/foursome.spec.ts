@@ -174,6 +174,14 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
   // Glyn 3 takes it; Ana and Bram tie on 4; Cleo's blank hole scored the
   // par-4 substitute, so one real swig still finishes last on 5 — silence
   // never buys a cheap round.
+  //
+  // The finishing ORDER is the assertion, not decoration. Every phone here
+  // taps its last swig and the caddy calls the hole inside the play
+  // screen's 400ms debounce, so this is the one test that proves a late
+  // write still lands: when the hole-window guard refused it, Ana and Bram
+  // each took a substitute for a hole they had drunk (2+2 read as 6, 3+1
+  // as 5) and the forfeit moved to the wrong player. Only the host escaped
+  // it, being an official and exempt from the guard.
   await expect(host.getByTestId("winner")).toContainText("Glyn");
   for (const name of ["Glyn", "Ana", "Bram", "Cleo"]) {
     await expect(

@@ -92,11 +92,16 @@ officials-only (a player editing their own passes the self policy, so only
 OLD-vs-NEW can tell), and `scores.mulligans` is capped at the round's
 allowance (a count across sibling rows, which WITH CHECK can never see).
 A third — `guard_score_hole_window` — is the cheatproofing pass
-(`20260814000000`): non-officials cannot write future holes, cannot lower
-or first-write a filed hole (the substitute stands), cannot lower the last
-hole once the card is filed, and never take a mulligan off their own row;
-increases stay open because the play screen's 400ms debounce means an
-honest write can land just after the caddy files. `penalties.strokes` is
+(`20260814000000`): non-officials cannot write future holes, cannot lower a
+filed hole, cannot lower the last hole once the card is filed, cannot
+first-write a hole filed longer ago than one (the substitute stands), and
+never take a mulligan off their own row. The **one-hole grace**
+(`20260815000000`) is load-bearing, not a loophole: `advanceHole`
+increments `current_hole` immediately while the play screen debounces swigs
+by 400ms, so the hole directly behind the live one is the only hole an
+honest late tap can be aimed at — refusing it silently scored that player
+the par substitute while their own screen showed their swigs, and officials
+never saw it because the guard exempts them. `penalties.strokes` is
 schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
 retraction follows `called_by`, not whose card it sits on. All raise
 `42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
