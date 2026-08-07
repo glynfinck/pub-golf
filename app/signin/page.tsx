@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
 import { Screen } from "@/components/shell/screen";
-import { ParlourMark } from "@/components/ui/parlour-mark";
+import { HouseMark } from "@/components/ui/house-mark";
 import { APP_NAME, TAGLINE } from "@/lib/config";
 
 export default async function SignInPage({
@@ -17,7 +17,7 @@ export default async function SignInPage({
     <Screen className="justify-center gap-5">
       <div className="text-center">
         <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full border-2 border-fairway">
-          <ParlourMark className="size-10" />
+          <HouseMark className="size-10" />
         </div>
         <h1 className="font-serif text-4xl tracking-[0.08em] uppercase">
           {APP_NAME}

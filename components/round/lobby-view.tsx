@@ -154,10 +154,14 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
         {players.map((player) => (
           <div
             key={player.id}
-            className="flex min-h-13 items-baseline gap-2 border-b border-dotted border-border"
+            className="flex min-h-13 flex-col justify-center gap-1 border-b border-dotted border-border py-2"
           >
-            <span className="min-w-0 self-center">
-              <span className="block truncate text-sm font-bold">
+            {/* The name, its leader and the standing share one baseline —
+                the dots run along the line the words sit on, menu style.
+                Anything else about the player hangs beneath it, so a
+                handicap stepper can never drag the dots off the line. */}
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 truncate text-sm font-bold">
                 {player.display_name}
                 {player.id === me?.id ? (
                   <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
@@ -165,58 +169,25 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
                   </span>
                 ) : null}
               </span>
-              {player.role === "caddy" ? (
-                <span className="block text-[10px] text-muted-foreground">
-                  Caddy · stays sober, final word
-                </span>
-              ) : null}
-              {ruleset.handicaps ? (
-                isOfficial ? (
-                  <span className="mt-1 flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        "eyebrow",
-                        handicaps.settling(player.id) && "text-marker",
-                      )}
-                    >
-                      Hcp
-                    </span>
-                    <Stepper
-                      className="min-h-9 w-24 px-1"
-                      value={handicaps.valueOf(player.id)}
-                      onChange={(next) => handicaps.set(player.id, next)}
-                      max={MAX_HANDICAP}
-                      decrementLabel={`Lower ${player.display_name}'s handicap`}
-                      incrementLabel={`Raise ${player.display_name}'s handicap`}
-                      label="handicap"
-                    />
-                  </span>
-                ) : player.handicap > 0 ? (
-                  <span className="block text-[10px] text-muted-foreground">
-                    Playing off {player.handicap}
-                  </span>
-                ) : null
-              ) : null}
-            </span>
-            <span aria-hidden className="leader flex-1 self-center" />
-            <span className="shrink-0 self-center">
+              <span aria-hidden className="leader flex-1 self-baseline" />
               {isHost && player.role !== "host" ? (
                 <Button
                   size="compact"
                   variant="outline"
                   disabled={pending}
+                  className="shrink-0 self-center"
                   onClick={() => toggleCaddy(player.id, player.role)}
                 >
                   {player.role === "caddy" ? "Unmake caddy" : "Make caddy"}
                 </Button>
               ) : synced && !present.has(player.id) ? (
-                <span className="text-[10px] font-bold tracking-[0.14em] text-muted-foreground">
+                <span className="shrink-0 text-[10px] font-bold tracking-[0.14em] text-muted-foreground">
                   WALKING IN…
                 </span>
               ) : (
                 <span
                   className={cn(
-                    "text-[10px] font-bold tracking-[0.14em]",
+                    "shrink-0 text-[10px] font-bold tracking-[0.14em]",
                     player.role === "host" ? "text-marker" : "text-good",
                   )}
                 >
@@ -227,7 +198,40 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
                       : "READY"}
                 </span>
               )}
-            </span>
+            </div>
+
+            {player.role === "caddy" ? (
+              <span className="block text-[10px] text-muted-foreground">
+                Caddy · stays sober, final word
+              </span>
+            ) : null}
+            {ruleset.handicaps ? (
+              isOfficial ? (
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "eyebrow",
+                      handicaps.settling(player.id) && "text-marker",
+                    )}
+                  >
+                    Hcp
+                  </span>
+                  <Stepper
+                    className="min-h-9 px-1"
+                    value={handicaps.valueOf(player.id)}
+                    onChange={(next) => handicaps.set(player.id, next)}
+                    max={MAX_HANDICAP}
+                    decrementLabel={`Lower ${player.display_name}'s handicap`}
+                    incrementLabel={`Raise ${player.display_name}'s handicap`}
+                    label="handicap"
+                  />
+                </span>
+              ) : player.handicap > 0 ? (
+                <span className="block text-[10px] text-muted-foreground">
+                  Playing off {player.handicap}
+                </span>
+              ) : null
+            ) : null}
           </div>
         ))}
       </div>

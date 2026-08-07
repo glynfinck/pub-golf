@@ -211,7 +211,7 @@ export function MarkerPlayerSheet({
                 </span>
               </span>
               <Stepper
-                className="w-28 shrink-0"
+                className="shrink-0"
                 value={figures.valueOf(figureKey)}
                 onChange={(next) => figures.set(figureKey, next)}
                 max={MAX_MULLIGANS}

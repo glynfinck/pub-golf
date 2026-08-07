@@ -1,9 +1,9 @@
 /**
- * The Parlour mark: a pennant on a flagstick, planted on the green.
+ * The house mark: a pennant on a flagstick, planted on the green.
  *
  * One definition, three consumers — the favicon (`app/icon.svg`), the
  * generated images (`app/apple-icon.tsx` and the Open Graph cards, which take
- * the markup as a data URI), and the sign-in screen (`ParlourMark`). Satori
+ * the markup as a data URI), and the sign-in screen (`HouseMark`). Satori
  * cannot resolve `var(--marker)` and neither can an icon file, so the colours
  * are literals here rather than tokens; they are the dark theme's values from
  * `app/globals.css` and have to move with it.

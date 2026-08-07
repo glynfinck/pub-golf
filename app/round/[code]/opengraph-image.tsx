@@ -41,7 +41,7 @@ export default async function Image({
       <OgCard
         eyebrow="Pub Golf"
         title="This round has closed its card"
-        meta="parlour"
+        meta="pub golf"
       />,
       { ...size, fonts },
     );

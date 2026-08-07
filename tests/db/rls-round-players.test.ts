@@ -174,6 +174,29 @@ describe("round_players", () => {
       );
     });
 
+    it("finds every open seat a rename should reach, and no filed one", async () => {
+      // The query updateDisplayName runs after writing the profile: the
+      // card reads round_players.display_name, so a rename that stops at
+      // `profiles` leaves the old name on the standings of a round being
+      // played. Filed cards keep the name they were played under.
+      const finished = await seedRound({
+        host,
+        players: [{ ...player, role: "player" }],
+        status: "finished",
+      });
+
+      const { data: seats, error } = await player.db
+        .from("round_players")
+        .select("id, rounds!inner(status)")
+        .eq("profile_id", player.userId)
+        .neq("rounds.status", "finished");
+      expect(error).toBeNull();
+
+      const ids = (seats ?? []).map((seat) => seat.id);
+      expect(ids).toContain(round.seatOf[player.userId]);
+      expect(ids).not.toContain(finished.seatOf[player.userId]);
+    });
+
     it("refuses a player renaming someone else's card", async () => {
       await player.db
         .from("round_players")

@@ -21,12 +21,12 @@ export interface TemplateHole {
 export const INVITATIONAL_COURSE: TemplateHole[] = [
   { number: 1, venue_name: "Cat & Mutton", drink: "Pint of lager", par: 5, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: 8 },
   { number: 2, venue_name: "Pub on the Park", drink: "Bottle of cider", par: 4, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: 12 },
-  { number: 3, venue_name: "The Pembury Tavern", drink: "Pint of Five Points", par: 5, hazard: "dogleg", hazard_note: "Drinks pass one place left before anyone starts", penalties: [{ strokes: 2, reason: "Drinking before the pass is complete" }], walk_minutes_to_next: 14 },
+  { number: 3, venue_name: "The Pembury Tavern", drink: "Pint of Five Points", par: 5, hazard: "dogleg", hazard_note: "Hand your glass to the player on your left — drink whatever reaches you", penalties: [{ strokes: 2, reason: "Drinking before the pass is complete" }], walk_minutes_to_next: 14 },
   { number: 4, venue_name: "The Clapton Hart", drink: "Pint of craft", par: 4, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: 7 },
   { number: 5, venue_name: "Crooked Billet", drink: "Pint of cask ale", par: 3, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: 22 },
-  { number: 6, venue_name: "The Auld Shillelagh", drink: "Pint of Guinness", par: 6, hazard: "water", hazard_note: "No toilet for the whole hole — two strokes if you crack", penalties: [{ strokes: 3, reason: "Using the toilet on a water hazard" }], walk_minutes_to_next: 13 },
+  { number: 6, venue_name: "The Auld Shillelagh", drink: "Pint of Guinness", par: 6, hazard: "water", hazard_note: "No toilet until the hole is filed — a 3-stroke penalty if you crack", penalties: [{ strokes: 3, reason: "Using the toilet on a water hazard" }], walk_minutes_to_next: 13 },
   { number: 7, venue_name: "Clissold Park Tavern", drink: "Glass of wine", par: 3, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: 23 },
-  { number: 8, venue_name: "The World's End", drink: "Bomb shot, in one", par: 1, hazard: "bunker", hazard_note: "Down in one, or play it again to get out", penalties: [{ strokes: 2, reason: "Not down in one" }], walk_minutes_to_next: 2 },
+  { number: 8, venue_name: "The World's End", drink: "Bomb shot, in one", par: 1, hazard: "bunker", hazard_note: "Down in one — extra swigs count as strokes, and missing it is a 2-stroke penalty", penalties: [{ strokes: 2, reason: "Not down in one" }], walk_minutes_to_next: 2 },
   { number: 9, venue_name: "The Faltering Fullback", drink: "Pint of your choosing", par: 5, hazard: null, hazard_note: null, penalties: [], walk_minutes_to_next: null },
 ];
 

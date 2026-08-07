@@ -1,6 +1,9 @@
 /**
- * Platform identity. The working name is "Parlour" (naming study in the
- * design artifact — availability unverified); Pub Golf is the flagship game.
+ * Identity. The app is Pub Golf — the "Parlour" working name is retired, so
+ * the platform and its flagship game are now the same words. FLAGSHIP_GAME
+ * stays as its own export because the copy that names the game reads
+ * differently from the copy that names the app, and a platform with a second
+ * game would want them apart again.
  */
 /**
  * Where the app is served from. Only ever read for absolute URLs in metadata —
@@ -10,6 +13,6 @@
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://pub-golf.glyn.dev";
 
-export const APP_NAME = "Parlour";
+export const APP_NAME = "Pub Golf";
 export const FLAGSHIP_GAME = "Pub Golf";
 export const TAGLINE = "Nine pubs. Par 36. Lowest swigs wins.";

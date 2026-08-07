@@ -26,6 +26,13 @@ async function joinAsGuest(
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`/join?code=${code}`);
+  // Wait for the round preview before touching anything. It is fetched by
+  // the client after mount, so its arrival is the only honest proof that
+  // this page has hydrated — and the join form submits through
+  // preventDefault, meaning a click landing a moment early does nothing at
+  // all and the navigation that never comes reads as a hung test. WebKit
+  // hydrates slowest and found this first.
+  await expect(page.getByText(/in the lobby|already live/i)).toBeVisible();
   await page.getByLabel(/name on the card/i).fill(name);
   await page.getByRole("button", { name: /join the round/i }).click();
   await page.waitForURL(new RegExp(`/round/${code}`));
@@ -94,12 +101,11 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
       host.getByTestId("lobby-players").getByText(name),
     ).toBeVisible();
   }
-  // And every guest phone's own socket must be live before the tee-off
-  // broadcast has to find it — READY is presence-driven, so a visible badge
-  // is the subscribe signal.
-  for (const page of [ana, bram, cleo]) {
-    await expect(page.getByText("READY").first()).toBeVisible();
-  }
+  // No gate on the guests' sockets here any more. That existed because a
+  // phone subscribing after the tee-off broadcast used to miss it for good;
+  // useLiveRound now catches up the moment it reaches SUBSCRIBED, so the
+  // four waitForURLs below are the honest assertion — every phone arrives,
+  // whenever its socket did.
 
   // ---- Tee off: all four phones go live together ----
   await clickSettled(host, "tee-off");
@@ -213,13 +219,9 @@ test("a latecomer joins a round already under way and lands on the live hole", a
   const code = host.url().split("/").pop()!;
 
   const ana = await joinAsGuest(browser, code, "Ana");
-  // Wait for Ana's OWN socket, not the host's view of her: the READY badge
-  // is presence-driven, so it proves her phone is subscribed before the
-  // tee-off broadcast has to find it. (Host-sees-guest realtime is proven
-  // by the foursome and round-flow specs; a single join right after page
-  // mount can race the host's subscribe handshake, and that race is not
-  // what this test is about.)
-  await expect(ana.page.getByText("READY", { exact: true })).toBeVisible();
+  await expect(
+    host.getByTestId("lobby-players").getByText("Ana"),
+  ).toBeVisible();
 
   await clickSettled(host, "tee-off");
   await host.waitForURL(new RegExp(`/round/${code}/play`));

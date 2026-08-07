@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { APP_NAME } from "@/lib/config";
 import { markDataUri } from "@/lib/mark";
 
 /**
@@ -140,7 +141,7 @@ export function OgCard({
             color: ogColors.fairway,
           }}
         >
-          Parlour
+          {APP_NAME}
         </div>
       </div>
 

@@ -29,6 +29,7 @@ import {
 import type { RoundBundle } from "@/lib/data/rounds";
 import { RulesSheet } from "@/components/round/rules-sheet";
 import { underOverPhrase } from "@/lib/format";
+import { readHazard } from "@/lib/hazards";
 import { roundRuleChips } from "@/lib/round-rules";
 import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { computeStandings } from "@/lib/scoring";
@@ -148,6 +149,13 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
   const ruleChips = roundRuleChips(ruleset, holes);
 
+  // The caddy's row is three controls of one geometry — the primary is
+  // filled, the other two outlined, but a 44px thumb target and the same
+  // corner either way. Button's compact size is h-8 and rounded-lg, which
+  // left "Hole out" visibly shorter and squarer than the two beside it.
+  const officialControl =
+    "flex min-h-11 flex-1 items-center justify-center rounded-xl text-xs font-bold";
+
   // Mulligans are an allowance for the whole round, so what's left is a
   // count across every hole on the card, not just this one.
   const mulligansUsed = scores
@@ -217,10 +225,17 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         </button>
       ) : null}
 
+      {/* The hole's own note is the local wording; without one the hazard
+          still has to say what it does, or a hand-built course shows a
+          player the word "DOGLEG" and nothing else. */}
       {hole.hazard ? (
         <div className="rounded-md border border-hazard border-l-4 bg-hazard/5 px-3 py-2 text-[11px] text-hazard">
           <b className="tracking-[0.14em] uppercase">{hole.hazard} hazard</b>
-          {hole.hazard_note ? ` — ${hole.hazard_note}` : null}
+          {hole.hazard_note
+            ? ` — ${hole.hazard_note}`
+            : readHazard(hole.hazard)
+              ? ` — ${readHazard(hole.hazard)!.meaning}`
+              : null}
         </div>
       ) : null}
 
@@ -253,7 +268,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
           <div className="flex items-center gap-2">
             <Link
               href={`/round/${round.code}/card`}
-              className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-border text-xs font-bold text-fairway"
+              className={cn(officialControl, "border border-border text-fairway")}
             >
               Marker&apos;s card
             </Link>
@@ -265,7 +280,10 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
                 // No success toast: the ring sweeping back to full IS the
                 // confirmation, and it's the one every player gets.
                 onClick={() => run(() => resetHoleTimer(round.code))}
-                className="flex min-h-11 flex-1 items-center justify-center rounded-xl border border-border text-xs font-bold disabled:opacity-40"
+                className={cn(
+                  officialControl,
+                  "border border-border disabled:opacity-40",
+                )}
               >
                 <PendingLabel
                   pending={pending}
@@ -278,7 +296,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
             ) : null}
             <Button
               size="compact"
-              className="flex-1"
+              className={officialControl}
               disabled={pending}
               onClick={holeOut}
               data-testid="hole-out"
