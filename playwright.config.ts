@@ -35,9 +35,13 @@ export default defineConfig({
     { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] } },
   ],
   webServer: {
-    command: "npx next dev -p 3105",
+    // CI has already run `next build` by the time this suite starts, so it
+    // serves the production build instead of paying dev-mode compilation
+    // for every route × engine — the single biggest cost of the matrix on a
+    // two-core runner. Locally, dev stays dev: no rebuild between edits.
+    command: process.env.CI ? "npx next start -p 3105" : "npx next dev -p 3105",
     url: "http://localhost:3105/signin",
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
 });
