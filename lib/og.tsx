@@ -1,8 +1,8 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { APP_NAME } from "@/lib/config";
-import { markDataUri } from "@/lib/mark";
 
 /**
  * Shared chrome for every generated Open Graph card.
@@ -33,6 +33,27 @@ export const ogColors = {
   marker: "#c8802f",
   border: "#c9c3ac",
 };
+
+/**
+ * The mark, as bytes Satori can draw.
+ *
+ * Vendored under `assets/` beside the fonts rather than read out of
+ * `public/`: both are read off the filesystem at render time, and only
+ * `assets/` is proven to survive into the serverless bundle — a card that
+ * cannot find its own logo is a broken preview, and previews are the one
+ * thing nobody sees fail until it is public. Cream-grounded, because these
+ * cards always print on cream stock whatever the app theme is; on that
+ * paper the plate disappears and leaves the drawing.
+ *
+ * Read once and held: the file never changes between requests.
+ */
+let ogMark: string | null = null;
+export function ogMarkDataUri(): string {
+  ogMark ??= `data:image/png;base64,${readFileSync(
+    join(process.cwd(), "assets/og-mark.png"),
+  ).toString("base64")}`;
+  return ogMark;
+}
 
 /** EB Garamond stands in for the Palatino stack; JetBrains Mono for the
  * tabular figures. Satori needs real font data — a CSS stack means nothing to
@@ -125,12 +146,7 @@ export function OgCard({
       {/* Running head: the mark, then the house name. */}
       <div style={{ display: "flex", alignItems: "center", marginTop: 28 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={markDataUri(46, { plate: false, ink: "dark" })}
-          width={46}
-          height={46}
-          alt=""
-        />
+        <img src={ogMarkDataUri()} width={46} height={46} alt="" />
         <div
           style={{
             marginLeft: 16,

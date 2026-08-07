@@ -22,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // "/apple-icon" was the generated route's URL; the icon is a static
     // file now, so the path carries its extension or the install 404s.
     icons: [
-      { src: "/icon.svg", type: "image/svg+xml", sizes: "any" },
+      { src: "/favicon.ico", type: "image/x-icon", sizes: "16x16 32x32 48x48" },
       { src: "/apple-icon.png", type: "image/png", sizes: "180x180" },
       { src: "/brand/icon-192.png", type: "image/png", sizes: "192x192" },
       { src: "/brand/icon-512.png", type: "image/png", sizes: "512x512" },

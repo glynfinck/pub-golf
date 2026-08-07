@@ -14,7 +14,6 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { actionNavigating } from "@/lib/action-window";
 import { useAction } from "@/hooks/use-action";
 import { useDraftFigures } from "@/hooks/use-draft-figures";
 import { reopenHole, setPlayerScore } from "@/lib/actions/rounds";
@@ -95,19 +94,10 @@ export function MarkersCardView({
     );
   }
 
+  // reopenHole redirects to the live hole itself — see the action. Doing it
+  // here meant racing two refreshes with a router.push, and losing.
   function reopen() {
-    run(async () => {
-      const result = await reopenHole(round.code, viewedHole);
-      if (!result.error) {
-        // Hold our own refresh across the route change: the reopen's echo
-        // arrives over realtime a beat later, and a refresh landing mid-push
-        // cancels it — leaving the caddy on the card they just reopened
-        // from, as if the button had done nothing.
-        actionNavigating(Date.now());
-        router.push(`/round/${round.code}/play`);
-      }
-      return result;
-    });
+    run(() => reopenHole(round.code, viewedHole));
   }
 
   const backHref =
