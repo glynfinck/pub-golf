@@ -45,6 +45,32 @@ describe("the house mark", () => {
     }
   });
 
+  it("ships a favicon.ico with the sizes a browser asks for", () => {
+    // Browsers request /favicon.ico unprompted whatever the <link> tags say,
+    // and a 404 there gets cached hard — which looks exactly like "the icon
+    // isn't working" long after it is. Parsed rather than merely existence-
+    // checked, so an empty or truncated file fails here.
+    const ico = readFileSync(join(process.cwd(), "app/favicon.ico"));
+    expect(ico.readUInt16LE(0)).toBe(0); // reserved
+    expect(ico.readUInt16LE(2)).toBe(1); // type: icon
+
+    const count = ico.readUInt16LE(4);
+    const sizes = Array.from({ length: count }, (_, i) => {
+      const entry = 6 + i * 16;
+      const bytes = ico.readUInt32LE(entry + 8);
+      const offset = ico.readUInt32LE(entry + 12);
+      // Each frame is a PNG, the modern form every browser reads.
+      expect(ico.subarray(offset, offset + 4).toString("latin1")).toBe(
+        "\x89PNG",
+      );
+      expect(bytes).toBeGreaterThan(0);
+      expect(offset + bytes).toBeLessThanOrEqual(ico.length);
+      return ico.readUInt8(entry);
+    });
+
+    expect(sizes).toEqual([16, 32, 48]);
+  });
+
   it("scales by attribute, not by redrawing", () => {
     // The viewBox is fixed so every consumer gets identical geometry; only the
     // rendered box changes.
