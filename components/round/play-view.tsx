@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Egg, Flag, Minus, Plus } from "lucide-react";
+import { Flag, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Screen } from "@/components/shell/screen";
-import { BreakfastBallSheet } from "@/components/round/breakfast-ball-sheet";
+import { MulliganSheet } from "@/components/round/mulligan-sheet";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
@@ -23,7 +23,7 @@ import { usePresence } from "@/hooks/use-presence";
 import {
   advanceHole,
   resetHoleTimer,
-  takeBreakfastBall,
+  takeMulligan,
   upsertScore,
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
@@ -38,7 +38,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const { run, pending, busy } = useAction();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
-  const [breakfastBallOpen, setBreakfastBallOpen] = useState(false);
+  const [mulliganOpen, setMulliganOpen] = useState(false);
 
   const hole = holes.find((h) => h.number === round.current_hole) ?? holes[0];
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
@@ -80,7 +80,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     syncing.current = true;
     clearTimeout(debounce.current);
     debounce.current = setTimeout(() => {
-      // Held so a breakfast ball can wait this out — see takeHalfPint.
+      // Held so a mulligan can wait this out — see takeHalfPint.
       inFlight.current = upsertScore(round.code, round.current_hole, next)
         .then((result) => {
           lastServer.current = next;
@@ -94,7 +94,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   }
 
   /**
-   * Take a breakfast ball: wipe the hole and drink a half.
+   * Take a mulligan: wipe the hole and drink a half.
    *
    * The debounce is the whole difficulty. Swigs are written 400ms after the
    * last tap, so "tap, tap, tap, ugh, half pint" leaves a write in the post
@@ -109,12 +109,12 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       await inFlight.current;
       syncing.current = false;
 
-      const result = await takeBreakfastBall(round.code, round.current_hole);
+      const result = await takeMulligan(round.code, round.current_hole);
       if (result.error) return result;
       setSwigs(0);
       lastServer.current = 0;
-      setBreakfastBallOpen(false);
-      toast("Breakfast ball taken — start the hole again.");
+      setMulliganOpen(false);
+      toast("Mulligan taken — start the hole again.");
     });
   }
 
@@ -126,7 +126,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const standings = computeStandings(holes, players, scores, penalties, me?.id, {
     filedThrough: round.current_hole - 1,
     softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
-    breakfastBallStrokes: ruleset.breakfastBallStrokes,
+    mulliganStrokes: ruleset.mulliganStrokes,
   });
   const myRow = standings.find((row) => row.isYou);
   const myToPar = myRow?.netToPar ?? 0;
@@ -143,14 +143,14 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       row.player_id === me?.id && row.hole_number === round.current_hole,
   );
 
-  // Breakfast balls are an allowance for the whole round, so what's left is a
+  // Mulligans are an allowance for the whole round, so what's left is a
   // count across every hole on the card, not just this one.
-  const breakfastBallsUsed = scores
+  const mulligansUsed = scores
     .filter((score) => score.player_id === me?.id)
-    .reduce((sum, score) => sum + score.breakfast_balls, 0);
-  const breakfastBallsLeft = Math.max(
+    .reduce((sum, score) => sum + score.mulligans, 0);
+  const mulligansLeft = Math.max(
     0,
-    ruleset.breakfastBalls - breakfastBallsUsed,
+    ruleset.mulligans - mulligansUsed,
   );
 
   return (
@@ -287,16 +287,16 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
           >
             <Minus size={15} aria-hidden /> Undo
           </button>
-          {ruleset.breakfastBalls > 0 ? (
+          {ruleset.mulligans > 0 ? (
             <button
               type="button"
-              data-testid="breakfast-ball"
-              disabled={breakfastBallsLeft === 0}
-              onClick={() => setBreakfastBallOpen(true)}
+              data-testid="mulligan"
+              disabled={mulligansLeft === 0}
+              onClick={() => setMulliganOpen(true)}
               className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-marker/60 text-sm font-bold text-marker disabled:opacity-30"
             >
-              <Egg size={14} aria-hidden />
-              Half pint · {breakfastBallsLeft}
+              <RotateCcw size={14} aria-hidden />
+              Mulligan · {mulligansLeft}
             </button>
           ) : null}
           <button
@@ -340,16 +340,16 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         myPenalties={myHolePenalties}
       />
 
-      <BreakfastBallSheet
-        open={breakfastBallOpen}
-        onOpenChange={setBreakfastBallOpen}
+      <MulliganSheet
+        open={mulliganOpen}
+        onOpenChange={setMulliganOpen}
         onConfirm={takeHalfPint}
         pending={pending}
         busy={busy}
         holeNumber={round.current_hole}
         swigs={swigs}
-        strokes={ruleset.breakfastBallStrokes}
-        left={breakfastBallsLeft}
+        strokes={ruleset.mulliganStrokes}
+        left={mulligansLeft}
       />
     </Screen>
   );

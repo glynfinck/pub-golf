@@ -23,12 +23,12 @@ const score = (
   player_id: string,
   hole_number: number,
   swigs: number,
-  breakfast_balls = 0,
+  mulligans = 0,
 ) => ({
   player_id,
   hole_number,
   swigs,
-  breakfast_balls,
+  mulligans,
 });
 const penalty = (player_id: string, strokes: number) => ({
   player_id,
@@ -40,7 +40,7 @@ const COURSE = [hole(1, 5), hole(2, 4), hole(3, 3)];
 const SOFT = {
   filedThrough: 0,
   softSubstituteScoresPar: true,
-  breakfastBallStrokes: 1,
+  mulliganStrokes: 1,
 };
 
 describe("computeStandings — the substitution rule", () => {
@@ -61,7 +61,7 @@ describe("computeStandings — the substitution rule", () => {
       {
         filedThrough: 1,
         softSubstituteScoresPar: true,
-        breakfastBallStrokes: 1,
+        mulliganStrokes: 1,
       },
     );
     expect(row).toMatchObject({ gross: 5, toPar: 0, holesPlayed: 1 });
@@ -77,7 +77,7 @@ describe("computeStandings — the substitution rule", () => {
       {
         filedThrough: 1,
         softSubstituteScoresPar: false,
-        breakfastBallStrokes: 1,
+        mulliganStrokes: 1,
       },
     );
     expect(row).toMatchObject({ gross: 10, toPar: 5, holesPlayed: 1 });
@@ -93,7 +93,7 @@ describe("computeStandings — the substitution rule", () => {
       {
         filedThrough: 1,
         softSubstituteScoresPar: true,
-        breakfastBallStrokes: 1,
+        mulliganStrokes: 1,
       },
     );
     expect(row).toMatchObject({ gross: 3, toPar: -2, holesPlayed: 1 });
@@ -110,7 +110,7 @@ describe("computeStandings — the substitution rule", () => {
       {
         filedThrough: 3,
         softSubstituteScoresPar: true,
-        breakfastBallStrokes: 1,
+        mulliganStrokes: 1,
       },
     );
     expect(row).toMatchObject({ gross: 11, toPar: -1, holesPlayed: 3 });
@@ -324,7 +324,7 @@ describe("computeStandings — identity", () => {
   });
 });
 
-describe("computeStandings — breakfast balls", () => {
+describe("computeStandings — mulligans", () => {
   it("charges the round's price for every one taken", () => {
     const [row] = computeStandings(
       COURSE,
@@ -335,7 +335,7 @@ describe("computeStandings — breakfast balls", () => {
       SOFT,
     );
     // Four swigs on a par 5, plus one stroke for the half pint.
-    expect(row).toMatchObject({ gross: 5, breakfastBalls: 1, toPar: 0 });
+    expect(row).toMatchObject({ gross: 5, mulligans: 1, toPar: 0 });
   });
 
   it("charges the price the round snapshotted, not the house one", () => {
@@ -345,7 +345,7 @@ describe("computeStandings — breakfast balls", () => {
       [score("a", 1, 4, 1)],
       [],
       undefined,
-      { ...SOFT, breakfastBallStrokes: 3 },
+      { ...SOFT, mulliganStrokes: 3 },
     );
     expect(row.gross).toBe(7);
   });
@@ -359,12 +359,12 @@ describe("computeStandings — breakfast balls", () => {
       undefined,
       { ...SOFT, filedThrough: 2 },
     );
-    expect(row).toMatchObject({ breakfastBalls: 3, gross: 12 });
+    expect(row).toMatchObject({ mulligans: 3, gross: 12 });
   });
 
   it("still substitutes when a filed hole was reset and never drunk", () => {
     // The load-bearing rule: zero swigs means the drink never happened, and a
-    // breakfast ball must not become a way to buy a free under-par hole. The
+    // mulligan must not become a way to buy a free under-par hole. The
     // substitute lands AND the half pint is still charged.
     const [row] = computeStandings(
       COURSE,
@@ -372,13 +372,13 @@ describe("computeStandings — breakfast balls", () => {
       [score("a", 1, 0, 1)],
       [],
       undefined,
-      { filedThrough: 1, softSubstituteScoresPar: true, breakfastBallStrokes: 1 },
+      { filedThrough: 1, softSubstituteScoresPar: true, mulliganStrokes: 1 },
     );
     expect(row).toMatchObject({ gross: 6, toPar: 1, holesPlayed: 1 });
   });
 
   it("does not put an unplayed hole on the card just because one was taken", () => {
-    // A breakfast ball on a hole nobody has filed yet leaves swigs at zero,
+    // A mulligan on a hole nobody has filed yet leaves swigs at zero,
     // and an in-progress hole only counts once there are real swigs on it.
     const [row] = computeStandings(
       COURSE,
@@ -400,7 +400,7 @@ describe("computeStandings — breakfast balls", () => {
       undefined,
       SOFT,
     );
-    expect(row).toMatchObject({ gross: 6, breakfastBalls: 0, toPar: 1 });
+    expect(row).toMatchObject({ gross: 6, mulligans: 0, toPar: 1 });
   });
 });
 

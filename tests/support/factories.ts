@@ -20,8 +20,8 @@ export interface SeedRoundOptions {
   holes?: number;
   status?: "lobby" | "live" | "finished";
   currentHole?: number;
-  /** Breakfast balls per player. 0 (the default) turns them off. */
-  breakfastBalls?: number;
+  /** Mulligans per player. 0 (the default) turns them off. */
+  mulligans?: number;
   /** Leave the new ruleset keys off entirely, as a round created before
    * they existed would have them. */
   legacyRuleset?: boolean;
@@ -60,8 +60,8 @@ export async function seedRound(
             softSubstituteScoresPar: true,
             penalties: [],
             handicaps: true,
-            breakfastBalls: options.breakfastBalls ?? 0,
-            breakfastBallStrokes: 1,
+            mulligans: options.mulligans ?? 0,
+            mulliganStrokes: 1,
           },
     })
     .select("id, code")
@@ -126,7 +126,7 @@ export async function seedScores(
     playerId: string;
     hole: number;
     swigs: number;
-    breakfastBalls?: number;
+    mulligans?: number;
   }[],
 ): Promise<void> {
   const { error } = await adminClient()
@@ -137,7 +137,7 @@ export async function seedScores(
         player_id: entry.playerId,
         hole_number: entry.hole,
         swigs: entry.swigs,
-        breakfast_balls: entry.breakfastBalls ?? 0,
+        mulligans: entry.mulligans ?? 0,
       })),
     );
   if (error) throw error;

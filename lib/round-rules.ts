@@ -82,11 +82,11 @@ export function roundRuleLines(
       value: localRuleHoles.join(" · "),
     });
   }
-  if (ruleset.breakfastBalls > 0) {
+  if (ruleset.mulligans > 0) {
     lines.push({
-      id: "breakfast-balls",
-      label: "Breakfast balls",
-      value: `${ruleset.breakfastBalls} each · +${ruleset.breakfastBallStrokes}`,
+      id: "mulligans",
+      label: "Mulligans",
+      value: `${ruleset.mulligans} each · +${ruleset.mulliganStrokes}`,
     });
   }
   if (ruleset.handicaps) {

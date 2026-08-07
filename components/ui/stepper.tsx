@@ -28,7 +28,7 @@ export function Stepper({
   max?: number;
   /** How far one tap moves the figure — 5 for minutes, 1 for counts. */
   step?: number;
-  /** Used to build the button aria-labels, e.g. "breakfast balls". */
+  /** Used to build the button aria-labels, e.g. "mulligans". */
   label: string;
   decrementLabel?: string;
   incrementLabel?: string;

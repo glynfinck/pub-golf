@@ -158,7 +158,7 @@ export function MarkersCardView({
             0,
           );
           const delta = swigs + penaltyStrokes - hole.par;
-          const breakfastBalls = scoreFor(player.id)?.breakfast_balls ?? 0;
+          const mulligans = scoreFor(player.id)?.mulligans ?? 0;
           return (
             <div
               key={player.id}
@@ -194,9 +194,9 @@ export function MarkersCardView({
                       : swigs === 0
                         ? "no swigs — scores the substitute"
                         : formatToPar(delta)}
-                    {breakfastBalls > 0
-                      ? ` · ${breakfastBalls} breakfast ${
-                          breakfastBalls === 1 ? "ball" : "balls"
+                    {mulligans > 0
+                      ? ` · ${mulligans} ${
+                          mulligans === 1 ? "mulligan" : "mulligans"
                         }`
                       : ""}
                   </span>
@@ -285,10 +285,10 @@ export function MarkersCardView({
         )}
         players={players}
         options={options}
-        breakfastBalls={
-          sheetPlayerId ? (scoreFor(sheetPlayerId)?.breakfast_balls ?? 0) : 0
+        mulligans={
+          sheetPlayerId ? (scoreFor(sheetPlayerId)?.mulligans ?? 0) : 0
         }
-        breakfastBallsOffered={ruleset.breakfastBalls > 0}
+        mulligansOffered={ruleset.mulligans > 0}
       />
     </Screen>
   );

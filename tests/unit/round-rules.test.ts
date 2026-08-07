@@ -42,7 +42,7 @@ describe("roundRuleLines", () => {
   });
 
   it("gives a rule a line only when it is in force", () => {
-    // Defaults: untimed, no breakfast balls, no handicaps, no hazard holes —
+    // Defaults: untimed, no mulligans, no handicaps, no hazard holes —
     // none of those may appear as an empty "none" line.
     const lines = roundRuleLines({ ...RULESET_DEFAULTS }, [hole(1)]);
     expect(ids(lines)).toEqual(["holes", "pace", "soft-substitute"]);
@@ -54,8 +54,8 @@ describe("roundRuleLines", () => {
         ...RULESET_DEFAULTS,
         holeTimerMinutes: 12,
         handicaps: true,
-        breakfastBalls: 2,
-        breakfastBallStrokes: 1,
+        mulligans: 2,
+        mulliganStrokes: 1,
       },
       [
         hole(1, { hazard: "water" }),
@@ -73,14 +73,14 @@ describe("roundRuleLines", () => {
       "timer",
       "soft-substitute",
       "local-rules",
-      "breakfast-balls",
+      "mulligans",
       "handicaps",
     ]);
     const byId = Object.fromEntries(lines.map((line) => [line.id, line.value]));
     expect(byId["hazards"]).toBe("1 · 3");
     expect(byId["timer"]).toBe("12 min");
     expect(byId["local-rules"]).toBe("3");
-    expect(byId["breakfast-balls"]).toBe("2 each · +1");
+    expect(byId["mulligans"]).toBe("2 each · +1");
     expect(byId["handicaps"]).toBe("net scoring");
   });
 

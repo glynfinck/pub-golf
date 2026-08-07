@@ -19,7 +19,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { RuleDouble } from "@/components/ui/rule";
+import { Masthead } from "@/components/shell/masthead";
+import { ParlourMark } from "@/components/ui/parlour-mark";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { useAction } from "@/hooks/use-action";
@@ -27,8 +28,8 @@ import { createRound } from "@/lib/actions/rounds";
 import { templateForHoleCount } from "@/lib/course-templates";
 import type { MyCourse } from "@/lib/data/courses";
 import {
-  BREAKFAST_BALL_STROKES,
-  MAX_BREAKFAST_BALLS,
+  MULLIGAN_STROKES,
+  MAX_MULLIGANS,
   PENALTY_PRESETS,
 } from "@/lib/rules";
 import { clockTime12, formatDuration, roundMinutes } from "@/lib/time";
@@ -91,7 +92,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
   const [teeDate, setTeeDate] = useState<Date | null>(null);
   const [teeMinutes, setTeeMinutes] = useState(19 * 60);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [breakfastBalls, setBreakfastBalls] = useState(0);
+  const [mulligans, setMulligans] = useState(0);
   const [rules, setRules] = useState<PenaltyRow[]>(() =>
     PENALTY_PRESETS.map((preset) => ({ ...preset, on: true, custom: false })),
   );
@@ -127,9 +128,9 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
     ? `${shortDate(teeDate)} · ${clockTime12(teeMinutes)} · ${minutesPerPub} min/pub · ~${finishLabel}`
     : `unscheduled · ${minutesPerPub} min/pub · pace ${formatDuration(totalMinutes)}`;
   const rulesSummary = `${rulesOn} ${rulesOn === 1 ? "rule" : "rules"} in force · ${
-    breakfastBalls === 0
-      ? "no breakfast balls"
-      : `${breakfastBalls} breakfast ${breakfastBalls === 1 ? "ball" : "balls"}`
+    mulligans === 0
+      ? "no mulligans"
+      : `${mulligans} ${mulligans === 1 ? "mulligan" : "mulligans"}`
   } · ${toggles.handicaps ? "handicaps" : "no handicaps"}`;
 
   function cyclePrice(index: number) {
@@ -178,7 +179,7 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
           handicaps: toggles.handicaps,
           minutesPerPub,
           scheduledTeeOff,
-          breakfastBalls,
+          mulligans,
           // A rule with no offence on it is a half-typed thought, not a rule.
           penalties: rules
             .filter((rule) => rule.on && rule.reason.trim() !== "")
@@ -206,7 +207,11 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
 
   return (
     <Screen>
-      <RuleDouble head busy={busy} />
+      <Masthead
+        back={{ href: "/", label: "Clubhouse" }}
+        center={<ParlourMark className="mx-auto size-6" />}
+        busy={busy}
+      />
       <ScreenHeader eyebrow="New round" title="Set the table" />
 
       <div>
@@ -599,19 +604,19 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
             <div className="flex flex-col divide-y divide-border border-t border-border">
               <div className={settingRow}>
                 <span className="text-sm font-semibold">
-                  Breakfast balls each
+                  Mulligans each
                   <span className="block text-[10px] font-normal text-muted-foreground">
-                    {breakfastBalls === 0
+                    {mulligans === 0
                       ? "No bail-outs — every drink gets finished."
-                      : `A half pint wipes the hole, for +${BREAKFAST_BALL_STROKES} on the card.`}
+                      : `A half pint wipes the hole, for +${MULLIGAN_STROKES} on the card.`}
                   </span>
                 </span>
                 <Stepper
                   className="w-32 shrink-0"
-                  value={breakfastBalls}
-                  onChange={setBreakfastBalls}
-                  max={MAX_BREAKFAST_BALLS}
-                  label="breakfast balls"
+                  value={mulligans}
+                  onChange={setMulligans}
+                  max={MAX_MULLIGANS}
+                  label="mulligans"
                   format={(value) => (value === 0 ? "off" : String(value))}
                 />
               </div>

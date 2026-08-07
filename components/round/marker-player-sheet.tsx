@@ -18,10 +18,10 @@ import { useDraftFigures } from "@/hooks/use-draft-figures";
 import {
   callPenaltyOn,
   removePenalty,
-  setPlayerBreakfastBalls,
+  setPlayerMulligans,
 } from "@/lib/actions/rounds";
 import type { PenaltyOption } from "@/lib/penalty-options";
-import { MAX_BREAKFAST_BALLS } from "@/lib/rules";
+import { MAX_MULLIGANS } from "@/lib/rules";
 import type { Tables } from "@/types/supabase-helpers";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
  * penalties on one player's card. Every entry is attributed — "who called
  * it" is never a mystery on the player's own phone.
  *
- * Counts and the breakfast-ball figure are optimistic; the retract only
+ * Counts and the mulligan figure are optimistic; the retract only
  * arms once the row it would delete has really landed.
  */
 export function MarkerPlayerSheet({
@@ -42,8 +42,8 @@ export function MarkerPlayerSheet({
   playerPenalties,
   players,
   options,
-  breakfastBalls,
-  breakfastBallsOffered,
+  mulligans,
+  mulligansOffered,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,10 +55,10 @@ export function MarkerPlayerSheet({
   /** All players, for attributing called_by ids to names. */
   players: Tables<"round_players">[];
   options: PenaltyOption[];
-  /** Breakfast balls on this player-hole, for the marker to correct. */
-  breakfastBalls: number;
+  /** Mulligans on this player-hole, for the marker to correct. */
+  mulligans: number;
   /** False when the round isn't playing them — then the row stays off. */
-  breakfastBallsOffered: boolean;
+  mulligansOffered: boolean;
 }) {
   const { run } = useAction();
 
@@ -74,13 +74,13 @@ export function MarkerPlayerSheet({
     }),
   );
 
-  // Optimistic breakfast-ball figure, debounced like every other stepper.
+  // Optimistic mulligan figure, debounced like every other stepper.
   const figureKey = `${holeNumber}:${player?.id ?? "none"}`;
   const figures = useDraftFigures({
-    server: { [figureKey]: breakfastBalls },
+    server: { [figureKey]: mulligans },
     write: (_key, value) =>
       player
-        ? setPlayerBreakfastBalls(code, player.id, holeNumber, value)
+        ? setPlayerMulligans(code, player.id, holeNumber, value)
         : Promise.resolve(),
   });
 
@@ -193,10 +193,10 @@ export function MarkerPlayerSheet({
             );
           })}
 
-          {breakfastBallsOffered ? (
+          {mulligansOffered ? (
             <div className="mt-2 flex min-h-14 items-center gap-3 border-t border-dotted border-border py-1.5">
               <span className="min-w-0 flex-1">
-                <b className="block text-sm">Breakfast balls</b>
+                <b className="block text-sm">Mulligans</b>
                 <span
                   className={cn(
                     "block truncate text-[11px]",
@@ -214,11 +214,11 @@ export function MarkerPlayerSheet({
                 className="w-28 shrink-0"
                 value={figures.valueOf(figureKey)}
                 onChange={(next) => figures.set(figureKey, next)}
-                max={MAX_BREAKFAST_BALLS}
+                max={MAX_MULLIGANS}
                 tone="hazard"
-                decrementLabel={`Take a breakfast ball off ${name} on hole ${holeNumber}`}
-                incrementLabel={`Give ${name} a breakfast ball on hole ${holeNumber}`}
-                label="breakfast balls"
+                decrementLabel={`Take a mulligan off ${name} on hole ${holeNumber}`}
+                incrementLabel={`Give ${name} a mulligan on hole ${holeNumber}`}
+                label="mulligans"
               />
             </div>
           ) : null}

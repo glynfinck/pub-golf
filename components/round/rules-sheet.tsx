@@ -33,7 +33,7 @@ function SheetHeading({ children }: { children: React.ReactNode }) {
  * where the undo lives. Two doors onto the same write is how a table
  * double-books a spill at 11pm. It also spells out the two scoring rules
  * that look like bugs to anyone who has not read lib/scoring.ts: the
- * no-swig substitute, and what a breakfast ball does and does not buy.
+ * no-swig substitute, and what a mulligan does and does not buy.
  */
 export function RulesSheet({
   open,
@@ -90,10 +90,10 @@ export function RulesSheet({
               {ruleset.softSubstituteScoresPar ? "par" : "double par"}, never a
               free under-par hole.
             </li>
-            {ruleset.breakfastBalls > 0 ? (
+            {ruleset.mulligans > 0 ? (
               <li>
-                A breakfast ball wipes the hole for +
-                {ruleset.breakfastBallStrokes} and the drink starts again.
+                A mulligan wipes the hole for +{ruleset.mulliganStrokes}{" "}
+                and the drink starts again.
               </li>
             ) : null}
             {ruleset.handicaps ? (

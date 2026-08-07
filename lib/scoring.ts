@@ -4,11 +4,11 @@ export interface StandingRow {
   playerId: string;
   name: string;
   role: string;
-  /** Swigs + penalty strokes + breakfast balls, across holes played. */
+  /** Swigs + penalty strokes + mulligans, across holes played. */
   gross: number;
   penaltyStrokes: number;
-  /** Breakfast balls taken so far — the count, not the strokes. */
-  breakfastBalls: number;
+  /** Mulligans taken so far — the count, not the strokes. */
+  mulligans: number;
   holesPlayed: number;
   /** Gross minus the par of the holes actually played. */
   toPar: number;
@@ -33,14 +33,14 @@ export interface StandingsOptions {
   /** Substitute = par when true (the friendly default), double par —
    * the maximum — when false. */
   softSubstituteScoresPar: boolean;
-  /** What one breakfast ball costs on the card. */
-  breakfastBallStrokes: number;
+  /** What one mulligan costs on the card. */
+  mulliganStrokes: number;
 }
 
 const DEFAULT_OPTIONS: StandingsOptions = {
   filedThrough: 0,
   softSubstituteScoresPar: true,
-  breakfastBallStrokes: 1,
+  mulliganStrokes: 1,
 };
 
 /**
@@ -64,7 +64,7 @@ export function computeStandings(
   >[],
   scores: Pick<
     Tables<"scores">,
-    "player_id" | "hole_number" | "swigs" | "breakfast_balls"
+    "player_id" | "hole_number" | "swigs" | "mulligans"
   >[],
   penalties: Pick<Tables<"penalties">, "player_id" | "strokes">[],
   myPlayerId?: string,
@@ -83,7 +83,7 @@ export function computeStandings(
       const recorded = scoreByHole.get(hole.number) ?? 0;
       if (hole.number <= options.filedThrough) {
         // Filed: a drink with no swigs on it never happened. That holds even
-        // after a breakfast ball — resetting a hole must never buy a free
+        // after a mulligan — resetting a hole must never buy a free
         // one, so the substitute lands and the mulligan is still charged.
         swigs +=
           recorded > 0
@@ -104,14 +104,14 @@ export function computeStandings(
     const penaltyStrokes = penalties
       .filter((penalty) => penalty.player_id === player.id)
       .reduce((sum, penalty) => sum + penalty.strokes, 0);
-    // Every breakfast ball is charged, wherever on the card it was taken —
+    // Every mulligan is charged, wherever on the card it was taken —
     // the same rule penalties already follow.
-    const breakfastBalls = myScores.reduce(
-      (sum, score) => sum + score.breakfast_balls,
+    const mulligans = myScores.reduce(
+      (sum, score) => sum + score.mulligans,
       0,
     );
     const gross =
-      swigs + penaltyStrokes + breakfastBalls * options.breakfastBallStrokes;
+      swigs + penaltyStrokes + mulligans * options.mulliganStrokes;
 
     const handicap = player.handicap;
     const handicapApplied =
@@ -126,7 +126,7 @@ export function computeStandings(
       role: player.role,
       gross,
       penaltyStrokes,
-      breakfastBalls,
+      mulligans,
       holesPlayed,
       toPar: gross - parPlayed,
       handicap,

@@ -56,7 +56,7 @@ export default async function ResultsPage({
   const standings = computeStandings(holes, players, scores, penalties, me?.id, {
     filedThrough: holes.length,
     softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
-    breakfastBallStrokes: ruleset.breakfastBallStrokes,
+    mulliganStrokes: ruleset.mulliganStrokes,
   });
   // Handicaps only earn their column when somebody is actually carrying one.
   const handicapped = standings.some((row) => row.handicap > 0);

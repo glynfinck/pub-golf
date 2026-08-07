@@ -19,7 +19,7 @@ describe("readRuleset — rounds that predate a rule", () => {
     expect(readRuleset({})).toEqual(RULESET_DEFAULTS);
   });
 
-  it("turns handicaps and breakfast balls off for a round that never had them", () => {
+  it("turns handicaps and mulligans off for a round that never had them", () => {
     // The shape createRound wrote before this feature landed. It must keep
     // scoring exactly as it did on the night.
     const legacy = readRuleset({
@@ -30,8 +30,8 @@ describe("readRuleset — rounds that predate a rule", () => {
       penalties: [{ strokes: 2, reason: "Skipping a hole entirely" }],
     });
     expect(legacy.handicaps).toBe(false);
-    expect(legacy.breakfastBalls).toBe(0);
-    expect(legacy.breakfastBallStrokes).toBe(1);
+    expect(legacy.mulligans).toBe(0);
+    expect(legacy.mulliganStrokes).toBe(1);
     // And everything it did say is left alone.
     expect(legacy.holeTimerMinutes).toBe(20);
     expect(legacy.penalties).toEqual([
@@ -58,8 +58,8 @@ describe("readRuleset — a full ruleset", () => {
       softSubstituteScoresPar: false,
       penalties: [{ strokes: 3, reason: "Spilling someone else's drink" }],
       handicaps: true,
-      breakfastBalls: 2,
-      breakfastBallStrokes: 1,
+      mulligans: 2,
+      mulliganStrokes: 1,
     };
     expect(readRuleset(written)).toEqual(written);
   });
@@ -77,10 +77,10 @@ describe("readRuleset — junk normalises rather than throws", () => {
   });
 
   it("floors a negative or fractional allowance to something countable", () => {
-    expect(readRuleset({ breakfastBalls: -3 }).breakfastBalls).toBe(0);
-    expect(readRuleset({ breakfastBalls: 2.6 }).breakfastBalls).toBe(3);
-    expect(readRuleset({ breakfastBalls: NaN }).breakfastBalls).toBe(0);
-    expect(readRuleset({ breakfastBalls: "two" }).breakfastBalls).toBe(0);
+    expect(readRuleset({ mulligans: -3 }).mulligans).toBe(0);
+    expect(readRuleset({ mulligans: 2.6 }).mulligans).toBe(3);
+    expect(readRuleset({ mulligans: NaN }).mulligans).toBe(0);
+    expect(readRuleset({ mulligans: "two" }).mulligans).toBe(0);
   });
 
   it("drops penalty rows that are not a penalty", () => {
