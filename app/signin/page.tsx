@@ -16,9 +16,9 @@ export default async function SignInPage({
   return (
     <Screen className="justify-center gap-5">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full border-2 border-fairway">
-          <HouseMark className="size-10" />
-        </div>
+        {/* No ring around it any more: the mark carries its own plate, and a
+            squircle inside a circle is two frames arguing. */}
+        <HouseMark className="mx-auto mb-4 size-20 rounded-2xl" />
         <h1 className="font-serif text-4xl tracking-[0.08em] uppercase">
           {APP_NAME}
         </h1>

@@ -31,12 +31,21 @@ is this Next version's middleware convention (see the `home` sibling repo).
   theme, and `.theme-cream` re-asserts it inside dark subtrees (the results
   recap). Engraving utilities: `rule-double`, `leader`, `engraved`.
 - To-par renders as `−2 / +3 / even` (formatToPar) — never golf's lone "E".
-- The house mark (pennant, flagstick, green) has one definition in
-  `lib/mark.ts`. `HouseMark` inks it with the semantic tokens; the favicon
-  and the generated images take literals, because neither an icon file nor
-  Satori can resolve a `var()`. `app/icon.svg` is the one copy that cannot
-  import it and is pinned to `markSvg(32)` by `tests/unit/mark.test.ts` —
-  regenerate the file rather than hand-editing it.
+- The mark is a **pint with a flagstick in it**, and it is artwork rather
+  than code: the masters live in `public/brand/` (`icon-dark`, `icon-cream`,
+  the 192/512 install sizes, `banner-dark`). Every surface reads one of
+  them — `app/favicon.ico` (16/32/48), `app/apple-icon.png`, the manifest,
+  and `HouseMark`, which renders the dark and cream plates and lets CSS pick
+  so the swap costs no JavaScript and cannot flash the wrong one. The Open
+  Graph cards read `assets/og-mark.png`, vendored beside the fonts on
+  purpose: both are read off the filesystem at render time and only
+  `assets/` is proven to reach the serverless bundle.
+  Regenerate icons with `sharp` and **`.ensureAlpha()`** — Next's ICO
+  decoder rejects a non-RGBA PNG, and `sips` writes RGB whenever the source
+  has no alpha, which fails the build rather than the file.
+- `lib/mark.ts` is now only the pennant geometry the `Putt` busy animation
+  putts at — it stopped being the logo when the artwork arrived, and there
+  is no static SVG copy left to pin against it.
 - Open Graph cards live in `lib/og.tsx` (mirroring the `home` repo's module)
   and always render on **cream stock**, whatever the app theme, for the reason
   the recap card does: what you hand round is printed. Satori draws no

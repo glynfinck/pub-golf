@@ -1,44 +1,41 @@
-import {
-  GREEN,
-  GREEN_WIDTH,
-  MARK_VIEWBOX,
-  PENNANT_PATH,
-  STICK_PATH,
-  STICK_WIDTH,
-} from "@/lib/mark";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 /**
- * The house mark, in the app.
+ * The house mark, in the app: a pint with the flagstick planted in it.
  *
- * Same geometry as the favicon and the Open Graph cards — the paths come from
- * `lib/mark.ts` so the three cannot drift — but inked with the semantic tokens
- * rather than literals, because in here we can have them and the mark should
- * turn with the theme.
+ * Raster rather than the inline SVG this used to be, because the artwork
+ * arrived as artwork — so it cannot ink itself from the semantic tokens the
+ * way the old pennant did. It carries its own ground instead, which is why
+ * there are two files: the dark plate would be a hole punched in cream
+ * stock, and the cream plate a bright patch on the Midnight Invitational.
+ * Both are rendered and CSS picks, so the swap costs no JavaScript and
+ * never flashes the wrong one during hydration.
  */
 export function HouseMark({ className }: { className?: string }) {
+  const shared = "size-full object-contain";
   return (
-    <svg
-      viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}
-      className={cn("size-9", className)}
-      fill="none"
-      aria-hidden
+    <span
+      className={cn("relative inline-block size-9 overflow-hidden", className)}
     >
-      <ellipse
-        cx={GREEN.cx}
-        cy={GREEN.cy}
-        rx={GREEN.rx}
-        ry={GREEN.ry}
-        stroke="var(--fairway)"
-        strokeWidth={GREEN_WIDTH}
+      <Image
+        src="/brand/icon-cream.png"
+        alt=""
+        aria-hidden
+        width={512}
+        height={512}
+        className={cn(shared, "dark:hidden")}
+        priority
       />
-      <path
-        d={STICK_PATH}
-        stroke="var(--fairway)"
-        strokeWidth={STICK_WIDTH}
-        strokeLinecap="round"
+      <Image
+        src="/brand/icon-dark.png"
+        alt=""
+        aria-hidden
+        width={512}
+        height={512}
+        className={cn(shared, "hidden dark:block")}
+        priority
       />
-      <path d={PENNANT_PATH} fill="var(--marker)" />
-    </svg>
+    </span>
   );
 }

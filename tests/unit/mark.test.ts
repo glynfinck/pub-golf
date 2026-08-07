@@ -6,21 +6,14 @@ import { describe, expect, it } from "vitest";
 import { markColors, markSvg } from "@/lib/mark";
 
 /**
- * The mark has one definition in `lib/mark.ts`, and every consumer imports it
- * — except `app/icon.svg`, which is a static file Next serves as the favicon
- * and cannot import anything. That copy is pinned here instead: if the mark
- * moves and the file does not, this fails rather than the two quietly
- * disagreeing about what the app looks like.
+ * `lib/mark.ts` is the pennant: the flag the Putt animation putts at. It
+ * stopped being the app's logo when the pint artwork arrived — the icons and
+ * the Open Graph cards carry that now — so there is no static SVG copy left
+ * to pin against it. What remains worth guarding is the geometry the busy
+ * animation borrows, and the favicon a browser demands whether or not the
+ * markup mentions one.
  */
 describe("the house mark", () => {
-  it("is the same drawing in app/icon.svg as in lib/mark.ts", () => {
-    const onDisk = readFileSync(
-      join(process.cwd(), "app/icon.svg"),
-      "utf8",
-    ).trim();
-    expect(onDisk).toBe(markSvg(32));
-  });
-
   it("draws the plate only when asked for one", () => {
     // On a card that already has cream stock under it, a dark rounded square
     // would be a sticker rather than a mark.
