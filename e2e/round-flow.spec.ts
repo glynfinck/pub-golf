@@ -57,17 +57,31 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   ).toBeVisible();
 
   // ---- Host gives Jamie two shots before anyone tees off ----
-  // Only officials may set one, so this is the host's own stepper on Jamie's
-  // row; Jamie's phone picks it up over realtime without a reload.
+  // Only officials may adjust a card, and the controls live behind the
+  // row: tapping Jamie's line opens the adjust sheet. Jamie just landed
+  // over realtime, so the count and the tap retry as one block.
+  await expect(async () => {
+    const jamieRow = host
+      .getByTestId("lobby-players")
+      .getByRole("button", { name: /jamie/i });
+    await expect(jamieRow).toHaveCount(1);
+    await jamieRow.click({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
   await host.getByRole("button", { name: /raise Jamie's handicap/i }).click();
   await host.getByRole("button", { name: /raise Jamie's handicap/i }).click();
-  await expect(guest.getByText(/playing off 2/i)).toBeVisible();
-
-  // ---- Host hands Jamie the caddy's card ----
-  await host.getByRole("button", { name: /^make caddy$/i }).click();
+  // Jamie's phone prints the figure on the line, no reload.
   await expect(
-    guest.getByText(/caddy · stays sober, final word/i),
+    guest.getByTestId("lobby-players").getByText("OFF 2"),
   ).toBeVisible();
+
+  // ---- Host hands Jamie the caddy's card — same sheet ----
+  // The caddy carries no card of their own, so the figure gives way to
+  // the standing on Jamie's line.
+  await host.getByRole("button", { name: /caddy · stays sober/i }).click();
+  await expect(
+    guest.getByTestId("lobby-players").getByText("CADDY"),
+  ).toBeVisible();
+  await host.getByRole("button", { name: /^done$/i }).click();
 
   // ---- The caddy (not the host) tees off — officials share control ----
   await clickSettled(guest, "tee-off");

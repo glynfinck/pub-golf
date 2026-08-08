@@ -168,7 +168,9 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     // long runway — the count itself must land exactly, the runway is for
     // dev mode re-rendering nineteen times on the slowest engine.
     await expect(async () => {
-      const rows = host.getByTestId("lobby-players").locator("> div");
+      const rows = host
+        .getByTestId("lobby-players")
+        .getByTestId("lobby-player-row");
       await expect(rows).toHaveCount(TABLE, { timeout: 2_000 });
     }).toPass({ timeout: 90_000 });
     for (const name of ["Ana", "Bram", "Rue", "Tam"]) {
