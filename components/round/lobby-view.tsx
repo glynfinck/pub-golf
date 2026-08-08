@@ -1,15 +1,16 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
+import { LobbyPlayerSheet } from "@/components/round/lobby-player-sheet";
 import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { usePresence } from "@/hooks/use-presence";
-import { Stepper } from "@/components/ui/stepper";
 import { useAction } from "@/hooks/use-action";
 import { useDraftFigures } from "@/hooks/use-draft-figures";
 import {
@@ -19,7 +20,6 @@ import {
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
 import { roundRuleLines } from "@/lib/round-rules";
-import { MAX_HANDICAP } from "@/lib/rules";
 import { readRuleset } from "@/lib/ruleset";
 import { clockTime12, roundMinutes } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const { run, pending, busy } = useAction();
   const [copied, setCopied] = useState(false);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
 
   // Tee off ends with a navigation to /play that refetches everything —
   // warm that route while the lobby idles so the arrival is out of cache.
@@ -87,7 +88,8 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   );
 
   // Optimistic handicaps: the figure moves on the host's tap, and a
-  // "tap-tap" to two becomes one write.
+  // "tap-tap" to two becomes one write. Shared between the sheet's stepper
+  // and the rows' printed figures, so both move together.
   const handicaps = useDraftFigures({
     server: Object.fromEntries(
       players.map((player) => [player.id, player.handicap]),
@@ -95,6 +97,27 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
     write: (playerId, value) =>
       setPlayerHandicap(round.code, playerId, value),
   });
+
+  // A row opens the adjust sheet when the viewer can change something on
+  // it: the host toggles caddies on anyone else, and either official sets
+  // handicaps when the round plays them.
+  function canAdjust(player: RoundBundle["players"][number]) {
+    return (
+      (isHost && player.role !== "host") || (isOfficial && ruleset.handicaps)
+    );
+  }
+  const adjustable = players.filter(canAdjust);
+  const adjusting = players.find((player) => player.id === adjustingId) ?? null;
+
+  function stepAdjusting(delta: 1 | -1) {
+    if (!adjusting || adjustable.length === 0) return;
+    const index = adjustable.findIndex((player) => player.id === adjusting.id);
+    const next =
+      adjustable[
+        (Math.max(index, 0) + delta + adjustable.length) % adjustable.length
+      ];
+    setAdjustingId(next.id);
+  }
 
   function share() {
     const url = `${window.location.origin}/round/${round.code}`;
@@ -115,13 +138,13 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
     run(() => startRound(round.code));
   }
 
-  function toggleCaddy(playerId: string, currentRole: string) {
-    if (!isHost) return;
+  function toggleCaddy() {
+    if (!isHost || !adjusting || adjusting.role === "host") return;
     run(() =>
       setPlayerRole(
         round.code,
-        playerId,
-        currentRole === "caddy" ? "player" : "caddy",
+        adjusting.id,
+        adjusting.role === "caddy" ? "player" : "caddy",
       ),
     );
   }
@@ -149,38 +172,46 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
         </span>
       </button>
 
-      {/* The guest list, set like a dinner menu. */}
+      {/* The guest list, set like a dinner menu — and the row never grows.
+          One line per guest, always: name, leader, figure, standing. The
+          standing never yields its seat to a control (the host is the one
+          person who must see WALKING IN…); every playing row prints its
+          figure — OFF 2, or SCRATCH at zero; the caddy carries no card, so
+          no figure — and everything operable lives in the adjust sheet
+          behind the row, so nothing can drag this line out of rhythm. */}
       <div data-testid="lobby-players">
-        {players.map((player) => (
-          <div
-            key={player.id}
-            className="flex min-h-13 flex-col justify-center gap-1 border-b border-dotted border-border py-2"
-          >
-            {/* The name, its leader and the standing share one baseline —
-                the dots run along the line the words sit on, menu style.
-                Anything else about the player hangs beneath it, so a
-                handicap stepper can never drag the dots off the line. */}
+        {players.map((player) => {
+          const figureValue = handicaps.valueOf(player.id);
+          const figure =
+            ruleset.handicaps && player.role !== "caddy"
+              ? figureValue > 0
+                ? `OFF ${figureValue}`
+                : "SCRATCH"
+              : null;
+          const line = (
             <div className="flex items-baseline gap-2">
-              <span className="min-w-0 truncate text-sm font-bold">
+              <span className="min-w-0 truncate text-sm font-bold transition-colors group-hover:text-marker group-focus-visible:text-marker">
                 {player.display_name}
                 {player.id === me?.id ? (
-                  <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
-                    you
+                  <span className="ml-1.5 inline-block rounded border border-border px-1 py-px align-[2px] text-[8px] font-bold tracking-[0.13em] uppercase text-muted-foreground">
+                    You
                   </span>
                 ) : null}
               </span>
               <span aria-hidden className="leader flex-1 self-baseline" />
-              {isHost && player.role !== "host" ? (
-                <Button
-                  size="compact"
-                  variant="outline"
-                  disabled={pending}
-                  className="shrink-0 self-center"
-                  onClick={() => toggleCaddy(player.id, player.role)}
+              {figure !== null ? (
+                <span
+                  className={cn(
+                    "shrink-0 text-[10px] font-bold tracking-[0.14em]",
+                    handicaps.settling(player.id)
+                      ? "text-marker"
+                      : "text-muted-foreground",
+                  )}
                 >
-                  {player.role === "caddy" ? "Unmake caddy" : "Make caddy"}
-                </Button>
-              ) : synced && !present.has(player.id) ? (
+                  {figure}
+                </span>
+              ) : null}
+              {synced && !present.has(player.id) ? (
                 <span className="shrink-0 text-[10px] font-bold tracking-[0.14em] text-muted-foreground">
                   WALKING IN…
                 </span>
@@ -198,42 +229,35 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
                       : "READY"}
                 </span>
               )}
+              {canAdjust(player) ? (
+                <ChevronRight
+                  aria-hidden
+                  size={14}
+                  className="shrink-0 self-center text-muted-foreground/70"
+                />
+              ) : null}
             </div>
-
-            {player.role === "caddy" ? (
-              <span className="block text-[10px] text-muted-foreground">
-                Caddy · stays sober, final word
-              </span>
-            ) : null}
-            {ruleset.handicaps ? (
-              isOfficial ? (
-                <span className="flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "eyebrow",
-                      handicaps.settling(player.id) && "text-marker",
-                    )}
-                  >
-                    Hcp
-                  </span>
-                  <Stepper
-                    className="min-h-9 px-1"
-                    value={handicaps.valueOf(player.id)}
-                    onChange={(next) => handicaps.set(player.id, next)}
-                    max={MAX_HANDICAP}
-                    decrementLabel={`Lower ${player.display_name}'s handicap`}
-                    incrementLabel={`Raise ${player.display_name}'s handicap`}
-                    label="handicap"
-                  />
-                </span>
-              ) : player.handicap > 0 ? (
-                <span className="block text-[10px] text-muted-foreground">
-                  Playing off {player.handicap}
-                </span>
-              ) : null
-            ) : null}
-          </div>
-        ))}
+          );
+          return canAdjust(player) ? (
+            <button
+              key={player.id}
+              type="button"
+              data-testid="lobby-player-row"
+              onClick={() => setAdjustingId(player.id)}
+              className="group flex min-h-13 w-full flex-col justify-center border-b border-dotted border-border py-2 text-left focus-visible:outline-none"
+            >
+              {line}
+            </button>
+          ) : (
+            <div
+              key={player.id}
+              data-testid="lobby-player-row"
+              className="flex min-h-13 flex-col justify-center border-b border-dotted border-border py-2"
+            >
+              {line}
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -270,6 +294,21 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
       <p className="pb-2 text-center font-serif text-xs italic text-muted-foreground">
         A card is a bit of fun, not a contract.
       </p>
+
+      <LobbyPlayerSheet
+        open={adjusting !== null}
+        player={adjusting}
+        onOpenChange={(open) => {
+          if (!open) setAdjustingId(null);
+        }}
+        canStep={adjustable.length > 1}
+        onStep={stepAdjusting}
+        showRoleToggle={isHost && adjusting?.role !== "host"}
+        onToggleCaddy={toggleCaddy}
+        pending={pending}
+        handicapsOn={ruleset.handicaps}
+        handicaps={handicaps}
+      />
     </Screen>
   );
 }

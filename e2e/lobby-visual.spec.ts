@@ -6,14 +6,18 @@ import { clickSettled } from "./nav";
 /**
  * The lobby's guest list, measured rather than eyeballed.
  *
- * Two geometry bugs lived here: the handicap stepper was given a width
- * below its own content's minimum, so the + escaped through the rounded
- * border; and the dot leader was centred in a row whose height a stepper
- * or a button could change, so the dots drifted off the line the name and
- * the standing sit on. Both are invisible to any assertion about text —
- * only bounding boxes catch them.
+ * The row's contract since the adjust-sheet redesign: one line per guest
+ * at one height, always. A row must never grow because a rule or a role
+ * added something to it — that regression is exactly how the old layout
+ * drifted, with steppers landing at three different depths. The controls
+ * that used to stretch rows (the caddy button, the handicap stepper) live
+ * in the sheet behind the row now, so the geometry pinned here is: the
+ * figure and the standing ride the leader's line; adjusting a handicap in
+ * the sheet changes the row's text but never its height; and the sheet's
+ * stepper keeps its + inside its own frame — the escape-through-the-border
+ * bug this file was born to catch.
  */
-test("the lobby row keeps its controls inside their frames, on the line", async ({
+test("the lobby row holds one height, with the controls in the sheet", async ({
   page,
 }) => {
   const stamp = Date.now();
@@ -29,7 +33,28 @@ test("the lobby row keeps its controls inside their frames, on the line", async 
   await page.getByRole("button", { name: /create round/i }).click();
   await page.waitForURL(/\/round\/[A-Z2-9]{6}$/);
 
-  // ---- The stepper's + stays inside the stepper ----
+  // ---- One line: the figure and the standing ride the leader's line ----
+  // Handicaps are on and the host plays off zero, so the row prints
+  // SCRATCH — the figure is a fixture of every playing row, not an
+  // occasional visitor that changes the layout when it arrives.
+  const lobby = page.getByTestId("lobby-players");
+  const row = lobby.getByTestId("lobby-player-row");
+  await expect(row).toHaveCount(1);
+  await expect(row.getByText("SCRATCH")).toBeVisible();
+
+  const leaderBox = await lobby.locator("span.leader").first().boundingBox();
+  const hostBox = await lobby.getByText("HOST").boundingBox();
+  expect(leaderBox).not.toBeNull();
+  expect(hostBox).not.toBeNull();
+  const overlap =
+    Math.min(leaderBox!.y + leaderBox!.height, hostBox!.y + hostBox!.height) -
+    Math.max(leaderBox!.y, hostBox!.y);
+  expect(overlap).toBeGreaterThan(0);
+  const before = await row.boundingBox();
+  expect(before).not.toBeNull();
+
+  // ---- The stepper lives in the sheet, its + inside its frame ----
+  await clickSettled(page, "lobby-player-row");
   const raise = page.getByRole("button", { name: /raise glyn's handicap/i });
   await expect(raise).toBeVisible();
   const frame = raise.locator("xpath=..");
@@ -44,26 +69,15 @@ test("the lobby row keeps its controls inside their frames, on the line", async 
   );
   expect(plusBox!.x).toBeGreaterThanOrEqual(frameBox!.x - 0.5);
 
-  // ---- The dots ride the name's line, above everything else in the row ----
-  // Asserted structurally rather than by comparing box edges: the first cut
-  // of this test compared the leader's bottom with the HOST badge's, which
-  // is a difference of font metrics between 14px text and a 10px uppercase
-  // badge — 4px on macOS, 5px on CI's Linux fonts, and a number that means
-  // nothing either way. What the bug actually did was let a tall row drag
-  // the dots down level with the handicap stepper, so that is what gets
-  // pinned: the stepper hangs entirely beneath the line the dots run along.
-  const lobby = page.getByTestId("lobby-players");
-  const leaderBox = await lobby.locator("span.leader").first().boundingBox();
-  expect(leaderBox).not.toBeNull();
-  expect(leaderBox!.y + leaderBox!.height).toBeLessThanOrEqual(frameBox!.y);
-
-  // And the standing shares that line rather than sitting on its own.
-  const hostBox = await lobby.getByText("HOST").boundingBox();
-  expect(hostBox).not.toBeNull();
-  const overlap =
-    Math.min(leaderBox!.y + leaderBox!.height, hostBox!.y + hostBox!.height) -
-    Math.max(leaderBox!.y, hostBox!.y);
-  expect(overlap).toBeGreaterThan(0);
+  // ---- Two shots on: the row's text changes, its height doesn't ----
+  await raise.click();
+  await raise.click();
+  await page.getByRole("button", { name: /^done$/i }).click();
+  await expect(page.getByTestId("lobby-player-sheet")).toBeHidden();
+  await expect(row.getByText("OFF 2")).toBeVisible();
+  const after = await row.boundingBox();
+  expect(after).not.toBeNull();
+  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(0.5);
 
   // ---- And the row still works ----
   await clickSettled(page, "tee-off");
