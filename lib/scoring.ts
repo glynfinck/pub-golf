@@ -187,19 +187,39 @@ export function computeSuperlatives(
     }
   }
 
+  // Order of `players` is the join order the page selected; `scores` arrives
+  // with no ORDER BY at all, so the winner of a tie may not be decided by
+  // where a row happened to land in the result set. Two players level on the
+  // best hole of the night is ordinary — par 1 at the World's End, both down
+  // in one — and the recap naming a different one on each realtime refresh
+  // reads as the board glitching. So ties go to the earlier hole, then to
+  // the earlier seat: whoever set the mark first keeps it.
+  const seatOrder = new Map(players.map((player, index) => [player.id, index]));
   let bestHole: Superlatives["bestHole"] = null;
+  let bestAt = { hole: Infinity, seat: Infinity };
   for (const score of scores) {
     if (score.swigs === 0) continue; // an undrunk drink is nobody's best hole
     const par = parByHole.get(score.hole_number);
     const name = nameById.get(score.player_id);
     if (par === undefined || !name) continue;
     const toPar = score.swigs - par;
-    if (!bestHole || toPar < bestHole.toPar) {
+    const at = {
+      hole: score.hole_number,
+      seat: seatOrder.get(score.player_id) ?? Infinity,
+    };
+    const beatsIt =
+      !bestHole ||
+      toPar < bestHole.toPar ||
+      (toPar === bestHole.toPar &&
+        (at.hole < bestAt.hole ||
+          (at.hole === bestAt.hole && at.seat < bestAt.seat)));
+    if (beatsIt) {
       bestHole = {
         name,
         venue: venueByHole.get(score.hole_number) ?? `hole ${score.hole_number}`,
         toPar,
       };
+      bestAt = at;
     }
   }
 

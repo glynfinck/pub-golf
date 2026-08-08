@@ -98,6 +98,14 @@ jobs:
       - name: RLS + database tests
         run: npm run test:db
 
+      # The same stack, crowded: twenty sessions on one round — the join
+      # stampede, the score storm, the mulligan burst, a full eighteen-hole
+      # card. Races only surface under contention, so this tier is in the
+      # gate rather than on a schedule: a nightly red is a report nobody
+      # owns, a PR red is a diff somebody is already looking at.
+      - name: Stress tests (twenty sessions)
+        run: npm run test:stress
+
       - name: Build
         run: npm run build
 

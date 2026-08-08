@@ -11,6 +11,7 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
     "test:db": "vitest run --project db",
+    "test:stress": "vitest run --project stress",
     "test:all": "vitest run",
     "test:e2e": "playwright test"
   },
