@@ -106,42 +106,71 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     const host = await hostContext.newPage();
 
     await host.goto("/courses/new");
+    // The builder is a controlled form: a fill that lands before React
+    // hydrates is wiped when the inputs are taken over, and the wipe is
+    // silent — the name empties, the save button below stays disabled for
+    // want of it, and the click waits out the whole budget. The Add button
+    // is the one control that answers back (it enables only when live React
+    // sees text in its field), so fill and listen for the answer as one
+    // retried block. WebKit hydrates slowest and found this, exactly the
+    // way it found the join form's version of the same race.
+    const pubField = host.getByLabel(/add a pub by name/i);
+    const addPub = host.getByRole("button", { name: /add the named pub/i });
+    await expect(async () => {
+      await pubField.fill("The First Leg");
+      await expect(addPub).toBeEnabled({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
+
+    // Hydration proven — every fill from here sticks.
     await host.getByLabel(/course name/i).fill(`Full House Crawl ${stamp}`);
-    await host.getByLabel(/add a pub by name/i).fill("The First Leg");
-    await host.getByRole("button", { name: /add the named pub/i }).click();
-    await host.getByLabel(/add a pub by name/i).fill("The Last Orders");
-    await host.getByRole("button", { name: /add the named pub/i }).click();
+    await addPub.click();
+    await pubField.fill("The Last Orders");
+    await addPub.click();
     await host
       .getByRole("button", { name: /save the course · 2 holes/i })
       .click();
     await host.waitForURL(/\/courses$/);
 
     await host.goto("/new");
+    // Same controlled-form rule as the builder: pick the course first and
+    // let the create button's label answer — it only names the course once
+    // live React has registered the selection — then fill the round name on
+    // a page that has proven itself hydrated.
+    const createRound = host.getByRole("button", {
+      name: /create round · 2 holes on full house crawl/i,
+    });
+    await expect(async () => {
+      await host
+        .getByRole("button", { name: new RegExp(`Full House Crawl ${stamp}`) })
+        .click();
+      await expect(createRound).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 30_000 });
     await host.getByLabel(/round name/i).fill(`Full House Open ${stamp}`);
-    await host
-      .getByRole("button", { name: new RegExp(`Full House Crawl ${stamp}`) })
-      .click();
-    await host
-      .getByRole("button", {
-        name: /create round · 2 holes on full house crawl/i,
-      })
-      .click();
+    await createRound.click();
     await host.waitForURL(/\/round\/[A-Z2-9]{6}$/);
     const code = host.url().split("/").pop()!;
 
-    // ---- Two guests on real phones, seventeen more on the group chat ----
+    // ---- Seventeen phones on the group chat, then two walking in ----
+    // The crowd seats first, while the host's is the only live page: the
+    // seventeen joins are seventeen realtime events, and every one asks the
+    // pages that can see the round to re-render. Three browser pages
+    // absorbing that on one dev server is how WebKit spent a whole budget
+    // painting — and it is also not the real order of things: the code hits
+    // the group chat before anybody's phone is out on the table.
+    crowd = await takeSeats(code, CROWD);
     const ana = await joinAsGuest(browser, code, "Ana");
     const bram = await joinAsGuest(browser, code, "Bram");
     guestContexts.push(ana.context, bram.context);
-    crowd = await takeSeats(code, CROWD);
 
     // Every seat lands on the host's lobby over realtime, no reload. The
     // count is the assertion: at twenty seats a lobby that dropped one to a
-    // missed event still looks perfectly convincing.
+    // missed event still looks perfectly convincing. Short attempts on a
+    // long runway — the count itself must land exactly, the runway is for
+    // dev mode re-rendering nineteen times on the slowest engine.
     await expect(async () => {
       const rows = host.getByTestId("lobby-players").locator("> div");
-      await expect(rows).toHaveCount(TABLE);
-    }).toPass({ timeout: 30_000 });
+      await expect(rows).toHaveCount(TABLE, { timeout: 2_000 });
+    }).toPass({ timeout: 90_000 });
     for (const name of ["Ana", "Bram", "Rue", "Tam"]) {
       await expect(
         host.getByTestId("lobby-players").getByText(name, { exact: true }),
@@ -183,8 +212,8 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     await ana.page.getByTestId("position-ribbon").click();
     await expect(async () => {
       const rows = ana.page.getByTestId("standings").locator("> div");
-      await expect(rows).toHaveCount(TABLE);
-    }).toPass({ timeout: 30_000 });
+      await expect(rows).toHaveCount(TABLE, { timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
     await expect(
       ana.page.getByTestId("standings").getByText("Rue", { exact: true }),
     ).toBeVisible();
@@ -236,8 +265,8 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     await expect(host.getByTestId("winner")).toContainText("Rue");
     await expect(async () => {
       const rows = host.getByTestId("final-standings").locator("> div");
-      await expect(rows).toHaveCount(TABLE);
-    }).toPass({ timeout: 30_000 });
+      await expect(rows).toHaveCount(TABLE, { timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
     // No `exact` here: a final-standings row sets rank and name in one line
     // of type, so no element's text is exactly the bare name — substring
     // match, the same way `foursome` reads this table.
