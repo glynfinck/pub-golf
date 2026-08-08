@@ -633,14 +633,33 @@ describe("computeSuperlatives — bestHole", () => {
     expect(bestHole).toEqual({ name: "a", venue: "Pub 1", toPar: -1 });
   });
 
-  it("settles a tie on the order the scores arrive", () => {
+  it("settles a tie on who set the mark first, not on row order", () => {
+    // `scores` is selected with no ORDER BY, so "the first row with the best
+    // figure" is not a rule — it is whatever Postgres returned this time, and
+    // the recap re-renders on every realtime event. Ties go to the earlier
+    // hole, and on the same hole to the earlier seat.
+    const rows = [score("b", 1, 3), score("a", 1, 3)];
+    expect(
+      computeSuperlatives(COURSE, [player("a"), player("b")], rows, []).bestHole
+        ?.name,
+    ).toBe("a");
+    // Same answer with the two score rows the other way round.
+    expect(
+      computeSuperlatives(COURSE, [player("a"), player("b")], [...rows].reverse(), [])
+        .bestHole?.name,
+    ).toBe("a");
+  });
+
+  it("gives a tie to the earlier hole before it looks at the seat", () => {
+    // b is level with a on the card, but got there at Pub 1 while a was still
+    // walking. Whoever set the mark first keeps it.
     const { bestHole } = computeSuperlatives(
       COURSE,
       [player("a"), player("b")],
-      [score("b", 1, 3), score("a", 1, 3)],
+      [score("a", 2, 2), score("b", 1, 3)],
       [],
     );
-    expect(bestHole?.name).toBe("b");
+    expect(bestHole).toEqual({ name: "b", venue: "Pub 1", toPar: -2 });
   });
 });
 
