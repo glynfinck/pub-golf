@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  adminClient,
   anonymousGuest,
   signedInUser,
   visitor,
   type Actor,
 } from "@/tests/support/clients";
-import { seedRound, type SeededRound } from "@/tests/support/factories";
+import {
+  seedRound,
+  seedScores,
+  type SeededRound,
+} from "@/tests/support/factories";
 
-import { roundExists, storedRound } from "./helpers/assert";
+import { roundExists, seatCount, storedRound } from "./helpers/assert";
 
 /**
  * Officials run a round; they do not own it. Everything the caddy controls
@@ -151,10 +156,53 @@ describe("rounds", () => {
       expect(error).not.toBeNull();
     });
 
-    it("gives nobody a way to delete a round", async () => {
-      // There is no DELETE policy on rounds, so even the host cannot remove
-      // one. Asserted so that adding a policy is a decision, not a slip.
-      await host.db.from("rounds").delete().eq("id", round.id);
+  });
+
+  describe("deleting", () => {
+    // Rounds had no DELETE policy at all until the host management
+    // migration — "hosts delete rounds" is a deliberate decision, and this
+    // suite is where its edges are pinned.
+
+    it("lets the host tear up their own round, card and all", async () => {
+      await seedScores(round.id, [
+        { playerId: round.seatOf[player.userId], hole: 1, swigs: 3 },
+      ]);
+
+      const { error } = await host.db
+        .from("rounds")
+        .delete()
+        .eq("id", round.id);
+      expect(error).toBeNull();
+      expect(await roundExists(round.id)).toBe(false);
+
+      // The cascades take the whole card with the round.
+      expect(await seatCount(round.id)).toBe(0);
+      const { count: holesLeft } = await adminClient()
+        .from("holes")
+        .select("id", { count: "exact", head: true })
+        .eq("round_id", round.id);
+      expect(holesLeft ?? 0).toBe(0);
+      const { count: scoresLeft } = await adminClient()
+        .from("scores")
+        .select("id", { count: "exact", head: true })
+        .eq("round_id", round.id);
+      expect(scoresLeft ?? 0).toBe(0);
+    });
+
+    it("refuses the caddy — officiating is not ownership", async () => {
+      // A filtered DELETE is as silent as a filtered UPDATE: no error, no
+      // rows. The surviving round is the only honest witness.
+      await caddy.db.from("rounds").delete().eq("id", round.id);
+      expect(await roundExists(round.id)).toBe(true);
+    });
+
+    it("refuses an ordinary player", async () => {
+      await player.db.from("rounds").delete().eq("id", round.id);
+      expect(await roundExists(round.id)).toBe(true);
+    });
+
+    it("refuses an outsider", async () => {
+      await stranger.db.from("rounds").delete().eq("id", round.id);
       expect(await roundExists(round.id)).toBe(true);
     });
   });

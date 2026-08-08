@@ -9,6 +9,7 @@ import {
   MAX_MULLIGANS,
   MAX_HANDICAP,
 } from "@/lib/rules";
+import { rematchName } from "@/lib/rematch";
 import { readRuleset } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
@@ -626,6 +627,191 @@ export async function removePenalty(code: string, penaltyId: string): Promise<Ac
   return {};
 }
 
+/** The host renames the round — the name column only; the ruleset snapshot
+ * and the code stay exactly as dealt. */
+export async function renameRound(
+  code: string,
+  name: string,
+): Promise<ActionResult> {
+  const parsed = z.string().trim().min(1).max(80).safeParse(name);
+  if (!parsed.success)
+    return { error: "A round needs a name — 80 letters at most" };
+
+  const supabase = await createClient();
+  const { round } = await getHostedRound(supabase, code);
+
+  const { error } = await supabase
+    .from("rounds")
+    .update({ name: parsed.data })
+    .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return {};
+}
+
+/** The host tears up the card: the round and everything on it — holes,
+ * seats, scores, penalties — goes with it, on the FK cascades. Host only,
+ * never the caddy: officiating runs a round, it does not own one. RLS is
+ * the real enforcement ("hosts delete rounds"); a filtered delete removes
+ * nothing and returns nothing, which is why the returned rows are checked
+ * rather than the error. */
+export async function deleteRound(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getHostedRound(supabase, code);
+
+  const { data: deleted, error } = await supabase
+    .from("rounds")
+    .delete()
+    .eq("id", round.id)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!deleted || deleted.length === 0)
+    return { error: "Only the host can tear up this card" };
+
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return {};
+}
+
+/** Same again: a brand-new round off this one's own snapshot — its ruleset
+ * and its holes, never the saved course, which may have changed since the
+ * night was built. Fresh code, fresh lobby, tee time cleared, host seated;
+ * everyone else arrives through join_round with the new code, the same
+ * door as any round. */
+export async function rehostRound(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round, userId } = await getHostedRound(supabase, code);
+
+  const { data: holes } = await supabase
+    .from("holes")
+    .select(
+      "number, venue_id, venue_name, drink, par, hazard, hazard_note, penalties, walk_minutes_to_next",
+    )
+    .eq("round_id", round.id)
+    .order("number");
+  if (!holes || holes.length === 0)
+    return { error: "This round has no holes to replay" };
+
+  // Through readRuleset, never a re-cast: the copy is the old snapshot
+  // normalised, with the one advisory field a new night cannot inherit.
+  const old = readRuleset(round.ruleset);
+  const { data: next, error } = await supabase
+    .from("rounds")
+    .insert({
+      name: rematchName(round.name).slice(0, 80),
+      host: userId,
+      ruleset: {
+        format: old.format,
+        hazards: old.hazards,
+        holeTimerMinutes: old.holeTimerMinutes,
+        minutesPerPub: old.minutesPerPub,
+        scheduledTeeOff: null,
+        softSubstituteScoresPar: old.softSubstituteScoresPar,
+        penalties: old.penalties,
+        handicaps: old.handicaps,
+        mulligans: old.mulligans,
+        mulliganStrokes: old.mulliganStrokes,
+      },
+    })
+    .select("id, code")
+    .single();
+  if (error) return { error: `Could not set the table: ${error.message}` };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // Seat the host before the holes — the holes policy reads round_players.
+  const { error: playerError } = await supabase.from("round_players").insert({
+    round_id: next.id,
+    profile_id: userId,
+    display_name: profile?.display_name ?? "Host",
+    role: "host",
+  });
+  if (playerError) {
+    // Don't leave a half-set table behind — the delete policy lets us tidy.
+    await supabase.from("rounds").delete().eq("id", next.id);
+    return { error: `Could not seat the host: ${playerError.message}` };
+  }
+
+  const { error: holesError } = await supabase
+    .from("holes")
+    .insert(holes.map((hole) => ({ ...hole, round_id: next.id })));
+  if (holesError) {
+    await supabase.from("rounds").delete().eq("id", next.id);
+    return { error: `Could not build the course: ${holesError.message}` };
+  }
+
+  redirect(`/round/${next.code}`);
+}
+
+/** An official files the card early: the round ends now, for everyone, and
+ * the standings stand as played. Honest maths — unplayed holes take the
+ * substitute for every card alike, so stopping short buys nobody a
+ * stroke. */
+export async function fileCardEarly(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  if (round.status !== "live")
+    return { error: "Only a live round can be filed early" };
+
+  const { error } = await supabase
+    .from("rounds")
+    .update({
+      status: "finished",
+      hole_deadline_at: null,
+      walk_deadline_at: null,
+    })
+    .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return { finished: true };
+}
+
+/** The round's course, back into the book: copies this round's holes —
+ * walks, hazards and local rules as they were actually played — into a
+ * saved course owned by the host, so the night can be built on again. */
+export async function saveRoundAsCourse(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round, userId } = await getHostedRound(supabase, code);
+
+  const { data: holes } = await supabase
+    .from("holes")
+    .select(
+      "number, venue_id, venue_name, drink, par, hazard, hazard_note, penalties, walk_minutes_to_next",
+    )
+    .eq("round_id", round.id)
+    .order("number");
+  if (!holes || holes.length === 0)
+    return { error: "This round has no holes to save" };
+
+  const { data: course, error } = await supabase
+    .from("courses")
+    .insert({ owner: userId, name: round.name })
+    .select("id")
+    .single();
+  if (error) return { error: error.message };
+
+  const { error: holesError } = await supabase
+    .from("course_holes")
+    .insert(holes.map((hole) => ({ ...hole, course_id: course.id })));
+  if (holesError) {
+    // Don't leave a hole-less course behind.
+    await supabase.from("courses").delete().eq("id", course.id);
+    return { error: holesError.message };
+  }
+
+  revalidatePath("/courses");
+  return {};
+}
+
 // ---------- helpers ----------
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
@@ -660,6 +846,27 @@ async function getOfficiatedRound(supabase: ServerSupabase, code: string) {
     throw new Error("Only the host or caddy can do that");
 
   return { round, playerRowId: player.id };
+}
+
+/** Fetch the round and assert the caller is its host — the manage sheet's
+ * lifecycle actions (tear up, rematch, rename, save the course) are the
+ * host's alone, and the caddy is deliberately not enough. UX guard like
+ * getOfficiatedRound; the delete policy is the enforcement that holds. */
+async function getHostedRound(supabase: ServerSupabase, code: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/signin");
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("*")
+    .eq("code", code.toUpperCase())
+    .maybeSingle();
+  if (!round) throw new Error("Round not found");
+  if (round.host !== user.id) throw new Error("Only the host can do that");
+
+  return { round, userId: user.id };
 }
 
 async function getMemberContext(supabase: ServerSupabase, code: string) {
