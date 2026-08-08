@@ -1,4 +1,5 @@
 import { adminClient } from "./clients";
+import { pooled } from "./concurrency";
 
 /**
  * There is no seed.sql and nothing truncates between runs, so every fixture
@@ -31,9 +32,13 @@ export async function cleanupScope(): Promise<void> {
   if (users.length > 0) {
     // Rounds a test created through the API were never handed to track.round.
     await db.from("rounds").delete().in("host", users);
-    for (const id of users) {
-      await db.auth.admin.deleteUser(id);
-    }
+    // One admin call per user, and there is no batch form — at four seats
+    // that loop was invisible, at twenty-one it is the slowest thing in the
+    // stress tier. Bounded rather than unbounded: the rounds above are
+    // already gone, so these are independent deletes of leaf rows, and the
+    // point is to stop paying a round trip of latency per seat, not to see
+    // how many gotrue will take at once.
+    await pooled(users, 8, (id) => db.auth.admin.deleteUser(id));
   }
 
   users.length = 0;

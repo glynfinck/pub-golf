@@ -1,4 +1,4 @@
-import { INVITATIONAL_COURSE } from "@/lib/course-templates";
+import { templateForHoleCount } from "@/lib/course-templates";
 
 import { adminClient, type Actor } from "./clients";
 import { track } from "./scope";
@@ -69,8 +69,12 @@ export async function seedRound(
   if (error) throw error;
   track.round(round.id);
 
+  // templateForHoleCount, not a slice of the template: the Invitational is
+  // nine pubs long, and the stress tier plays eighteen. Repeating the card is
+  // what the round builder itself does past nine, so a long fixture is the
+  // same shape a long round really has.
   const { error: holesError } = await db.from("holes").insert(
-    INVITATIONAL_COURSE.slice(0, holeCount).map((hole) => ({
+    templateForHoleCount(holeCount).map((hole) => ({
       round_id: round.id,
       number: hole.number,
       venue_name: hole.venue_name,

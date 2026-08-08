@@ -40,6 +40,20 @@ enable_anonymous_sign_ins = true
 # same switch set (Authentication -> Advanced).
 enable_manual_linking = true
 
+# Every guest is an anonymous sign-in, and gotrue rations those to 30 per hour
+# per IP by default. That is under two tables: the stress tier seats twenty
+# phones per case and the Playwright matrix seats seventeen again per engine,
+# so the default turns a whole CI run into 429s partway through — and the
+# failure arrives as "Anonymous sign-ins are rate limited", nowhere near the
+# test that spent the budget.
+#
+# Local only, and deliberately absent from [remotes.preview.auth] below: the
+# same number is a real abuse guard on a hosted project, where nobody is
+# minting twenty sessions a minute on purpose. This is the one place local and
+# preview are meant to disagree.
+[auth.rate_limit]
+anonymous_users = 3600
+
 [auth.sms]
 enable_signup = false
 

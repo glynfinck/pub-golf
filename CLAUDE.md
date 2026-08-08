@@ -179,6 +179,22 @@ creates, but a table created by any other owner would still need it by hand.
 Read the error shape: `42501 permission denied` is always the table grant; a
 policy refusal returns no rows and no error at all.
 
+`npm run test:stress` runs the Vitest `stress` project (`tests/stress/**`) —
+the db tier turned up to a full table: twenty sessions on one round
+(`tests/support/table.ts` seats them), the join stampede, the score storm,
+the mulligan-allowance burst, and an eighteen-hole soak. Same stack, same
+factories, same scoped teardown, same "re-read through adminClient, never
+trust the response" rule; `retry: 0` for the same reason as db — a race that
+shows one run in three is the tier's whole point. Setup goes through
+`pooled()` (bounded fan-out) because arriving is not the experiment; the
+moment under test uses bare `Promise.all` and says so. It found real bugs at
+launch (the mulligan trigger's read-then-check let concurrent raises beat the
+allowance — fixed by the seat lock in `20260816000000`), which is why it runs
+in the PR gate, not on a schedule. It needs `[auth.rate_limit]
+anonymous_users` raised in `config.toml` (local only, never preview): every
+guest is an anonymous sign-in and gotrue's default 30/hour is under two
+tables' worth.
+
 `npm run test:e2e` runs Playwright (port 3105) against the real local
 Supabase stack, once per row of a platform matrix — Android Chrome
 (Pixel 7), iOS Safari (iPhone 15/WebKit) and desktop Firefox — so

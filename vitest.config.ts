@@ -52,6 +52,32 @@ export default defineConfig({
           retry: 0,
         },
       },
+      {
+        resolve: { alias },
+        test: {
+          name: "stress",
+          environment: "node",
+          include: ["tests/stress/**/*.test.ts"],
+          // Same stack, same fixtures, same scoped teardown as `db` — this
+          // tier is that one turned up, not a different kind of test.
+          globalSetup: ["tests/db/global-setup.ts"],
+          setupFiles: ["tests/db/setup.ts"],
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
+          maxConcurrency: 1,
+          // A twenty-seat round is twenty sign-ins, a seat batch, and up to
+          // 360 scored holes, each on its own session. Minutes, not seconds —
+          // but every assertion in here is an invariant about what Postgres
+          // stored, never about how long it took, so a slow machine makes
+          // this tier late and never red.
+          testTimeout: 240_000,
+          hookTimeout: 240_000,
+          // Held to the db tier's standard for the same reason: a race that
+          // only shows up one run in three is the whole point of the tier.
+          // Retrying it would hide exactly what it exists to find.
+          retry: 0,
+        },
+      },
     ],
   },
 });
