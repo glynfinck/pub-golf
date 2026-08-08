@@ -149,12 +149,26 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
   const ruleChips = roundRuleChips(ruleset, holes);
 
-  // The caddy's row is three controls of one geometry — the primary is
-  // filled, the other two outlined, but a 44px thumb target and the same
-  // corner either way. Button's compact size is h-8 and rounded-lg, which
-  // left "Hole out" visibly shorter and squarer than the two beside it.
-  const officialControl =
-    "flex min-h-11 flex-1 items-center justify-center rounded-xl text-xs font-bold";
+  // Every control in the thumb cluster is ONE geometry: a 44px target, one
+  // corner, one border weight, one type scale, one line of label. Tone is
+  // the only thing a control may vary.
+  //
+  // `min-w-0` is the load-bearing half. `flex-1` sets an equal basis but
+  // leaves min-width:auto, so a track never shrinks below its own content —
+  // and the widest content in this row is text nobody can see, because
+  // PendingLabel measures the pending copy in the same grid cell as the
+  // resting one. "Hole out" carrying "Filing hole 12…" under it — and
+  // whitespace-nowrap off Button's base, so it could not even wrap the way
+  // its neighbours did — sat 20px wider than them at every phone width.
+  //
+  // whitespace-nowrap is now deliberate and on all three, one line each, so
+  // no control can outgrow the row vertically either; overflow-hidden is the
+  // backstop, because below ~344px a track is narrower than its own label and
+  // a word clipped inside the corner beats a row knocked out of true.
+  const clusterControl =
+    "flex min-h-11 flex-1 min-w-0 items-center justify-center gap-1.5 " +
+    "overflow-hidden rounded-xl border-[1.5px] px-1.5 text-xs font-bold " +
+    "whitespace-nowrap";
 
   // Mulligans are an allowance for the whole round, so what's left is a
   // count across every hole on the card, not just this one.
@@ -265,10 +279,12 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
       <div className="mt-auto flex flex-col gap-2.5">
         {isOfficial ? (
-          <div className="flex items-center gap-2">
+          // No items-center: the row stretches, so the three share one height
+          // even if a label ever finds a way to sit taller than its siblings.
+          <div className="flex gap-2">
             <Link
               href={`/round/${round.code}/card`}
-              className={cn(officialControl, "border border-border text-fairway")}
+              className={cn(clusterControl, "border-border text-fairway")}
             >
               Marker&apos;s card
             </Link>
@@ -281,8 +297,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
                 // confirmation, and it's the one every player gets.
                 onClick={() => run(() => resetHoleTimer(round.code))}
                 className={cn(
-                  officialControl,
-                  "border border-border disabled:opacity-40",
+                  clusterControl,
+                  "border-border disabled:opacity-40",
                 )}
               >
                 <PendingLabel
@@ -294,9 +310,13 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
                 />
               </button>
             ) : null}
+            {/* border-primary, not the base's transparent: Button clips its
+                background to the padding box, so a transparent 1.5px border
+                would ring the fill in cream and read a size down from the
+                two outlined controls beside it. */}
             <Button
               size="compact"
-              className={officialControl}
+              className={cn(clusterControl, "border-primary")}
               disabled={pending}
               onClick={holeOut}
               data-testid="hole-out"
@@ -306,10 +326,10 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
                 busy={busy}
                 putt={false}
                 label="Hole out"
+                // Short enough to sit in a third of the row: the long copy
+                // set the button's width even while invisible.
                 pendingLabel={
-                  round.current_hole >= holes.length
-                    ? "Filing the card…"
-                    : `Filing hole ${round.current_hole}…`
+                  round.current_hole >= holes.length ? "Filing card…" : "Filing…"
                 }
               />
             </Button>
@@ -327,14 +347,17 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
             data-testid="swig-minus"
             disabled={swigs === 0}
             onClick={() => changeSwigs(-1)}
-            className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] border-dashed border-muted-foreground/60 text-sm font-bold text-muted-foreground disabled:opacity-40"
+            className={cn(
+              clusterControl,
+              "border-dashed border-muted-foreground/60 text-muted-foreground disabled:opacity-40",
+            )}
           >
-            <Minus size={15} aria-hidden /> Undo
+            <Minus size={14} aria-hidden /> Undo
           </button>
-          {/* Stacked like the SWIG button so the long word can never wrap
-              a three-button row on a narrow phone: the label rides small
-              caps on top, the private count is pips underneath — filled
-              still in the pocket, hollow spent. */}
+          {/* The pips are the private count — filled still in the pocket,
+              hollow spent. They hang off the bottom edge rather than
+              stacking above it, because a second line pushed the label off
+              the centre its two neighbours sit on. */}
           {ruleset.mulligans > 0 ? (
             <button
               type="button"
@@ -342,13 +365,17 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
               disabled={mulligansLeft === 0}
               onClick={() => setMulliganOpen(true)}
               aria-label={`Take a mulligan — ${mulligansLeft} of ${ruleset.mulligans} left`}
-              className="flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-xl border-[1.5px] border-marker/60 text-marker disabled:opacity-30"
+              className={cn(
+                clusterControl,
+                "relative border-marker/60 text-marker disabled:opacity-30",
+              )}
             >
-              <span className="flex items-center gap-1 text-[10px] font-extrabold tracking-[0.14em]">
-                <RotateCcw size={11} aria-hidden />
-                MULLIGAN
-              </span>
-              <span className="flex items-center gap-1" aria-hidden>
+              <RotateCcw size={14} aria-hidden />
+              Mulligan
+              <span
+                aria-hidden
+                className="absolute inset-x-0 bottom-1 flex items-center justify-center gap-1"
+              >
                 {Array.from({ length: ruleset.mulligans }, (_, pip) => (
                   <span
                     key={pip}
@@ -363,11 +390,21 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
               </span>
             </button>
           ) : null}
+          {/* The count rides the bottom edge where the mulligan pips sit, not
+              the label: " · 2" inline made this the widest control in the
+              row, and a track that widens on a called penalty is a row that
+              moves under the thumb. */}
           <button
             type="button"
+            aria-label={
+              myHolePenalties.length > 0
+                ? `Penalties — ${myHolePenalties.length} on this hole`
+                : "Penalties"
+            }
             onClick={() => setPenaltySheetOpen(true)}
             className={cn(
-              "flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border-[1.5px] text-sm font-bold",
+              clusterControl,
+              "relative",
               myHolePenalties.length > 0
                 ? "border-hazard bg-hazard/10 text-hazard"
                 : "border-hazard/60 text-hazard",
@@ -375,7 +412,14 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
           >
             <Flag size={14} aria-hidden />
             Penalties
-            {myHolePenalties.length > 0 ? ` · ${myHolePenalties.length}` : ""}
+            {myHolePenalties.length > 0 ? (
+              <span
+                aria-hidden
+                className="tabular absolute inset-x-0 bottom-1 text-center font-mono text-[9px] leading-none font-bold"
+              >
+                ×{myHolePenalties.length}
+              </span>
+            ) : null}
           </button>
         </div>
 
