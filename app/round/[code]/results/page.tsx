@@ -7,6 +7,7 @@ import { Podium } from "@/components/round/podium";
 import { RecapCard } from "@/components/round/recap-card";
 import { ReopenRound, ResultsLive } from "@/components/round/results-live";
 import { RoundBar } from "@/components/round/round-bar";
+import { SameAgain } from "@/components/round/same-again";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
@@ -169,8 +170,18 @@ export default async function ResultsPage({
         superlatives={superlatives}
       />
 
+      {me?.role === "host" ? <SameAgain code={round.code} /> : null}
+
       <div className="flex gap-3">
-        <Link href="/" className={cn(buttonVariants(), "flex-1")}>
+        <Link
+          href="/"
+          className={cn(
+            buttonVariants({
+              variant: me?.role === "host" ? "outline" : "default",
+            }),
+            "flex-1",
+          )}
+        >
           Back to the clubhouse
         </Link>
         {isOfficial ? (
