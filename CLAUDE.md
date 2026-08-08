@@ -44,6 +44,14 @@ is this Next version's middleware convention (see the `home` sibling repo).
   Regenerate icons with `sharp` and **`.ensureAlpha()`** — Next's ICO
   decoder rejects a non-RGBA PNG, and `sips` writes RGB whenever the source
   has no alpha, which fails the build rather than the file.
+- The lockups (glass left, name right) are generated, not drawn:
+  `node scripts/brand-lockups.mjs` writes `lockup-*` (transparent and
+  `-stock`) and `letterhead-*` (tagline beneath) for both grounds into
+  `public/brand/`, compositing the trimmed mark masters with the vendored
+  EB Garamond via Satori — the same renderer as `lib/og.tsx`, so the
+  letterforms match the OG cards. The wordmark is the sign-in masthead's
+  voice verbatim (serif, uppercase, `tracking-[0.08em]`, foreground ink);
+  change the voice there and these regenerate to follow, not the reverse.
 - `lib/mark.ts` is now only the pennant geometry the `Putt` busy animation
   putts at — it stopped being the logo when the artwork arrived, and there
   is no static SVG copy left to pin against it.
