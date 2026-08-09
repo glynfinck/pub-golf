@@ -202,7 +202,7 @@ export default async function ResultsPage({
         <ReopenRound code={round.code} lastHole={holes.length} />
       ) : null}
 
-      <p className="pb-2 text-center font-serif text-xs italic text-muted-foreground">
+      <p className="text-center font-serif text-xs italic text-muted-foreground">
         Card filed by the caddy —{" "}
         {new Date(round.created_at).toLocaleDateString("en-GB", {
           day: "numeric",
@@ -210,6 +210,13 @@ export default async function ResultsPage({
           year: "numeric",
         })}
         .
+      </p>
+
+      {/* Last thing anybody reads at the end of the night, which is the
+          hour it is worth reading. Off the RecapCard on purpose — that one
+          is the screenshot, and it stays spare. */}
+      <p className="pb-2 text-center text-[11px] text-muted-foreground">
+        Get everyone home safe.
       </p>
     </Screen>
   );

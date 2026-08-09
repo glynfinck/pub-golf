@@ -14,6 +14,7 @@ import {
   gotoSettled,
   holeOutToResults,
 } from "./nav";
+import { budget, closeQuietly } from "./harness";
 import { leaveSeats, standOnTheHole, tableDrinks, takeSeats } from "./seats";
 import type { Seat } from "./seats";
 
@@ -87,7 +88,7 @@ test("a full house: twenty seats, three phones watching, one card", async ({
   // 19th. Sized the way foursome's budget is: on a cold dev server the route
   // compiles alone eat minutes — a cost CI never pays, since it serves the
   // build the job already made.
-  test.setTimeout(300_000);
+  test.setTimeout(budget(300_000));
   const stamp = Date.now();
   let crowd: Seat[] = [];
 
@@ -287,7 +288,9 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     }
   } finally {
     leaveSeats(crowd);
-    await hostContext.close();
-    for (const context of guestContexts) await context.close();
+    // Teardown never decides the verdict — see closeQuietly. This spec once
+    // reported a failure *at* `hostContext.close()` when what had actually
+    // run out was the test's own budget.
+    await closeQuietly(hostContext, ...guestContexts);
   }
 });

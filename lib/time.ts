@@ -125,3 +125,22 @@ export function clockTime12(minutesOfDay: number): string {
   const hour12 = hours % 12 === 0 ? 12 : hours % 12;
   return `${hour12}:${minutes.toString().padStart(2, "0")} ${half}`;
 }
+
+/**
+ * How the clubhouse says hello, given the hour. It said "Evening" at every
+ * hour of the day, which is charming at 9pm and simply wrong at brunch.
+ *
+ * The small hours get their own line rather than being folded into evening:
+ * a round that is still on the board at 2am is the app's best case, not an
+ * edge case.
+ *
+ * Pure, and takes the hour rather than reading a clock, like everything else
+ * in this file — which is also what makes the bands testable.
+ */
+export function greeting(hour: number): string {
+  const h = ((Math.floor(hour) % 24) + 24) % 24;
+  if (h < 5) return "Still going";
+  if (h < 12) return "Morning";
+  if (h < 18) return "Afternoon";
+  return "Evening";
+}
