@@ -29,6 +29,10 @@ is this Next version's middleware convention (see the `home` sibling repo).
   console-authored styles (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM` /
   `_MIDNIGHT`, riding `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — a browser key,
   never the server's Places key) and the house draws its own pins. The
+  style masters are vendored in `docs/map-styles/` (Google's stylesheet
+  JSON, every taxonomy feature pinned so no default — blue in the dark
+  variant — bleeds through); re-import them via Map styles → Create
+  style → JSON if the console copies are ever lost. The
   search route aims every query — viewport bounds when the map framed one,
   else the player's IP city off Vercel's geo headers, never the data
   centre's. Request shaping is pure and unit-tested in `lib/pub-search.ts`;
