@@ -114,10 +114,23 @@ accepted third-party dependency in the gate, four test-mode API calls.
 `.github/workflows/stripe-sandbox.yml` remains for the Monday drift
 check and for seeding a fresh sandbox by hand.
 
-Not built on purpose: any green-fee purchase UI. Nothing premium exists
-to unlock yet, and the covenant says money only ever buys something real
-— the unlock sheet ships alongside the first extra (the league or the
-printed pack).
+Phase one's other half — the funnel — is in as `20260822000000`, and it
+is deliberately the smallest thing that works: no events table, no
+vendor, no second copy of the truth. Three of the four moments were
+already facts in the schema and are counted where they lie (`created_at`
+on a round, `joined_at` on a seat minus the host's own, and a new
+derived `finished_at`); only the fourth leaves no trace, so a recap share
+bumps `rounds.recap_shares` through `record_recap_share` — a definer
+function, because guests share the card and guests cannot update a
+round. Both columns are derived rather than submitted: `finished_at`
+comes off the status transition, and the counter moves only for that
+function, which announces itself with a transaction-local setting the way
+seat rescue does. `house_funnel(since, until)` returns the five numbers
+(the four moments plus green fees sold) and is granted to `service_role`
+alone — how many rounds the house ran is the house's business. Tips have
+no numerator here on purpose: the honesty box is a Payment Link, so
+Stripe's own dashboard is where tips are counted, against
+`rounds_finished` as the denominator.
 
 ## The covenant (product rules, public)
 

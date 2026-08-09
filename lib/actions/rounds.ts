@@ -782,6 +782,25 @@ export async function removeOwnPenalty(
   return {};
 }
 
+/**
+ * The recap left the app for a group chat — phase one's fourth number.
+ *
+ * The other three moments in the funnel are already facts in the schema
+ * (a round's created_at, a seat's joined_at, a card's finished_at); a share
+ * is a tap on a phone and reaches Postgres only if something sends it. The
+ * whole table shares the card, guests included, so the count goes through
+ * `record_recap_share` — a definer function that admits members — rather
+ * than an update a guest could never make.
+ *
+ * Deliberately returns nothing and swallows its errors: the card has already
+ * gone by the time this runs, and a counter that failed is not something to
+ * put on screen.
+ */
+export async function recordRecapShare(code: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.rpc("record_recap_share", { join_code: code.toUpperCase() });
+}
+
 /** Marker's card: an official sets any player's swigs on any hole. RLS
  * backs this up — the update policy checks is_round_official. */
 export async function setPlayerScore(
