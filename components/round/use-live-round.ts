@@ -9,6 +9,14 @@ import { createClient } from "@/lib/supabase/client";
 const LIVE_TABLES = ["rounds", "round_players", "scores", "penalties"];
 
 /**
+ * The safety-net poll's cadence. Fast enough that a phone which missed an
+ * event still catches up inside the e2e suite's 15-second expectations
+ * (one interval, the coalesce beat, one fetch); slow enough that a table
+ * of twenty phones is quieter than its own score taps.
+ */
+const POLL_MS = 10_000;
+
+/**
  * Server components are the source of truth; realtime just tells us when
  * to re-fetch. Any change to this round's rows triggers router.refresh(),
  * so every phone re-renders from the same Postgres state.
@@ -79,8 +87,22 @@ export function useLiveRound(roundId: string) {
       });
     })();
 
+    // The socket is a hint, not a contract. Realtime checks RLS per
+    // subscriber per change, and under load a change can be dropped with
+    // the channel still reading SUBSCRIBED — no error, no reconnect, so
+    // the catch-up above never fires, and one phone stands a move behind
+    // until the next event happens to land. CI caught exactly that (a
+    // fourth phone missed the round-finished event and held the play
+    // screen while the other three read the results), and a pub's wifi
+    // will find it too. The slow poll is the net under the wire act:
+    // refresh() coalesces and defers through the action quiet window, so
+    // a tick landing while realtime is healthy costs one refetch of a
+    // screen that was current anyway.
+    const poll = setInterval(refresh, POLL_MS);
+
     return () => {
       cancelled = true;
+      clearInterval(poll);
       clearTimeout(timeout);
       if (channel) supabase.removeChannel(channel);
     };
