@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Map as MapIcon, Plus, Search } from "lucide-react";
 import { FieldLabel, Input } from "@/components/ui/input";
-import { searchPubs } from "@/lib/pub-search";
+import { searchNote, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
 
@@ -39,6 +39,7 @@ export function PlaceSearch({
   const [results, setResults] = useState<VenueResult[]>([]);
   const [degraded, setDegraded] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | undefined>(undefined);
   const requestSeq = useRef(0);
   // The hole lands at the bottom of a long form, often below the fold, so the
   // tap itself has to confirm it landed. Keyed by venue id ("manual" for the
@@ -77,8 +78,12 @@ export function PlaceSearch({
         if (seq !== requestSeq.current) return;
         setDegraded(data.degraded);
         setResults(data.results);
+        setSearchError(data.error);
       } catch {
-        if (seq === requestSeq.current) setResults([]);
+        if (seq === requestSeq.current) {
+          setResults([]);
+          setSearchError("failed");
+        }
       } finally {
         if (seq === requestSeq.current) setSearching(false);
       }
@@ -137,6 +142,12 @@ export function PlaceSearch({
         <p className="text-[11px] text-muted-foreground">
           Pub search needs a Google Places key on the server — add pubs by
           name below and the course works just the same.
+        </p>
+      ) : null}
+
+      {!degraded && query.trim().length >= 3 && searchNote(searchError) ? (
+        <p className="text-[11px] text-muted-foreground">
+          {searchNote(searchError)}
         </p>
       ) : null}
 

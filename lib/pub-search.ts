@@ -147,6 +147,19 @@ export async function fetchIpBias(): Promise<LatLng | null> {
   }
 }
 
+/**
+ * The line a failed search earns on screen. The 401 is the one a phone
+ * actually meets: the builder renders signed out, but only a signed-in
+ * host may spend the search quota — and a silently empty list reads as
+ * "no pubs here", which is a worse lie than the truth.
+ */
+export function searchNote(error: string | undefined): string | null {
+  if (!error) return null;
+  return error === "Not signed in"
+    ? "Pub search needs a signed-in host — sign in and it comes straight back."
+    : "Pub search misfired — give it a moment and try again.";
+}
+
 /** The one way the browser asks for pubs — the list and the map share it. */
 export async function searchPubs(input: {
   query?: string;

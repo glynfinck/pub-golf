@@ -32,7 +32,7 @@ import {
   type LatLng,
 } from "@/lib/geo";
 import { MAP_STYLE_ID, mapId, MAPS_BROWSER_KEY } from "@/lib/maps";
-import { fetchIpBias, searchPubs } from "@/lib/pub-search";
+import { fetchIpBias, searchNote, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
 
@@ -124,6 +124,7 @@ function PubMapBody({
   const [results, setResults] = useState<VenueResult[]>([]);
   const [degraded, setDegraded] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | undefined>(undefined);
   const [moved, setMoved] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [located, setLocated] = useState<LatLng | null>(null);
@@ -223,11 +224,15 @@ function PubMapBody({
         if (seq !== requestSeq.current) return;
         setDegraded(data.degraded);
         setResults(data.results);
+        setSearchError(data.error);
         setSelectedId(null);
         setMoved(false);
         if (opts.fit) fitTo(data.results, data.bias);
       } catch {
-        if (seq === requestSeq.current) setResults([]);
+        if (seq === requestSeq.current) {
+          setResults([]);
+          setSearchError("failed");
+        }
       } finally {
         if (seq === requestSeq.current) {
           setSearching(false);
@@ -559,6 +564,11 @@ function PubMapBody({
               Google&apos;s stock look until it reaches the deploy.
             </p>
           ) : null}
+          {!degraded && searchNote(searchError) ? (
+            <p className="text-[11px] text-muted-foreground">
+              {searchNote(searchError)}
+            </p>
+          ) : null}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           {searching && results.length === 0 ? (
@@ -579,7 +589,7 @@ function PubMapBody({
               ))}
             </div>
           ) : null}
-          {results.length === 0 && !searching && !degraded ? (
+          {results.length === 0 && !searching && !degraded && !searchError ? (
             <p className="pt-2 text-[11px] text-muted-foreground">
               No pubs on this patch — pan the map and search again, widen
               the net, or add by name from the builder.
