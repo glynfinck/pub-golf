@@ -501,7 +501,10 @@ function PubMapBody({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="The Auld Shillelagh…"
-              className="min-h-11 rounded-full bg-card pl-9 shadow-md"
+              // dark:bg-card outranks the primitive's translucent
+              // dark:bg-input/30 — a see-through pill floating on a live
+              // map reads as broken, not glassy.
+              className="min-h-11 rounded-full bg-card pl-9 shadow-md dark:bg-card"
             />
           </div>
         </div>
