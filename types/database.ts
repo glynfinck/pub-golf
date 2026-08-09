@@ -125,6 +125,7 @@ export type Database = {
           amount_total: number | null
           created_at: string
           currency: string | null
+          expires_at: string | null
           id: string
           kind: string
           round_id: string | null
@@ -136,6 +137,7 @@ export type Database = {
           amount_total?: number | null
           created_at?: string
           currency?: string | null
+          expires_at?: string | null
           id?: string
           kind: string
           round_id?: string | null
@@ -147,6 +149,7 @@ export type Database = {
           amount_total?: number | null
           created_at?: string
           currency?: string | null
+          expires_at?: string | null
           id?: string
           kind?: string
           round_id?: string | null

@@ -131,10 +131,30 @@ printed pack).
 
 ## What we sell
 
-- **The green fee** (core): ~£4, one-time, host pays, unlocks extras for one
-  round — the league (multi-round standings), the printed pack (A4 card +
-  trophy card), colours/crest on the recap, curated course packs. All *new*
-  features; the free game is untouched.
+- **The green fee** (core): ~£4, one-time, host pays — and it is a **day
+  pass**, which is what a green fee means in real golf: every round the
+  buyer hosts that tees off within 24 hours of purchase gets the extras —
+  the league (multi-round standings), the printed pack (A4 card + trophy
+  card), colours/crest on the recap, curated course packs. All *new*
+  features; the free game is untouched. The day window is the
+  mistake-forgiveness design: a misconfigured round can be abandoned and
+  remade freely inside the window, so a fee is never burned by a setup
+  error and no refund email ever needs writing. Once a round tees off
+  covered, it stays covered forever — the pass expires
+  (`entitlements.expires_at`), granted rounds don't, so a slow crawl
+  crossing the 24-hour line and a refunded pass alike can never brick a
+  live round. Several tables on one day-pass is accepted generosity,
+  capped at £4; the day boundary is the protection — yesterday's pass
+  doesn't cover a new day, and the members' group says so plainly
+  ("extras for a new day take a new fee"), never with a lock icon.
+  Enforcement follows house doctrine when phase two builds it: the
+  members flag stamps into the ruleset snapshot at tee-off (checked once,
+  never mid-round), guarded by a BEFORE UPDATE trigger that admits it
+  only while the host holds a live pass — the same OLD-vs-NEW pattern as
+  roles and handicaps. (Alternatives considered and set aside:
+  consume-on-completion forgives a 17-of-18-holes abandon; a movable
+  credit that attaches at tee-off is strictest per-round but needs three
+  user-visible states and the most rules for the least warmth.)
 - **The honesty box** (ships first): pay-what-you-feel tip (£3/£5/£10) on
   the results screen. Its product is the willingness-to-pay signal.
 - **The season ticket** (later): ~£19/year, every green fee included plus

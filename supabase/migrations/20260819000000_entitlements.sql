@@ -33,6 +33,11 @@ create table public.entitlements (
   -- nullable: a granted (unpaid) entitlement stays legal.
   amount_total integer,
   currency text,
+  -- When the entitlement stops covering new use; null = never. The green
+  -- fee is a day pass (24h — rounds teed off inside the window keep
+  -- their features forever; the pass expires, granted rounds don't), and
+  -- the season ticket will ride the same column.
+  expires_at timestamptz,
   created_at timestamptz not null default now()
 );
 
