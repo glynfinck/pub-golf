@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ClaimCard } from "@/components/round/claim-card";
+import { HonestyBox } from "@/components/round/honesty-box";
 import { Podium } from "@/components/round/podium";
 import { RecapCard } from "@/components/round/recap-card";
 import { RescueKnock } from "@/components/round/rescue-knock";
@@ -174,6 +175,10 @@ export default async function ResultsPage({
         standings={standings}
         superlatives={superlatives}
       />
+
+      {/* After the recap, never before it: the ask follows the delivered
+          round, and the shareable card stays free and first. */}
+      <HonestyBox code={round.code} />
 
       {me?.role === "host" ? <SameAgain code={round.code} /> : null}
 

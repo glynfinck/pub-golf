@@ -18,6 +18,13 @@ export const FLAGSHIP_GAME = "Pub Golf";
 export const TAGLINE = "Nine pubs. Par 36. Lowest swigs wins.";
 
 /**
+ * Where the club secretary reads mail. Printed on the public tariff and
+ * small-print pages — the surfaces a payment processor reviews — so it
+ * lives here rather than inline in either.
+ */
+export const SUPPORT_EMAIL = "glynfinck@gmail.com";
+
+/**
  * The two grounds, as the browser chrome needs them: cream stock on `:root`
  * and the Midnight felt on `.dark`, copied from `app/globals.css`. Hand-kept
  * mirror, same as the one in `scripts/brand-lockups.mjs` — update together.

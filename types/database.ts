@@ -120,6 +120,60 @@ export type Database = {
           },
         ]
       }
+      entitlements: {
+        Row: {
+          amount_total: number | null
+          created_at: string
+          currency: string | null
+          expires_at: string | null
+          id: string
+          kind: string
+          round_id: string | null
+          stripe_event_id: string
+          stripe_session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_total?: number | null
+          created_at?: string
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          kind: string
+          round_id?: string | null
+          stripe_event_id: string
+          stripe_session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_total?: number | null
+          created_at?: string
+          currency?: string | null
+          expires_at?: string | null
+          id?: string
+          kind?: string
+          round_id?: string | null
+          stripe_event_id?: string
+          stripe_session_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entitlements_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "rounds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entitlements_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       game_types: {
         Row: {
           description: string | null

@@ -74,6 +74,10 @@ export function FrontDoor({
           <Link href="/legal/terms" className="font-bold text-fairway">
             Terms
           </Link>
+          <span aria-hidden>·</span>
+          <Link href="/tariff" className="font-bold text-fairway">
+            The tariff
+          </Link>
         </p>
       </div>
     </>
