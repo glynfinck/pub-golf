@@ -123,6 +123,106 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expect(sheet.getByText("On this hole", { exact: true })).toBeHidden();
 });
 
+test("edit the running order without tearing up the card", async ({ page }) => {
+  const stamp = Date.now();
+  await signInAs(page.context(), {
+    email: `reorder-${stamp}@e2e.local`,
+    name: "Glyn",
+  });
+
+  await page.goto("/courses/new");
+
+  // Same controlled-form race the test above documents: prove the page is
+  // live through the Add button before typing anything that matters.
+  const pubField = page.getByLabel(/add a pub by name/i);
+  const addPub = page.getByRole("button", { name: /add the named pub/i });
+  await expect(async () => {
+    await pubField.fill("Alpha Arms");
+    await expect(addPub).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await addPub.click();
+  await pubField.fill("Beta Bar");
+  await addPub.click();
+  await pubField.fill("Gamma Tavern");
+  await addPub.click();
+
+  const holeNames = page.getByTestId("draft-hole-name");
+  await expect(holeNames).toHaveText(["Alpha Arms", "Beta Bar", "Gamma Tavern"]);
+
+  // Dress hole 1, so the swap below has something to prove it kept.
+  await page.getByRole("button", { name: /raise par on hole 1/i }).click();
+  await page.getByLabel(/^the drink$/i).first().fill("Half of stout");
+
+  // ---- Move: the last hole walks up the order, twice ----
+  await page
+    .getByRole("button", { name: /move gamma tavern to hole 2/i })
+    .click();
+  await expect(holeNames).toHaveText(["Alpha Arms", "Gamma Tavern", "Beta Bar"]);
+
+  // ---- Replace: hole 1 changes pub and keeps its dressing ----
+  await page
+    .getByRole("button", { name: /manage hole 1 · alpha arms/i })
+    .click();
+  await page.getByTestId("change-pub").click();
+  const pickField = page.getByLabel(/or name the pub yourself/i);
+  await expect(async () => {
+    await pickField.fill("Delta Inn");
+    await expect(
+      page.getByRole("button", { name: /choose the named pub/i }),
+    ).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole("button", { name: /choose the named pub/i }).click();
+
+  await expect(holeNames).toHaveText(["Delta Inn", "Gamma Tavern", "Beta Bar"]);
+  // The pub changed; the par and the drink on that hole did not.
+  await expect(page.getByLabel(/^the drink$/i).first()).toHaveValue(
+    "Half of stout",
+  );
+
+  // ---- Insert: a pub lands between two others, not at the end ----
+  await page
+    .getByRole("button", { name: /insert a pub before hole 2/i })
+    .click();
+  const insertField = page.getByLabel(/or name the pub yourself/i);
+  await expect(async () => {
+    await insertField.fill("Epsilon House");
+    await expect(
+      page.getByRole("button", { name: /insert the named pub/i }),
+    ).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole("button", { name: /insert the named pub/i }).click();
+
+  await expect(holeNames).toHaveText([
+    "Delta Inn",
+    "Epsilon House",
+    "Gamma Tavern",
+    "Beta Bar",
+  ]);
+
+  // ---- Remove: through the hole's own menu ----
+  await page.getByRole("button", { name: /manage hole 4 · beta bar/i }).click();
+  await page.getByTestId("remove-hole").click();
+  await expect(holeNames).toHaveText([
+    "Delta Inn",
+    "Epsilon House",
+    "Gamma Tavern",
+  ]);
+
+  // Par 5 on the swapped hole + 4 + 4: the dressing survived every edit
+  // above, which the saved card is the honest proof of.
+  const saveCourse = page.getByRole("button", {
+    name: /save the course · 3 holes/i,
+  });
+  await expect(async () => {
+    await page.getByLabel(/course name/i).fill(`Reordered ${stamp}`);
+    await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await saveCourse.click();
+  await page.waitForURL(/\/courses$/);
+  await expect(page.getByText(`Reordered ${stamp}`)).toBeVisible();
+  await expect(page.getByText("3 holes · par 13")).toBeVisible();
+});
+
 test("pub search returns real venues when a Places key is configured", async ({
   page,
 }) => {

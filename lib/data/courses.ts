@@ -71,6 +71,10 @@ export async function getCourseForEdit(
     id: course.id,
     name: course.name,
     holes: (holes ?? []).map((hole) => ({
+      // The draft's own handle on the hole, minted here and never stored:
+      // the row is identified by its position, but the builder's list has
+      // to survive the hole moving to another one.
+      id: crypto.randomUUID(),
       venue_id: hole.venue_id,
       venue_name: hole.venue_name,
       address: hole.venues?.address ?? null,

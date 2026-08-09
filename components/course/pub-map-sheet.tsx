@@ -54,6 +54,8 @@ export function PubMapSheet({
   initialQuery,
   holes,
   onAdd,
+  actionLabel = "Add",
+  actionAria,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,6 +63,10 @@ export function PubMapSheet({
   initialQuery: string;
   holes: DraftHole[];
   onAdd: (pub: FoundPub) => void;
+  /** The word on every result's button — the map answers the same three
+   * questions the list does: add at the end, insert, change the pub. */
+  actionLabel?: string;
+  actionAria?: (venueName: string) => string;
 }) {
   // The player's city, prefetched while the course is still being typed:
   // just the request's geo headers echoed back, nothing spent. The sheet
@@ -98,6 +104,8 @@ export function PubMapSheet({
           holes={holes}
           onAdd={onAdd}
           homeBias={homeBias}
+          actionLabel={actionLabel}
+          actionAria={actionAria}
         />
       </SheetContent>
     </Sheet>
@@ -110,13 +118,19 @@ function PubMapBody({
   holes,
   onAdd,
   homeBias,
+  actionLabel,
+  actionAria,
 }: {
   initialQuery: string;
   holes: DraftHole[];
   onAdd: (pub: FoundPub) => void;
   /** The player's IP city, when the builder had it ready before open. */
   homeBias: LatLng | null;
+  actionLabel: string;
+  actionAria?: (venueName: string) => string;
 }) {
+  const nameFor =
+    actionAria ?? ((name: string) => `Add ${name} as hole ${holes.length + 1}`);
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
 
@@ -626,7 +640,7 @@ function PubMapBody({
                 </button>
                 <button
                   type="button"
-                  aria-label={`Add ${venue.name} as hole ${holes.length + 1}`}
+                  aria-label={nameFor(venue.name)}
                   onClick={() => addVenue(venue)}
                   className={cn(
                     "flex min-h-10 shrink-0 items-center gap-1 rounded-full border-[1.5px] border-fairway px-3.5 text-xs font-bold transition-colors duration-200",
@@ -646,7 +660,7 @@ function PubMapBody({
                     </>
                   ) : (
                     <>
-                      <Plus size={13} aria-hidden /> Add
+                      <Plus size={13} aria-hidden /> {actionLabel}
                     </>
                   )}
                 </button>

@@ -1,39 +1,66 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, Map as MapIcon, Plus, Search } from "lucide-react";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { searchNote, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
+import type { PubFields } from "@/lib/course-draft";
 import type { Tables } from "@/types/supabase-helpers";
 
 type VenueResult = Tables<"venues">;
 
-export interface FoundPub {
-  venue_id: string | null;
-  venue_name: string;
-  address: string | null;
-  rating: number | null;
-  lat: number | null;
-  lng: number | null;
-}
+/** What a search hands back: the venue, and nothing about the drinking. */
+export type FoundPub = PubFields;
 
 /**
  * Debounced Google Places search (server-proxied — the key stays home).
  * When the stack has no key the route degrades and only the by-name row
  * renders, so the builder works everywhere.
+ *
+ * The same field does all three jobs the card needs — adding at the end,
+ * inserting at a seam, and changing the pub behind a hole that already
+ * exists. Only the destination differs, so only the wording does: `pick`
+ * mode frames the search as a question about one hole and can be called
+ * off, and the default `append` mode is the field the builder has always
+ * carried at the top of the page.
  */
 export function PlaceSearch({
   onAdd,
   nextHoleNumber,
   onOpenMap,
+  mode = "append",
+  title,
+  note,
+  actionLabel = "Add",
+  actionAria,
+  onCancel,
 }: {
   onAdd: (pub: FoundPub) => void;
   nextHoleNumber: number;
   /** Opens the map sheet with the current query. Absent when the browser
    * has no Maps key, and the field stays exactly as it always was. */
   onOpenMap?: (query: string) => void;
+  mode?: "append" | "pick";
+  /** The eyebrow over a picking field — which hole is being filled. */
+  title?: string;
+  /** What the pick is about to keep, so nobody has to guess. */
+  note?: string;
+  /** The word on every result's button: Add, Insert, Choose. */
+  actionLabel?: string;
+  /** That button's accessible name, which has to name the pub as well as
+   * the hole. Defaults to the append field's "Add X as hole N". */
+  actionAria?: (venueName: string) => string;
+  /** Backs out of a pick without changing the card. */
+  onCancel?: () => void;
 }) {
+  const picking = mode === "pick";
+  const uid = useId();
+  const searchId = picking ? `pub-search-${uid}` : "pub-search";
+  const manualId = picking ? `manual-pub-${uid}` : "manual-pub";
+  const nameFor =
+    actionAria ?? ((name: string) => `Add ${name} as hole ${nextHoleNumber}`);
+
   const [query, setQuery] = useState("");
   const [manualName, setManualName] = useState("");
   const [results, setResults] = useState<VenueResult[]>([]);
@@ -107,9 +134,27 @@ export function PlaceSearch({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className={cn(
+        "flex flex-col gap-3",
+        picking &&
+          "rounded-xl border-[1.5px] border-fairway bg-card px-3.5 py-3",
+      )}
+      role={picking ? "group" : undefined}
+      aria-label={picking ? title : undefined}
+    >
+      {picking && title ? (
+        <div className="flex flex-col gap-0.5">
+          <div className="eyebrow text-fairway">{title}</div>
+          {note ? (
+            <p className="text-[11px] text-muted-foreground">{note}</p>
+          ) : null}
+        </div>
+      ) : null}
       <div>
-        <FieldLabel htmlFor="pub-search">Search pubs</FieldLabel>
+        <FieldLabel htmlFor={searchId}>
+          {picking ? "Search for the pub" : "Search pubs"}
+        </FieldLabel>
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <Search
@@ -118,11 +163,12 @@ export function PlaceSearch({
               className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground"
             />
             <Input
-              id="pub-search"
+              id={searchId}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="The Auld Shillelagh…"
               className="pl-9"
+              autoFocus={picking}
             />
           </div>
           {onOpenMap ? (
@@ -167,7 +213,7 @@ export function PlaceSearch({
               </div>
               <button
                 type="button"
-                aria-label={`Add ${venue.name} as hole ${nextHoleNumber}`}
+                aria-label={nameFor(venue.name)}
                 onClick={() => {
                   onAdd({
                     venue_id: venue.id,
@@ -197,7 +243,7 @@ export function PlaceSearch({
                   </>
                 ) : (
                   <>
-                    <Plus size={13} aria-hidden /> Add
+                    <Plus size={13} aria-hidden /> {actionLabel}
                   </>
                 )}
               </button>
@@ -210,9 +256,11 @@ export function PlaceSearch({
 
       <div className="flex items-end gap-2">
         <div className="min-w-0 flex-1">
-          <FieldLabel htmlFor="manual-pub">Add a pub by name</FieldLabel>
+          <FieldLabel htmlFor={manualId}>
+            {picking ? "Or name the pub yourself" : "Add a pub by name"}
+          </FieldLabel>
           <Input
-            id="manual-pub"
+            id={manualId}
             value={manualName}
             onChange={(event) => setManualName(event.target.value)}
             placeholder="The Test Tavern"
@@ -226,7 +274,7 @@ export function PlaceSearch({
         </div>
         <button
           type="button"
-          aria-label="Add the named pub"
+          aria-label={picking ? `${actionLabel} the named pub` : "Add the named pub"}
           disabled={!manualName.trim() && justAdded !== "manual"}
           onClick={addManual}
           className={cn(
@@ -247,11 +295,21 @@ export function PlaceSearch({
             </>
           ) : (
             <>
-              <Plus size={14} aria-hidden /> Add
+              <Plus size={14} aria-hidden /> {actionLabel}
             </>
           )}
         </button>
       </div>
+
+      {picking && onCancel ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex min-h-11 items-center justify-center rounded-lg border border-border text-sm font-bold"
+        >
+          Leave it as it is
+        </button>
+      ) : null}
     </div>
   );
 }
