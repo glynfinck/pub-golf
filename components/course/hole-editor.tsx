@@ -1,29 +1,36 @@
 "use client";
 
-import { Minus, Plus, X } from "lucide-react";
+import { useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  MoreVertical,
+  Repeat2,
+  X,
+  Minus,
+  Plus,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { ActionRow } from "@/components/ui/manage-sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { describeDressing, type DraftHole } from "@/lib/course-draft";
 import { MAX_LOCAL_RULES } from "@/lib/rules";
 import type { RulesetPenalty } from "@/lib/ruleset";
+import { cn } from "@/lib/utils";
 
-export interface DraftHole {
-  venue_id: string | null;
-  venue_name: string;
-  address: string | null;
-  rating: number | null;
-  lat: number | null;
-  lng: number | null;
-  drink: string;
-  par: number;
-  hazard: "water" | "bunker" | "dogleg" | null;
-  hazard_note: string | null;
-  /** Local rules: offered on this hole's penalty sheet and nowhere else. */
-  penalties: RulesetPenalty[];
-  /** The stored walk leg — the fallback when there are no coordinates to
-   * re-measure (curated copies, pubs added by name). Null on a new hole. */
-  walk_minutes_to_next: number | null;
-}
+/** The draft's shape lives in the pure layer; this is where it is drawn. */
+export type { DraftHole } from "@/lib/course-draft";
+
+/** Which chevron a move should hand the focus back to. */
+export type MoveDirection = "up" | "down";
 
 const HAZARDS = [
   { id: null, label: "No hazard" },
@@ -36,14 +43,32 @@ const HAZARDS = [
 export function HoleEditor({
   hole,
   number,
+  total,
   onChange,
   onRemove,
+  onMove,
+  onReplace,
+  registerMoveButton,
 }: {
   hole: DraftHole;
   number: number;
+  /** How many holes the card holds — the chevrons need to know the ends. */
+  total: number;
   onChange: (patch: Partial<DraftHole>) => void;
   onRemove: () => void;
+  onMove: (direction: MoveDirection) => void;
+  onReplace: () => void;
+  /** Hands the chevrons to the builder, which puts focus back on one of
+   * them after a move has renumbered the card under the thumb. */
+  registerMoveButton?: (
+    direction: MoveDirection,
+    node: HTMLButtonElement | null,
+  ) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const first = number === 1;
+  const last = number === total;
+
   return (
     <Card className="gap-2.5 px-4 py-3.5">
       <div className="flex items-start gap-2.5">
@@ -51,7 +76,10 @@ export function HoleEditor({
           {number}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-serif text-base italic">
+          <div
+            data-testid="draft-hole-name"
+            className="truncate font-serif text-base italic"
+          >
             {hole.venue_name}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
@@ -59,15 +87,70 @@ export function HoleEditor({
             {hole.rating ? ` · ★ ${hole.rating}` : ""}
           </div>
         </div>
+
+        {/* The running order sits next to the number it changes, in one
+            frame, so it reads as position rather than two loose buttons.
+            A card of one has no order to change, and says nothing. */}
+        <div
+          className={cn(
+            "flex shrink-0 items-center rounded-lg border border-input bg-card",
+            total === 1 && "hidden",
+          )}
+        >
+          <button
+            type="button"
+            ref={(node) => registerMoveButton?.("up", node)}
+            aria-label={
+              first
+                ? `${hole.venue_name} is the first hole`
+                : `Move ${hole.venue_name} to hole ${number - 1}`
+            }
+            disabled={first}
+            onClick={() => onMove("up")}
+            className="flex size-9 items-center justify-center rounded-l-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ChevronUp size={16} aria-hidden />
+          </button>
+          <button
+            type="button"
+            ref={(node) => registerMoveButton?.("down", node)}
+            aria-label={
+              last
+                ? `${hole.venue_name} is the last hole`
+                : `Move ${hole.venue_name} to hole ${number + 1}`
+            }
+            disabled={last}
+            onClick={() => onMove("down")}
+            className="flex size-9 items-center justify-center rounded-r-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+          >
+            <ChevronDown size={16} aria-hidden />
+          </button>
+        </div>
+
         <button
           type="button"
-          aria-label={`Remove ${hole.venue_name}`}
-          onClick={onRemove}
-          className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary"
+          aria-label={`Manage hole ${number} · ${hole.venue_name}`}
+          onClick={() => setMenuOpen(true)}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
-          <X size={15} aria-hidden />
+          <MoreVertical size={16} aria-hidden />
         </button>
       </div>
+
+      <HoleMenuSheet
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        hole={hole}
+        number={number}
+        onReplace={() => {
+          setMenuOpen(false);
+          onReplace();
+        }}
+        onRemove={() => {
+          setMenuOpen(false);
+          onRemove();
+        }}
+      />
 
       <div className="flex items-end gap-3">
         <div className="min-w-0 flex-1">
@@ -136,6 +219,61 @@ export function HoleEditor({
         onChange={(penalties) => onChange({ penalties })}
       />
     </Card>
+  );
+}
+
+/**
+ * The hole's own menu, on the same grammar as every other ledger kebab in
+ * the house. Both rows are about the hole rather than its position: the pub
+ * behind it can change hands without the hole moving, and taking the hole
+ * off is the one edit here that destroys work — so it says so, and the
+ * builder hands back an undo.
+ */
+function HoleMenuSheet({
+  open,
+  onOpenChange,
+  hole,
+  number,
+  onReplace,
+  onRemove,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  hole: DraftHole;
+  number: number;
+  onReplace: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
+        <SheetHeader className="pb-0 text-center">
+          <SheetTitle className="eyebrow text-center text-foreground">
+            Hole {number}
+          </SheetTitle>
+          <SheetDescription className="text-center font-serif text-base text-foreground italic">
+            {hole.venue_name}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-col px-4 pb-6">
+          <ActionRow
+            icon={<Repeat2 size={17} aria-hidden />}
+            label="Change the pub"
+            sub={`Keeps ${describeDressing(hole)}`}
+            testId="change-pub"
+            onClick={onReplace}
+          />
+          <ActionRow
+            icon={<X size={17} aria-hidden />}
+            label="Take the hole off the card"
+            sub="Undoable for a few seconds"
+            hazard
+            testId="remove-hole"
+            onClick={onRemove}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

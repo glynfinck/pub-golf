@@ -1,12 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { refreshQuietUntil } from "@/lib/action-window";
+import { actionNavigating, refreshQuietUntil } from "@/lib/action-window";
 import { createClient } from "@/lib/supabase/client";
 
-const LIVE_TABLES = ["rounds", "round_players", "scores", "penalties"];
+// `holes` is on the list because a hole's pub can change mid-round (the
+// shutters come down and the caddy swaps it). Everything else about a hole
+// is fixed at round creation, so this row is quiet until that happens.
+const LIVE_TABLES = [
+  "rounds",
+  "round_players",
+  "scores",
+  "penalties",
+  "holes",
+];
 
 /**
  * The safety-net poll's cadence. Fast enough that a phone which missed an
@@ -20,9 +29,35 @@ const POLL_MS = 10_000;
  * Server components are the source of truth; realtime just tells us when
  * to re-fetch. Any change to this round's rows triggers router.refresh(),
  * so every phone re-renders from the same Postgres state.
+ *
+ * One transition does not go through that door. Moving a player from the
+ * play screen to the results is a *server* redirect — the play route reads
+ * `status = finished` and redirects — which only happens if router.refresh()
+ * carries the redirect back through an RSC refetch. When it doesn't, there
+ * is nothing else: the phone stays on a hole nobody is playing, and every
+ * later poll repeats the same failed refetch rather than trying anything
+ * new. That is a card filed with a player still stood at the bar, and it is
+ * what `onRoundFinished` is for — the realtime payload already carries the
+ * new status, so the screen that cares can navigate on it directly and stop
+ * depending on the redirect surviving the round trip.
  */
-export function useLiveRound(roundId: string) {
+export function useLiveRound(
+  roundId: string,
+  options?: {
+    /** Fired when a rounds event says the card has just been filed. Only
+     * the screens a finished round must leave should pass this. */
+    onRoundFinished?: () => void;
+  },
+) {
   const router = useRouter();
+  // Held in a ref so a caller's inline closure never re-subscribes the
+  // channel — resubscribing mid-round drops events for the handshake. Kept
+  // in an effect rather than assigned in render, which the purity rules
+  // forbid.
+  const onFinished = useRef(options?.onRoundFinished);
+  useEffect(() => {
+    onFinished.current = options?.onRoundFinished;
+  });
 
   useEffect(() => {
     const supabase = createClient();
@@ -69,7 +104,24 @@ export function useLiveRound(roundId: string) {
                 ? `id=eq.${roundId}`
                 : `round_id=eq.${roundId}`,
           },
-          refresh,
+          (payload) => {
+            // The card has just been filed. Tell the screen before the
+            // refresh, and hold refreshes across the route change it makes
+            // — a refresh landing inside a navigation cancels it, which is
+            // the same trap the reopen button fell into.
+            if (
+              table === "rounds" &&
+              (payload.new as { status?: string } | null)?.status === "finished"
+            ) {
+              const leave = onFinished.current;
+              if (leave) {
+                actionNavigating(Date.now());
+                leave();
+                return;
+              }
+            }
+            refresh();
+          },
         );
       }
       // Catch up the moment the socket is live, and again after every

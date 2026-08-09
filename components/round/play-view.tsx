@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Flag, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -8,6 +9,7 @@ import { Screen } from "@/components/shell/screen";
 import { MulliganSheet } from "@/components/round/mulligan-sheet";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
+import { actionNavigating } from "@/lib/action-window";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { PositionRibbon } from "@/components/round/position-ribbon";
 import { RescueKnock } from "@/components/round/rescue-knock";
@@ -38,7 +40,7 @@ import { cn } from "@/lib/utils";
 
 export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, scores, penalties, me } = bundle;
-  useLiveRound(round.id);
+  const router = useRouter();
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const { run, pending, busy } = useAction();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
@@ -123,6 +125,33 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
       flush();
     };
   }, [flushSwigs]);
+
+  /**
+   * The card has been filed and this screen has to go — but it may still be
+   * holding the last swig of the last hole behind the 400ms debounce, and
+   * leaving first abandons that write mid-flight. The player then scores the
+   * par substitute for a drink they actually took, the forfeit lands on the
+   * wrong person, and nothing on screen ever says so.
+   *
+   * The mulligan has the same problem pointing the other way and answers it
+   * the same way round: takeHalfPint drops the write that has not left and
+   * waits out the one that has. Here the write must not be dropped, so send
+   * it, watch it land, and only then leave. `finally`, not `then` — a write
+   * the guard refuses still has to let go of the screen, and the poll's own
+   * refresh is still underneath this as the fallback.
+   */
+  const leaveForResults = useCallback(() => {
+    clearTimeout(debounce.current);
+    flushSwigs();
+    void Promise.resolve(inFlight.current).finally(() => {
+      actionNavigating(Date.now());
+      router.replace(`/round/${round.code}/results`);
+    });
+  }, [flushSwigs, round.code, router]);
+
+  // Deliberately after the flush plumbing above: this fires the moment the
+  // rounds event says the round is over, and it must have a write to wait on.
+  useLiveRound(round.id, { onRoundFinished: leaveForResults });
 
   function changeSwigs(delta: number) {
     const next = Math.max(0, latestSwigs.current + delta);
