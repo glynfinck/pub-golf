@@ -106,7 +106,19 @@ project_id = "xssmjzinaghxjncoezez"
 [remotes.preview.auth]
 enabled = true
 site_url = "https://pub-golf-preview.glyn.dev"
-additional_redirect_urls = ["https://pub-golf-preview.glyn.dev/**"]
+# The wildcard admits Vercel's throwaway per-PR preview URLs, which point at
+# this branch project too (the Preview env vars are environment-wide).
+# signInWithOAuth passes redirectTo = location.origin, and gotrue answers an
+# unlisted origin by silently falling back to site_url — stranding the PKCE
+# verifier cookie on the vercel.app origin, so the code exchange fails and
+# sign-in bounces. `*` stops at dots, so the pattern reaches exactly this
+# project's deployments under the team and nothing wider. Google needs no
+# per-URL entry: its authorized redirect URI is the Supabase callback, which
+# never varies.
+additional_redirect_urls = [
+  "https://pub-golf-preview.glyn.dev/**",
+  "https://pub-golf-*-glynfincks-projects.vercel.app/**",
+]
 # Restated rather than inherited from [auth] above. The docs describe the
 # remote block as a merge but do not promise the depth of it, and these two
 # going missing is not a visible error — it is guests unable to join and the

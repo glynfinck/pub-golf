@@ -272,6 +272,39 @@ It costs a dedicated Micro compute running continuously — roughly **$10/month*
 which about doubles this project's Supabase bill. Branch compute is **not**
 covered by the spend cap, and compute credits do not apply to it.
 
+### PR previews and Google sign-in
+
+Every pull-request branch gets a throwaway Vercel URL
+(`pub-golf-*-glynfincks-projects.vercel.app`), and those previews point at
+the staging database already — the Preview env vars are environment-wide.
+Google sign-in works on them because of two things, one free and one
+configured:
+
+- **Google never sees the app's URL.** The authorized redirect URI on the
+  OAuth client is Supabase's callback, which never varies. The app side is
+  origin-agnostic on purpose: `signInWithOAuth` passes
+  `redirectTo: location.origin + /auth/callback`, and the callback route
+  redirects relative to its own origin.
+- **The branch project's allowlist has a wildcard** for this project's
+  deployments (`[remotes.preview.auth].additional_redirect_urls` in
+  `config.toml`). Without it, gotrue answers the unlisted origin by silently
+  falling back to Site URL — which strands the PKCE verifier cookie on the
+  vercel.app origin, so the exchange fails and sign-in bounces to
+  `/signin?error=auth` on the *staging* domain. Nothing names the actual
+  cause anywhere.
+
+Do **not** try to route every PR onto `pub-golf-preview.glyn.dev` instead.
+A Vercel custom domain binds to one git branch, so "the latest PR" needs a
+`vercel alias` step in CI holding a `VERCEL_TOKEN` — the credential-free
+pipeline is a deliberate trade this document already defends. It would also
+make concurrent PRs clobber each other for the domain, and hand the staging
+URL to code whose migrations have not run (only pushes to `preview` migrate
+the branch project), which is the `42703` outage on demand.
+
+The Vercel Authentication gate still applies: preview URLs are reachable
+only by someone signed into the team, same as the staging domain. Sign-in
+works *for you* on a PR preview; it still isn't a link you can hand round.
+
 ### Verifying staging is not talking to production
 
 Worth doing once, after any change to the env vars. `NEXT_PUBLIC_*` is inlined
