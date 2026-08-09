@@ -3,6 +3,7 @@
 import { ArrowUpRight } from "lucide-react";
 import { Screen } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,8 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}
       />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <div className="eyebrow text-fairway">
         Hole {round.current_hole - 1} filed · walking

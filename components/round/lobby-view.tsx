@@ -3,8 +3,10 @@
 import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { LobbyPlayerSheet } from "@/components/round/lobby-player-sheet";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,7 @@ import {
   setPlayerHandicap,
   setPlayerRole,
   startRound,
+  strikeSeat,
 } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
 import { roundRuleLines } from "@/lib/round-rules";
@@ -99,11 +102,14 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
   });
 
   // A row opens the adjust sheet when the viewer can change something on
-  // it: the host toggles caddies on anyone else, and either official sets
-  // handicaps when the round plays them.
+  // it: the host toggles caddies on anyone else, either official sets
+  // handicaps when the round plays them, and either official can strike
+  // any seat but the host's and their own.
   function canAdjust(player: RoundBundle["players"][number]) {
     return (
-      (isHost && player.role !== "host") || (isOfficial && ruleset.handicaps)
+      (isHost && player.role !== "host") ||
+      (isOfficial && ruleset.handicaps) ||
+      (isOfficial && player.role !== "host" && player.id !== me?.id)
     );
   }
   const adjustable = players.filter(canAdjust);
@@ -149,10 +155,25 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
     );
   }
 
+  function strikeAdjusting() {
+    if (!isOfficial || !adjusting || adjusting.role === "host") return;
+    const struck = adjusting;
+    run(async () => {
+      const result = await strikeSeat(round.code, struck.id);
+      if (!result.error) {
+        toast(`${struck.display_name} struck from the round.`);
+        setAdjustingId(null);
+      }
+      return result;
+    });
+  }
+
   return (
     <Screen>
       <RoundBar round={round} holes={holes} busy={busy} />
       <ScreenHeader eyebrow={`Lobby · ${round.name}`} title="The first tee" />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       {/* The letterpress plate: entry code, optically centered against its
           own letterspacing. */}
@@ -305,6 +326,13 @@ export function LobbyView({ bundle }: { bundle: RoundBundle }) {
         onStep={stepAdjusting}
         showRoleToggle={isHost && adjusting?.role !== "host"}
         onToggleCaddy={toggleCaddy}
+        showStrike={
+          isOfficial &&
+          adjusting !== null &&
+          adjusting.role !== "host" &&
+          adjusting.id !== me?.id
+        }
+        onStrike={strikeAdjusting}
         pending={pending}
         handicapsOn={ruleset.handicaps}
         handicaps={handicaps}

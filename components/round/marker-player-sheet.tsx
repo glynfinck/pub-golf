@@ -1,10 +1,13 @@
 "use client";
 
-import { Fragment, useOptimistic } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Fragment, useOptimistic, useState } from "react";
+import { Minus, Plus, UserRoundX } from "lucide-react";
 import { toast } from "sonner";
 import { LocalRulesHeading } from "@/components/round/local-rules-heading";
 import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
+import { PendingLabel } from "@/components/ui/pending-label";
 import {
   Sheet,
   SheetContent,
@@ -19,6 +22,7 @@ import {
   callPenaltyOn,
   removePenalty,
   setPlayerMulligans,
+  strikeSeat,
 } from "@/lib/actions/rounds";
 import type { PenaltyOption } from "@/lib/penalty-options";
 import { MAX_MULLIGANS } from "@/lib/rules";
@@ -44,6 +48,8 @@ export function MarkerPlayerSheet({
   options,
   mulligans,
   mulligansOffered,
+  canStrike,
+  scoredHoles,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,8 +65,22 @@ export function MarkerPlayerSheet({
   mulligans: number;
   /** False when the round isn't playing them — then the row stays off. */
   mulligansOffered: boolean;
+  /** Never the host seat, never the official's own card. */
+  canStrike: boolean;
+  /** Holes with swigs on this player's whole card — prices the confirm. */
+  scoredHoles: number;
 }) {
-  const { run } = useAction();
+  const { run, pending, busy } = useAction();
+
+  // Armed per player, so opening another card disarms it — and a close
+  // does too: a half-armed confirm must not survive to the next open.
+  const [strikeArmedFor, setStrikeArmedFor] = useState<string | null>(null);
+  const strikeArmed = player !== null && strikeArmedFor === player.id;
+
+  function handleOpenChange(next: boolean) {
+    if (!next) setStrikeArmedFor(null);
+    onOpenChange(next);
+  }
 
   // Optimistic ×N per reason — the tap counts before the server does.
   const baseCounts: Record<string, number> = {};
@@ -121,8 +141,21 @@ export function MarkerPlayerSheet({
     return players.find((row) => row.id === calledBy)?.display_name ?? null;
   }
 
+  function strike() {
+    if (!player) return;
+    run(async () => {
+      const result = await strikeSeat(code, player.id);
+      if (!result.error) {
+        toast(`${name} struck from the round.`);
+        setStrikeArmedFor(null);
+        onOpenChange(false);
+      }
+      return result;
+    });
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
         <SheetHeader className="pb-0">
           <SheetTitle className="flex items-center justify-center gap-2 text-base">
@@ -220,6 +253,75 @@ export function MarkerPlayerSheet({
                 incrementLabel={`Give ${name} a mulligan on hole ${holeNumber}`}
                 label="mulligans"
               />
+            </div>
+          ) : null}
+
+          {canStrike ? (
+            <div className="mt-2 border-t border-dotted border-border pt-2">
+              {strikeArmed ? (
+                <div className="flex flex-col gap-2.5 rounded-xl border border-hazard/60 bg-card p-4">
+                  <h3 className="font-serif text-base font-semibold text-hazard">
+                    Strike {name} from the round?
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {scoredHoles > 0
+                      ? `Their seat leaves the round and ${scoredHoles} scored ${
+                          scoredHoles === 1 ? "hole goes" : "holes go"
+                        } with it. Penalties they called on other cards stay.`
+                      : "Nothing is on their card yet — the seat just leaves the round. They can knock to come back any time."}
+                  </p>
+                  <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+                    <Button
+                      variant="secondary"
+                      disabled={pending}
+                      onClick={() => setStrikeArmedFor(null)}
+                    >
+                      Keep them
+                    </Button>
+                    {scoredHoles > 0 ? (
+                      <HoldToConfirm
+                        label="Hold to strike"
+                        holdingLabel="Hold…"
+                        disabled={pending}
+                        onConfirm={strike}
+                        data-testid="strike-seat-confirm"
+                      />
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        disabled={pending}
+                        data-testid="strike-seat-confirm"
+                        onClick={strike}
+                      >
+                        <PendingLabel
+                          pending={pending}
+                          busy={busy}
+                          label="Strike the seat"
+                          pendingLabel="Striking the seat"
+                        />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="strike-seat"
+                  onClick={() => setStrikeArmedFor(player.id)}
+                  className="group flex min-h-12 w-full items-center gap-3 py-1.5 text-left focus-visible:outline-none"
+                >
+                  <UserRoundX size={17} aria-hidden className="shrink-0 text-hazard" />
+                  <span className="min-w-0 flex-1">
+                    <b className="block text-sm text-hazard">
+                      Strike from the round
+                    </b>
+                    <span className="block text-[11px] text-muted-foreground">
+                      For the duplicate a lost session left behind — their
+                      scores go with the seat
+                    </span>
+                  </span>
+                </button>
+              )}
             </div>
           ) : null}
         </div>

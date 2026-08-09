@@ -7,6 +7,7 @@ import { ChevronRight, Minus, Plus } from "lucide-react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { MarkerPlayerSheet } from "@/components/round/marker-player-sheet";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { RoundBar } from "@/components/round/round-bar";
@@ -33,7 +34,7 @@ export function MarkersCardView({
   bundle: RoundBundle;
   viewedHole: number;
 }) {
-  const { round, holes, players, scores, penalties } = bundle;
+  const { round, holes, players, scores, penalties, me } = bundle;
   useLiveRound(round.id);
   const router = useRouter();
   const { run, pending, busy } = useAction();
@@ -124,6 +125,8 @@ export function MarkersCardView({
         viewingHole={viewedHole}
         onSelect={viewHole}
       />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <div className="text-sm">
         <span className="font-serif italic">{hole.venue_name}</span>
@@ -287,6 +290,16 @@ export function MarkersCardView({
           sheetPlayerId ? (scoreFor(sheetPlayerId)?.mulligans ?? 0) : 0
         }
         mulligansOffered={ruleset.mulligans > 0}
+        canStrike={
+          sheetPlayer !== null &&
+          sheetPlayer.role !== "host" &&
+          sheetPlayer.id !== me?.id
+        }
+        scoredHoles={
+          scores.filter(
+            (score) => score.player_id === sheetPlayerId && score.swigs > 0,
+          ).length
+        }
       />
     </Screen>
   );

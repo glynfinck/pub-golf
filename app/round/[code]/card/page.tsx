@@ -13,10 +13,10 @@ export default async function MarkersCardPage({
   const normalized = code.toUpperCase();
 
   const user = await getSessionUser();
-  if (!user) redirect(`/join?code=${normalized}`);
+  if (!user) redirect(`/round/${normalized}/rescue`);
 
   const bundle = await getRoundByCode(normalized);
-  if (!bundle || !bundle.me) redirect(`/join?code=${normalized}`);
+  if (!bundle || !bundle.me) redirect(`/round/${normalized}/rescue`);
 
   // The marker's card is the officials' table — players get their own card.
   if (!["host", "caddy"].includes(bundle.me.role))

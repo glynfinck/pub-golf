@@ -10,6 +10,7 @@ import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { PositionRibbon } from "@/components/round/position-ribbon";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
 import { TimerRing } from "@/components/round/timer-ring";
 import { useLiveRound } from "@/components/round/use-live-round";
@@ -192,6 +193,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}
       />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
