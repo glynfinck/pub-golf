@@ -625,6 +625,7 @@ export type Database = {
           seat_id: string
         }[]
       }
+      holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {
         Args: { since?: string; until?: string }
         Returns: {
@@ -643,6 +644,7 @@ export type Database = {
         Returns: string
       }
       record_recap_share: { Args: { join_code: string }; Returns: number }
+      ruleset_members: { Args: { rules: Json }; Returns: boolean }
       request_seat_rescue: {
         Args: { join_code: string; seat: string }
         Returns: undefined

@@ -104,6 +104,23 @@ is this Next version's middleware convention (see the `home` sibling repo).
   carry their own `penalties` jsonb — local rules, merged after the house
   list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
   the join key for the undo and the ×N count.
+- The green fee is a **day pass on its buyer**, not a line on a round
+  (`docs/MONETIZATION.md`): `entitlements` rows carry `round_id` null and
+  `expires_at`, and what a round keeps is `members` in its own ruleset
+  snapshot — stamped by `startRound` at tee-off, guarded by
+  `guard_round_members` (false→true only, UPDATE only, only while
+  `holds_day_pass(rounds.host)`). Covered stays covered: expiry and refunds
+  never reach a round already teed off, and un-stamping raises 42501. Read
+  the flag through `readRuleset`/`ruleset_members` — never a raw jsonb cast,
+  and never the *string* `"true"`, which both sides agree is not the flag.
+  The members' options group (`components/round/members-options.tsx`) lists
+  `GREEN_FEE_EXTRAS`, which names only what has shipped.
+- The phase-one funnel is two derived columns on `rounds`, not an events
+  table: `finished_at` comes off the status transition and `recap_shares`
+  moves only for `record_recap_share`, which announces itself with a
+  transaction-local `pubgolf.recap_share` the way seat rescue does. Neither
+  is writable by an official's ordinary update. `house_funnel` is
+  `service_role` only.
 - Handicaps come off gross to give **net**, and net is what the round is won
   on — `StandingRow` carries both, and ranking is on `netToPar`. They arrive
   pro rata (`handicap × holesPlayed / holes.length`) so the live board stays

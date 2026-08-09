@@ -4,6 +4,7 @@ import {
   RULESET_DEFAULTS,
   readHolePenalties,
   readRuleset,
+  stampMembers,
 } from "@/lib/ruleset";
 
 /**
@@ -61,7 +62,10 @@ describe("readRuleset — a full ruleset", () => {
       mulligans: 2,
       mulliganStrokes: 1,
     };
-    expect(readRuleset(written)).toEqual(written);
+    // `members` is deliberately absent from what createRound writes: a round
+    // is born uncovered and is stamped at tee-off, never at creation. So it
+    // reads back as off, which is what a free round should read as.
+    expect(readRuleset(written)).toEqual({ ...written, members: false });
   });
 
   it("reads an untimed round as no timer rather than zero minutes", () => {
@@ -100,6 +104,35 @@ describe("readRuleset — junk normalises rather than throws", () => {
 
   it("reads a penalty table that is not a list as no table at all", () => {
     expect(readRuleset({ penalties: "all of them" }).penalties).toEqual([]);
+  });
+});
+
+describe("the members' flag on the snapshot", () => {
+  it("reads a round from before the green fee existed as uncovered", () => {
+    expect(readRuleset({ format: "stroke" }).members).toBe(false);
+    expect(RULESET_DEFAULTS.members).toBe(false);
+  });
+
+  it("counts only a real boolean, exactly like the guard in Postgres", () => {
+    // `ruleset_members` compares against jsonb `true`, so a string "true"
+    // in the column is not the flag. Both sides of the wire agree or the
+    // trigger and the screen disagree about who is covered.
+    expect(readRuleset({ members: true }).members).toBe(true);
+    expect(readRuleset({ members: "true" }).members).toBe(false);
+    expect(readRuleset({ members: 1 }).members).toBe(false);
+  });
+
+  it("stamps without normalising anything else — the snapshot is history", () => {
+    // Keys this build has never heard of survive the stamp: a round created
+    // by an older or newer deploy must read back exactly as it was dealt.
+    const dealt = { format: "stableford", somethingNew: [1, 2], mulligans: 2 };
+    expect(stampMembers(dealt)).toEqual({ ...dealt, members: true });
+  });
+
+  it("stamps a ruleset that is missing, or is not an object at all", () => {
+    for (const junk of [null, undefined, "stroke play", 7, []]) {
+      expect(stampMembers(junk)).toEqual({ members: true });
+    }
   });
 });
 

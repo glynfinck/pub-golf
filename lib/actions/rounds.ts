@@ -11,7 +11,7 @@ import {
 } from "@/lib/rules";
 import { rematchName } from "@/lib/rematch";
 import { legInto, legsAfterSwap, type HoleLeg } from "@/lib/round-holes";
-import { readRuleset } from "@/lib/ruleset";
+import { readRuleset, stampMembers } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
 import type { Json } from "@/types/database";
@@ -241,24 +241,57 @@ export async function strikeSeat(
   return {};
 }
 
-/** Host or caddy flips the lobby live and opens hole 1's timer. */
+/**
+ * Host or caddy flips the lobby live and opens hole 1's timer — and, for a
+ * host inside a green fee's window, stamps the round covered.
+ *
+ * Tee-off is the one moment the members' flag is decided, and it is decided
+ * once. A pass that runs out, or is refunded, at hole 4 cannot take the
+ * league off a table that is already playing; a pass bought at hole 4 cannot
+ * add it either. That is the whole point of putting the grant in the ruleset
+ * snapshot rather than reading entitlements at render time.
+ *
+ * The check is a definer function rather than a read of `entitlements`
+ * because the caddy tees rounds off too, and a day pass is visible to its
+ * buyer alone.
+ */
 export async function startRound(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
   const ruleset = readRuleset(round.ruleset);
-  const { error } = await supabase
+  const teeOff = {
+    status: "live",
+    current_hole: 1,
+    hole_phase: "live",
+    tee_off_at: new Date().toISOString(),
+    hole_deadline_at: holeDeadline(ruleset),
+    walk_deadline_at: null,
+  };
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: round.host,
+  });
+  const stamping = covered === true && !ruleset.members;
+
+  let { error } = await supabase
     .from("rounds")
-    .update({
-      status: "live",
-      current_hole: 1,
-      hole_phase: "live",
-      tee_off_at: new Date().toISOString(),
-      hole_deadline_at: holeDeadline(ruleset),
-      walk_deadline_at: null,
-    })
+    .update(
+      stamping ? { ...teeOff, ruleset: stampMembers(round.ruleset) } : teeOff,
+    )
     .eq("id", round.id);
+
+  // The pass ran out in the moment between asking and writing, and the guard
+  // refused the stamp. Tee the round off anyway: a green fee is allowed to
+  // buy nothing, and is never allowed to stop a group getting started.
+  if (error && stamping) {
+    ({ error } = await supabase
+      .from("rounds")
+      .update(teeOff)
+      .eq("id", round.id));
+  }
   if (error) return { error: error.message };
+
   revalidatePath(`/round/${code}`);
   return {};
 }
@@ -911,6 +944,9 @@ export async function rehostRound(code: string): Promise<ActionResult> {
 
   // Through readRuleset, never a re-cast: the copy is the old snapshot
   // normalised, with the one advisory field a new night cannot inherit.
+  // `members` is deliberately not in the list either — a rematch is a new
+  // round and is covered only if a live pass is standing when it tees off.
+  // The INSERT half of the members guard would refuse it here regardless.
   const old = readRuleset(round.ruleset);
   const { data: next, error } = await supabase
     .from("rounds")

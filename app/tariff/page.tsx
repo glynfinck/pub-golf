@@ -4,7 +4,13 @@ import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
+import {
+  billingEnabled,
+  DAY_PASS_HOURS,
+  GREEN_FEE_EXTRAS,
+} from "@/lib/billing";
 import { SUPPORT_EMAIL } from "@/lib/config";
+import { GREEN_FEE_PRICE } from "@/lib/tariff";
 
 export const metadata = {
   title: "The tariff",
@@ -33,17 +39,24 @@ export default function TariffPage() {
           label={<b className="text-foreground">Playing, joining, scoring</b>}
           value={<b className="text-foreground">free, always</b>}
         />
-        <DotLeaderRow label="Green fee — a day of extras" value="£4" />
+        <DotLeaderRow
+          label="Green fee — a day of extras"
+          value={GREEN_FEE_PRICE}
+        />
         <DotLeaderRow label="Honesty box — a tip, if you like" value="from £3" />
       </Card>
 
       <p className="text-xs text-muted-foreground">
         The green fee is a day pass, the way a real course means it: every
-        round you host for 24 hours gets league standings across rounds, the
-        printed card, and your colours on the recap — one payment covering
-        the whole table, with the time remaining always on show. Both taps
-        are still being fitted; the prices above are what they&apos;ll cost
-        when the bar opens.
+        round you host for {DAY_PASS_HOURS} hours is covered, one payment for
+        the whole table, with the time remaining always on show. Covered
+        rounds stay covered for good — the pass runs out, the rounds it
+        granted never do. What it buys today is{" "}
+        {GREEN_FEE_EXTRAS.map((extra) => extra.title.toLowerCase()).join(", ")}
+        ; anything added later joins the same fee.
+        {billingEnabled(process.env.STRIPE_SECRET_KEY)
+          ? ""
+          : " The taps are still being fitted; the prices above are what they'll cost when the bar opens."}
       </p>
 
       <section>

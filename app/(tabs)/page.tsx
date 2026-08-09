@@ -5,6 +5,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
+import { DayPassCard } from "@/components/round/day-pass-card";
+import { getDayPass } from "@/lib/data/billing";
+import { countLeagueRounds } from "@/lib/data/league";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
 import { greeting } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -29,8 +32,13 @@ function houseHour(): number {
 }
 
 export default async function ClubhousePage() {
-  // One wait, not two — the pause on a tab switch is these round trips.
-  const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
+  // One wait, not four — the pause on a tab switch is these round trips.
+  const [profile, rounds, pass, leagueRounds] = await Promise.all([
+    getProfile(),
+    getMyRounds(),
+    getDayPass(),
+    countLeagueRounds(),
+  ]);
 
   // A signed-out visitor gets the front door, not a bounce to /signin.
   // Google's verifier grades the home page itself — the name, the purpose
@@ -86,6 +94,27 @@ export default async function ClubhousePage() {
           No round on the card tonight. Start one, or join with a code.
         </Card>
       )}
+
+      {/* The pass while it runs; the league for good once a round has teed
+          off on one. Never both — the card carries the league's own door. */}
+      {pass ? (
+        <DayPassCard pass={pass} />
+      ) : leagueRounds > 0 ? (
+        <Link
+          href="/league"
+          className="flex items-center justify-between rounded-xl bg-card px-4 py-3.5 ring-1 ring-foreground/10"
+          data-testid="league-link"
+        >
+          <span>
+            <span className="eyebrow block text-fairway">Members&apos; league</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              The order of merit across {leagueRounds} covered{" "}
+              {leagueRounds === 1 ? "round" : "rounds"}
+            </span>
+          </span>
+          <span className="text-xs font-bold text-fairway">Open</span>
+        </Link>
+      ) : null}
 
       <div className="flex gap-3">
         <Link href="/new" className={cn(buttonVariants(), "flex-1")}>

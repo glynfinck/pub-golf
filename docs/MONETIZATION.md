@@ -83,9 +83,9 @@ The foundation is in: the `entitlements` table (`20260821000000` —
 additive; webhook-only writes, member-readable so premium features render
 for the whole table, idempotency schema-level), `lib/billing.ts` (pure,
 unit-tested), `startGreenFeeCheckout` in `lib/actions/billing.ts`
-(officials only; resolves the price by lookup key; fulfilment never
-here), the webhook at `app/api/billing/webhook` (signature-verified;
-23505 answered 200), and the honesty box on the results screen behind
+(signed-in hosts only, never a guest; resolves the price by lookup key;
+fulfilment never here), the webhook at `app/api/billing/webhook`
+(signature-verified; 23505 answered 200), and the honesty box behind
 `NEXT_PUBLIC_HONESTY_BOX_URL` — paste the Payment Link in and phase one
 is on. `STRIPE_SECRET_KEY` empty = billing off entirely, the maps-key
 pattern. `types/database.ts` was extended by hand for the new table —
@@ -113,6 +113,34 @@ green-with-skips when the secret is absent, as on forks) — the one
 accepted third-party dependency in the gate, four test-mode API calls.
 `.github/workflows/stripe-sandbox.yml` remains for the Monday drift
 check and for seeding a fresh sandbox by hand.
+
+Phase two is in, shipped dark. The green fee is a **day pass on its buyer**,
+so `startGreenFeeCheckout` takes no round and needs none to exist — it is
+offered from the members' options group on the new-round form, and the
+webhook mints one row with `round_id` null and `expires_at` 24 hours from
+the *event's* timestamp (never from delivery, which Stripe retries). What a
+round keeps is `members` in its own ruleset snapshot, stamped by
+`startRound` at tee-off and guarded by `guard_round_members`
+(`20260823000000`): admitted only on an UPDATE, only false→true, and only
+while `holds_day_pass(rounds.host)` — a definer function, because the caddy
+tees rounds off too and a round-less entitlement is visible to its buyer
+alone. Covered stays covered: a pass that expires or is refunded mid-round
+cannot take the league off a table already playing, and un-stamping raises
+42501. A round is born uncovered — the INSERT half refuses the flag
+outright, so posting your own ruleset at the create endpoint buys nothing.
+Tee-off falls back to an unstamped update if the guard refuses, because a
+green fee is allowed to buy nothing and never allowed to stop a group
+getting started. `tests/db/rls-day-pass.test.ts` is the adversarial suite.
+
+The first extra is **the league** (`/league`): the order of merit across
+every covered round on the viewer's card, ranked on the *average* to par
+rather than the total, because a league ranking on the total would punish
+turning up. It is not gated on holding a pass — a league you paid for and
+could no longer read is the clawback the covenant rules out. The
+members' options group lists what exists and nothing else
+(`GREEN_FEE_EXTRAS`); the printed pack, the colours and the curated course
+packs join it the day they ship, and until then this list does not mention
+them. With no `STRIPE_SECRET_KEY` the group is not on the page at all.
 
 Phase one's other half — the funnel — is in as `20260822000000`, and it
 is deliberately the smallest thing that works: no events table, no

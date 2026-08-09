@@ -20,13 +20,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Masthead } from "@/components/shell/masthead";
+import { MembersOptions } from "@/components/round/members-options";
 import { HouseMark } from "@/components/ui/house-mark";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { useAction } from "@/hooks/use-action";
 import { createRound } from "@/lib/actions/rounds";
 import { templateForHoleCount } from "@/lib/course-templates";
+import type { DayPass } from "@/lib/data/billing";
 import type { MyCourse } from "@/lib/data/courses";
+import {
+  clearParkedDraft,
+  parkDraft,
+  type NewRoundDraft,
+} from "@/lib/new-round-draft";
 import {
   MULLIGAN_STROKES,
   MAX_MULLIGANS,
@@ -72,29 +79,50 @@ function shortDate(date: Date): string {
   });
 }
 
-export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
+export function NewRoundForm({
+  courses,
+  pass,
+  billingOn = false,
+  draft = null,
+}: {
+  courses: MyCourse[];
+  /** The host's live green fee, if one is running. */
+  pass?: DayPass | null;
+  /** No Stripe key, no surface — the maps-key pattern. */
+  billingOn?: boolean;
+  /** A table half set when the host stepped out to pay. */
+  draft?: NewRoundDraft | null;
+}) {
   const { run, pending, busy } = useAction();
-  const [name, setName] = useState("The Glyn Invitational XXX");
-  const [holes, setHoles] = useState(9);
-  const [courseId, setCourseId] = useState<string | null>(null);
-  const [reversed, setReversed] = useState(false);
-  const [format, setFormat] =
-    useState<(typeof FORMATS)[number]["id"]>("stroke");
+  const [name, setName] = useState(draft?.name ?? "The Glyn Invitational XXX");
+  const [holes, setHoles] = useState(draft?.holes ?? 9);
+  const [courseId, setCourseId] = useState<string | null>(
+    draft?.courseId ?? null,
+  );
+  const [reversed, setReversed] = useState(draft?.reversed ?? false);
+  const [format, setFormat] = useState<(typeof FORMATS)[number]["id"]>(
+    FORMATS.find((option) => option.id === draft?.format)?.id ?? "stroke",
+  );
   const [toggles, setToggles] = useState<Record<string, boolean>>({
     hazards: true,
     timer: true,
     softSub: true,
     // Off by default: most rounds are between people who'd rather not know.
     handicaps: false,
+    ...draft?.toggles,
   });
-  const [minutesPerPub, setMinutesPerPub] = useState(20);
+  const [minutesPerPub, setMinutesPerPub] = useState(draft?.minutesPerPub ?? 20);
   /** null = unscheduled: the host tees off when the group is stood there. */
-  const [teeDate, setTeeDate] = useState<Date | null>(null);
-  const [teeMinutes, setTeeMinutes] = useState(19 * 60);
+  const [teeDate, setTeeDate] = useState<Date | null>(
+    draft?.teeDate ? new Date(draft.teeDate) : null,
+  );
+  const [teeMinutes, setTeeMinutes] = useState(draft?.teeMinutes ?? 19 * 60);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [mulligans, setMulligans] = useState(0);
-  const [rules, setRules] = useState<PenaltyRow[]>(() =>
-    PENALTY_PRESETS.map((preset) => ({ ...preset, on: true, custom: false })),
+  const [mulligans, setMulligans] = useState(draft?.mulligans ?? 0);
+  const [rules, setRules] = useState<PenaltyRow[]>(
+    () =>
+      draft?.rules ??
+      PENALTY_PRESETS.map((preset) => ({ ...preset, on: true, custom: false })),
   );
 
   const selectedCourse = courses.find((course) => course.id === courseId);
@@ -156,7 +184,27 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
     );
   }
 
+  /** Park the table before the trip to Stripe's page, so the host comes back
+   * to the round they were setting rather than to a blank form. */
+  function park() {
+    parkDraft({
+      name,
+      holes,
+      courseId,
+      reversed,
+      format,
+      toggles,
+      minutesPerPub,
+      teeDate: teeDate ? teeDate.toISOString() : null,
+      teeMinutes,
+      mulligans,
+      rules,
+    });
+  }
+
   function submit() {
+    // The table is set; nothing is left to come back to.
+    clearParkedDraft();
     run(async () => {
       // The advertised first tee, assembled only at submit. Advisory: it is
       // printed on the lobby and the invite, and locks nothing.
@@ -641,6 +689,13 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      {/* The covenant's first of two moments money may speak. Below the
+          round's own options, above the one primary action, and gone
+          entirely when the till isn't plugged in. */}
+      {billingOn || pass ? (
+        <MembersOptions pass={pass ?? null} onLeave={park} />
+      ) : null}
 
       <Button
         onClick={submit}
