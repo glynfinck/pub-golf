@@ -175,6 +175,15 @@ export function RulesSheet({
             Penalties button on the hole.
           </p>
 
+          {/* The one line in the sheet that is not about scoring. It sits
+              here rather than behind a legal link because this is the sheet
+              a player actually opens, mid-round, in a pub. */}
+          <p className="mt-3 border-t border-border pt-3 text-center text-[11px] text-muted-foreground">
+            Any hole plays just as well with a soft drink; the card
+            can&apos;t tell. Know your limits, and sort out how everyone gets
+            home.
+          </p>
+
           <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
             A card is a bit of fun, not a contract.
           </p>

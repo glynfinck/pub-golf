@@ -1,7 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
-import { clickSettled, expectSettled, gotoSettled } from "./nav";
+import {
+  clickSettled,
+  expectSettled,
+  gotoSettled,
+  holeOutToResults,
+} from "./nav";
 
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
@@ -244,7 +249,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Play the course out: walk, tee up, drink, repeat ----
   for (let hole = 1; hole <= 9; hole += 1) {
     if (hole === 9) {
-      await clickSettled(guest, "hole-out");
+      await holeOutToResults(guest, roundCode);
     } else {
       await holeOutAndTeeUp(guest);
       await expect(guest.getByTestId("hole-venue")).not.toHaveText("", {
@@ -254,7 +259,8 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   }
 
   // ---- The 19th hole: both phones land on results together ----
-  await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
+  // The caddy's own arrival is the hole-out's receipt above; the host's is
+  // the realtime assertion.
   await host.waitForURL(new RegExp(`/round/${roundCode}/results`));
   await expect(host.getByTestId("winner")).toBeVisible();
   await expect(host.getByTestId("final-standings")).toContainText("Jamie");
@@ -267,8 +273,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await clickSettled(guest, "reopen-round");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
-  await clickSettled(guest, "hole-out");
-  await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
+  await holeOutToResults(guest, roundCode);
 
   // ---- The guest claims their card: anonymous → Google-linked ----
   // The consent screen belongs to Google and cannot be driven here, so assert

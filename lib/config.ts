@@ -23,3 +23,19 @@ export const TAGLINE = "Nine pubs. Par 36. Lowest swigs wins.";
  * lives here rather than inline in either.
  */
 export const SUPPORT_EMAIL = "glynfinck@gmail.com";
+
+/**
+ * The two grounds, as the browser chrome needs them: cream stock on `:root`
+ * and the Midnight felt on `.dark`, copied from `app/globals.css`. Hand-kept
+ * mirror, same as the one in `scripts/brand-lockups.mjs` — update together.
+ */
+export const GROUND = { light: "#f1edde", dark: "#101b13" } as const;
+
+/**
+ * Which build is running, short enough to read down a phone. Vercel sets the
+ * SHA on every deploy; off Vercel there is no build to name, so the stamp
+ * renders nothing rather than inventing "dev".
+ *
+ * The point is answering "it did something odd last night" without guessing.
+ */
+export const BUILD_REF = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null;

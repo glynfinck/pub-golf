@@ -112,6 +112,10 @@ in local dev:
 | Site URL | `https://pub-golf.glyn.dev` | Where OAuth returns to |
 | Redirect URLs | `https://pub-golf.glyn.dev/**` | An unlisted origin is not rejected — Supabase falls back to Site URL and drops the path, which reads as an app bug |
 
+Neither of the last two rows changes if you take the custom auth domain in
+step 3. They are the *app's* URLs — where OAuth returns to — and the app does
+not move; only the auth server's own origin does.
+
 > Do **not** run `supabase config push`. It would overwrite the production
 > `site_url` with `http://localhost:3105` from `config.toml`, which is
 > local-first by design — and it would re-enable the email provider, which
@@ -142,12 +146,13 @@ these point at Supabase:
 | Environment | URI |
 | --- | --- |
 | Production | `https://quncylgcwfiqsjugnvtv.supabase.co/auth/v1/callback` |
+| Production, custom domain | `https://auth.pub-golf.glyn.dev/auth/v1/callback` — **as well as** the row above, not instead of it (see "The custom auth domain") |
 | Preview | `https://xssmjzinaghxjncoezez.supabase.co/auth/v1/callback` |
 | Local dev | `http://127.0.0.1:54331/auth/v1/callback` |
 
-One client serves all three, so there is one secret in circulation. The branch
-needs its own entry because it runs its own auth server — production's setup
-does not carry over.
+One client serves all of them, so there is one secret in circulation. The
+branch needs its own entry because it runs its own auth server — production's
+setup does not carry over.
 
 Where the credentials go, per environment:
 
@@ -164,8 +169,113 @@ Where the credentials go, per environment:
 - **Local dev** — `.env.local`, same two names (`supabase start` reads them
   through `config.toml`). Local also needs `skip_nonce_check`, already set.
 
-While the consent screen is in *Testing*, only accounts on its test-user list
-can sign in — publish it before letting anyone else host a round.
+#### Consent screen branding
+
+Google renders the sign-in consent screen from the Cloud project's
+[**Branding**](https://console.cloud.google.com/auth/branding) page — nothing
+in this repo reaches it. Leave it unset and Google falls back to the OAuth
+client's domain, which is *Supabase's*, because the authorized redirect URI
+points there. The first screen a host ever sees then introduces the app as
+`quncylgcwfiqsjugnvtv.supabase.co`.
+
+| Field | Value |
+| --- | --- |
+| App name | `Pub Golf` |
+| User support email | `glynfinck@gmail.com` |
+| App logo | `public/brand/icon-512.png` |
+| Application home page | `https://pub-golf.glyn.dev` |
+| Privacy policy | `https://pub-golf.glyn.dev/legal/privacy` |
+| Terms of service | `https://pub-golf.glyn.dev/legal/terms` |
+| Authorized domain | `glyn.dev` |
+
+The **logo** is the only field that queues: it triggers Google's brand
+verification, a few business days. Everything else applies immediately, and
+none of it blocks publishing — set the rest now if you want a clean screen
+this week.
+
+Brand verification audits the home page itself. The first pass failed on
+exactly this: `/` used to 307 a signed-out visitor to `/signin`, so the name,
+the purpose and the privacy link were nowhere the reviewer looked. Since the
+front-door change, `/` answers signed out with all three at the URL the
+consent screen advertises — `components/auth/front-door.tsx` is one source
+for `/` and `/signin`, so the promise cannot quietly fork. The remaining
+verification item is domain ownership: Search Console, DNS TXT via Vercel,
+from the Google account that owns the Cloud project.
+
+#### Publishing it
+
+**While the consent screen is in *Testing*, only accounts on its test-user
+list can sign in.** Not "sign in with a warning" — every other Google account
+gets an error instead of a round, which makes hosting impossible for anyone
+you hand the app to. This is the single setting most likely to be mistaken
+for an app bug.
+
+Publishing is cheap here and does **not** queue behind Google's full
+verification review: the app asks only for `openid`, `email` and `profile`,
+all non-sensitive. It does ask for the privacy policy and terms URLs above,
+which is why they exist.
+
+The proof that it worked is not the dashboard saying "In production" — it is
+**a Google account that is not on the test-user list hosting a round.** Do
+that once, from a browser you are not already signed into.
+
+#### The custom auth domain
+
+Optional, and the reason to bother: even with branding set, the browser
+visibly bounces through `quncylgcwfiqsjugnvtv.supabase.co` on the way to
+Google and back. Supabase's [Custom Domains](https://supabase.com/docs/guides/platform/custom-domains)
+add-on replaces that origin with `auth.pub-golf.glyn.dev`. It is a paid
+add-on on a paid plan — around $10/month per project, confirmed in the
+dashboard's add-on panel — and the org is already on Pro.
+
+**Production only.** Staging sits behind Vercel Authentication and only you
+ever sign into it, so a second $10/month buys a screen nobody else can reach.
+
+`glyn.dev` is already on Vercel nameservers, so the CNAME is one record added
+in Vercel → Domains. The rest is the dashboard's add-on panel (there is a
+`supabase domains` CLI too; the panel walks the verification steps in order).
+
+Three things it touches beyond itself:
+
+1. **Google needs the new callback URI added alongside the old one** — the
+   row in the table above. Supabase keeps serving the default origin, and
+   removing the old entry breaks the flow you have not switched yet.
+2. **`NEXT_PUBLIC_SUPABASE_URL` changes** in Vercel's Production environment
+   (see step 4). Site URL and Redirect URLs do **not** — those are the app's
+   own URLs, and the app has not moved. Saving the variable changes nothing
+   on its own: `NEXT_PUBLIC_*` is inlined into the bundle at build time, so
+   the switch lands on the next deploy and not a moment before.
+3. **Everyone is signed out once, unless you pin the cookie name.** This is
+   not a guess. supabase-js derives the auth cookie from the URL's first
+   hostname label:
+
+   ```js
+   // @supabase/supabase-js/src/SupabaseClient.ts
+   const defaultStorageKey = `sb-${baseUrl.hostname.split('.')[0]}-auth-token`
+   ```
+
+   So `sb-quncylgcwfiqsjugnvtv-auth-token` becomes `sb-auth-auth-token`, and
+   every session already in a browser is orphaned by the rename. For a host
+   that is one Google tap. **For a guest it is the seat itself** — an
+   anonymous session is the only thing holding their card — so a live round
+   would empty into `/round/CODE/rescue` mid-play.
+
+   The fix is to keep the old name explicitly. Every client takes
+   `cookieOptions: { name: "sb-quncylgcwfiqsjugnvtv-auth-token" }`, and
+   `@supabase/ssr` maps that straight onto `storageKey`. There are **three**
+   to change, not two — `lib/supabase/client.ts`, `lib/supabase/server.ts`
+   and `lib/supabase/proxy.ts`, which is its own `createServerClient` and the
+   one easiest to forget, since missing it means the middleware refreshes a
+   cookie nothing else reads.
+
+   Set `cookieOptions.name` rather than `auth.storageKey`: `@supabase/ssr`
+   spreads those two in opposite orders in its browser and server factories,
+   so `auth.storageKey` wins on the server while `cookieOptions.name` wins in
+   the browser. Configure the wrong one and the halves of the app disagree
+   about which cookie holds the session.
+
+   Ship that pin **before** the origin changes, not with it. Without the pin,
+   do the switch when nothing is live on the board.
 
 ### 4. Vercel project
 
@@ -181,7 +291,7 @@ Production:
 
 | Variable | Value |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` — becomes `https://auth.pub-golf.glyn.dev` once the custom domain in step 3 is active, and that swap is what signs everyone out if the cookie name is not pinned first |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | that project's publishable key (`sb_publishable_…`) |
 | `NEXT_PUBLIC_SITE_URL` | `https://pub-golf.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |

@@ -13,8 +13,17 @@ dotenv.config({ path: ".env.local", quiet: true });
  */
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 90_000,
-  expect: { timeout: 15_000 },
+  timeout: process.env.CI ? 180_000 : 90_000,
+  // 15s locally, 30s on CI, and the number is not arbitrary. Most waits here
+  // are one phone waiting on another phone's write, which travels as a
+  // realtime event — and when an event is missed, `useLiveRound`'s safety-net
+  // poll is what catches up, on a POLL_MS of 10s. That leaves under five
+  // seconds for a fetch, a server render and a hydration before a 15s
+  // expectation gives up, which is comfortable on a laptop and simply is not
+  // on a two-core runner already hosting Postgres, PostgREST, Realtime, Next
+  // and WebKit. The gap between the product's catch-up interval and the
+  // suite's patience was the flake.
+  expect: { timeout: process.env.CI ? 30_000 : 15_000 },
   // Retries exist to produce evidence, not to launder a red run: a retried
   // test records a trace (see `trace` below), and `failOnFlakyTests` then
   // fails the run anyway. Green has to mean green — a pass-on-retry once hid
