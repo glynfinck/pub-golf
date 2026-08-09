@@ -60,6 +60,11 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const holeRef = useRef(round.current_hole);
   const lastServer = useRef(serverSwigs);
+  // Tap handlers read this mirror, never the render's copy: on a slow main
+  // thread (WebKit mid-round) two taps can dispatch before React re-renders
+  // between them, and both reading the same stale `swigs` collapses two
+  // swigs into one — on screen and in the write that follows.
+  const latestSwigs = useRef(serverSwigs);
   const syncing = useRef(false);
   /** The swig write currently on its way to the server, if any. */
   const inFlight = useRef<Promise<void> | null>(null);
@@ -68,6 +73,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     if (holeRef.current !== round.current_hole) {
       holeRef.current = round.current_hole;
       lastServer.current = serverSwigs;
+      latestSwigs.current = serverSwigs;
       setSwigs(serverSwigs);
       return;
     }
@@ -75,12 +81,16 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     // unless the player is mid-tap with an upsert still in flight.
     if (serverSwigs !== lastServer.current) {
       lastServer.current = serverSwigs;
-      if (!syncing.current) setSwigs(serverSwigs);
+      if (!syncing.current) {
+        latestSwigs.current = serverSwigs;
+        setSwigs(serverSwigs);
+      }
     }
   }, [round.current_hole, serverSwigs]);
 
   function changeSwigs(delta: number) {
-    const next = Math.max(0, swigs + delta);
+    const next = Math.max(0, latestSwigs.current + delta);
+    latestSwigs.current = next;
     setSwigs(next);
     syncing.current = true;
     clearTimeout(debounce.current);
@@ -116,6 +126,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
       const result = await takeMulligan(round.code, round.current_hole);
       if (result.error) return result;
+      latestSwigs.current = 0;
       setSwigs(0);
       lastServer.current = 0;
       setMulliganOpen(false);
