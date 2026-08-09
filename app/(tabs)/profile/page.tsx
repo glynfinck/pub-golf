@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ProfileForm } from "@/components/profile-form";
@@ -17,6 +18,18 @@ export default async function ProfilePage() {
         isAnonymous={profile.isAnonymous}
         memberSince={profile.created_at}
       />
+
+      {/* The second door onto the house papers — the first is the sign-in
+          screen, which a returning player never sees again. */}
+      <footer className="mt-auto flex items-center justify-center gap-3 pt-4 text-[11px] text-muted-foreground">
+        <Link href="/legal/privacy" className="font-bold text-fairway">
+          Privacy
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/legal/terms" className="font-bold text-fairway">
+          Terms
+        </Link>
+      </footer>
     </Screen>
   );
 }

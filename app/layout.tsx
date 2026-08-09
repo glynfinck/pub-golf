@@ -9,6 +9,16 @@ export const metadata: Metadata = {
   // than decorative: without it every generated card resolves to a relative
   // path and nothing unfurls.
   metadataBase: new URL(SITE_URL),
+  applicationName: APP_NAME,
+  // Deliberately no `alternates.canonical` here. Set on the root layout it
+  // is inherited rather than computed, so every page — /join, /signin, the
+  // legal papers — emits a canonical pointing at "/", which tells a crawler
+  // they are all the same page as the clubhouse. Next self-canonicalises by
+  // default, and no route here has a duplicate URL that needs overriding.
+  // iOS turns anything that looks like a number into a phone link, and a
+  // scorecard is nothing but numbers — a tapped "7:05" that offers to dial
+  // is the kind of detail that reads as unfinished.
+  formatDetection: { telephone: false },
   title: {
     // The app and its flagship game became the same words when the
     // "Parlour" name retired, so gluing them read "Pub Golf — Pub Golf".
@@ -30,10 +40,14 @@ export const metadata: Metadata = {
   },
 };
 
+// No `maximumScale`. Locking zoom fails WCAG 1.4.4, and it does not even buy
+// what it is usually reached for: iOS has ignored it for years, so the only
+// people who lose pinch-zoom are Android users. The iOS focus-zoom it is
+// meant to prevent is already handled properly — inputs are `text-base`
+// (16px) on mobile in `components/ui/input.tsx`, which is the real fix.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f1edde" },

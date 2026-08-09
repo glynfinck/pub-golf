@@ -11,7 +11,12 @@ export const config = {
     /*
      * Match all request paths except static assets and images. The session
      * only needs refreshing on paths that can read it.
+     *
+     * `manifest.webmanifest` is named because its extension is not in the
+     * list below: without it, every install prompt and every PWA cold start
+     * spent a Supabase token refresh on a file that has never read a
+     * session. (robots.txt and sitemap.xml were already covered by `txt|xml`.)
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };

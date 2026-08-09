@@ -6,7 +6,27 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
+import { greeting } from "@/lib/time";
 import { cn } from "@/lib/utils";
+
+/**
+ * The greeting is resolved on the server, in London, on purpose.
+ *
+ * Reading the browser's clock would be more correct for a player abroad, but
+ * it costs a client component and a hydration guard, and a greeting that
+ * flips a beat after paint is worse than one that is an hour out. The house
+ * keeps British time — the same choice every `en-GB` date on these screens
+ * already makes.
+ */
+function houseHour(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "Europe/London",
+    }).format(new Date()),
+  );
+}
 
 export default async function ClubhousePage() {
   // One wait, not two — the pause on a tab switch is these round trips.
@@ -21,7 +41,7 @@ export default async function ClubhousePage() {
       <RuleDouble head />
       <ScreenHeader
         eyebrow="The Clubhouse"
-        title={`Evening, ${profile.display_name.split(" ")[0]}`}
+        title={`${greeting(houseHour())}, ${profile.display_name.split(" ")[0]}`}
         action={<Avatar name={profile.display_name} />}
       />
 

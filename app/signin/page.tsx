@@ -47,6 +47,25 @@ export default async function SignInPage({
           Enter a code — no account needed
         </Link>
       </p>
+
+      {/* The app scores a drinking game and had never once said so. It says
+          it here, where every host passes, and in the rules sheet where every
+          player does. */}
+      <div className="mt-2 flex flex-col gap-1.5 border-t border-border pt-4 text-center text-[11px] text-muted-foreground">
+        <p>
+          Over-18s only. Know your limits — any hole plays just as well with a
+          soft drink, and the card can&apos;t tell.
+        </p>
+        <p className="flex items-center justify-center gap-3">
+          <Link href="/legal/privacy" className="font-bold text-fairway">
+            Privacy
+          </Link>
+          <span aria-hidden>·</span>
+          <Link href="/legal/terms" className="font-bold text-fairway">
+            Terms
+          </Link>
+        </p>
+      </div>
     </Screen>
   );
 }

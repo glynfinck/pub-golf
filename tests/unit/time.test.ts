@@ -10,6 +10,7 @@ import {
   estimatedFinishMs,
   formatClock,
   formatDuration,
+  greeting,
   isUrgent,
   remainingSeconds,
   ringFraction,
@@ -173,5 +174,34 @@ describe("clockTime12", () => {
 
   it("wraps a finish past midnight — its own warning", () => {
     expect(clockTime12(24 * 60 + 40)).toBe("12:40 AM");
+  });
+});
+
+describe("greeting", () => {
+  it("names the part of the day the clubhouse is actually in", () => {
+    expect(greeting(9)).toBe("Morning");
+    expect(greeting(14)).toBe("Afternoon");
+    expect(greeting(21)).toBe("Evening");
+  });
+
+  it("gives the small hours their own line — the app's best case", () => {
+    expect(greeting(1)).toBe("Still going");
+    expect(greeting(4)).toBe("Still going");
+  });
+
+  it("turns over on the boundaries, not near them", () => {
+    expect(greeting(4)).toBe("Still going");
+    expect(greeting(5)).toBe("Morning");
+    expect(greeting(11)).toBe("Morning");
+    expect(greeting(12)).toBe("Afternoon");
+    expect(greeting(17)).toBe("Afternoon");
+    expect(greeting(18)).toBe("Evening");
+    expect(greeting(23)).toBe("Evening");
+  });
+
+  it("wraps rather than falling off either end", () => {
+    expect(greeting(0)).toBe("Still going");
+    expect(greeting(24)).toBe("Still going");
+    expect(greeting(-1)).toBe("Evening");
   });
 });
