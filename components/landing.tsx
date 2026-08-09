@@ -75,9 +75,23 @@ export function Landing() {
 
       <header className="text-center">
         <HouseMark className="mx-auto mb-4 size-20 rounded-2xl" />
-        <h1 className="font-serif text-4xl tracking-[0.08em] uppercase">
-          {APP_NAME}
-        </h1>
+        {/*
+          The one place the house masthead is not set in caps, and the reason
+          is literal-minded rather than aesthetic. `uppercase` is a CSS
+          transform: the DOM says "Pub Golf" but the page *reads* PUB GOLF,
+          and Google's identity check compares the name shown on the home page
+          against the name configured on the consent screen — which is
+          "Pub Golf". Two rounds of "the app name does not match" survived a
+          page that had the exact string in its title, its h1 and its prose,
+          which points at the rendered form being what was compared.
+
+          The voice itself has not moved. It lives on the sign-in masthead
+          (`components/auth/front-door.tsx`), which is what
+          `scripts/brand-lockups.mjs` reads to generate the lockups, so caps
+          are still the mark's register everywhere it is the mark rather than
+          a claim about the app's name.
+        */}
+        <h1 className="font-serif text-4xl tracking-[0.08em]">{APP_NAME}</h1>
         <p className="mt-1 font-serif text-sm italic text-muted-foreground">
           {TAGLINE}
         </p>
@@ -135,6 +149,58 @@ export function Landing() {
             </span>
           </li>
         </ol>
+      </section>
+
+      {/*
+        Google's homepage requirements ask for something the sections above do
+        not give, and the remediation text is the precise wording: "explain the
+        purpose of your app *and how it uses Google user data you are
+        requesting*". Describing the product answers half of that. This section
+        is the other half, and it sits immediately above the sign-in door
+        because that is the decision it informs.
+
+        Every claim here is a claim about code in this repo and is deliberately
+        the same set of claims as `/legal/privacy` — the scopes are Supabase's
+        Google defaults (`openid`, `email`, `profile`; nothing is passed to
+        signInWithOAuth), and "never sends email" is true because there is no
+        mail server configured anywhere. If any of that changes, both pages
+        change together or they start lying in different directions.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow text-fairway">
+          Why {APP_NAME} asks for a Google sign-in
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Only the person hosting signs in — everyone else joins with a code
+          and no account at all. When you do sign in, {APP_NAME} asks Google
+          for three things, and nothing else:
+        </p>
+        <ul className="flex flex-col gap-2.5 text-sm text-muted-foreground">
+          <li>
+            <b className="text-foreground">Your name</b> — it goes on the
+            scorecard, so the table can tell whose swigs are whose. You can
+            change it in Profile whenever you like.
+          </li>
+          <li>
+            <b className="text-foreground">A Google account id</b> — so the
+            courses you build and the rounds you have played are still yours
+            the next time you open the app.
+          </li>
+          <li>
+            <b className="text-foreground">Your email address</b> — Google
+            returns it with the sign-in and it sits in the authentication
+            database. Nothing in the app reads it, and {APP_NAME} never sends
+            email: no mailing list, no notifications, no mail server at all.
+          </li>
+        </ul>
+        <p className="text-sm text-muted-foreground">
+          That is the whole request. No contacts, no calendar, no files, no
+          analytics, no advertising and no third-party trackers. The{" "}
+          <Link href="/legal/privacy" className="font-bold text-fairway">
+            privacy policy
+          </Link>{" "}
+          spells out everything a round keeps.
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">
