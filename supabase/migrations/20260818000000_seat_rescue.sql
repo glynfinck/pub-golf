@@ -37,10 +37,11 @@ alter table public.round_players
   add column rescue_requested_at timestamptz;
 
 -- ---------- the sanctioned door ----------
--- Identical to 20260809's body plus the seat_rescue bypass: the one write
--- allowed to change a card's hands is the one approve_seat_rescue makes in
--- the transaction where it set this flag, having already checked everything
--- the trigger exists to stop.
+-- Identical to the trigger's CURRENT body (20260810's, which added the
+-- handicap rule to 20260809's — replace the newest, not the first) plus the
+-- seat_rescue bypass: the one write allowed to change a card's hands is the
+-- one approve_seat_rescue makes in the transaction where it set this flag,
+-- having already checked everything the trigger exists to stop.
 create or replace function public.guard_round_player_update()
 returns trigger
 language plpgsql
@@ -78,6 +79,12 @@ begin
       raise exception 'Only the host or a caddy changes roles'
         using errcode = '42501';
     end if;
+  end if;
+
+  if new.handicap is distinct from old.handicap
+     and not public.is_round_official(old.round_id) then
+    raise exception 'Only the host or a caddy sets a handicap'
+      using errcode = '42501';
   end if;
 
   return new;
