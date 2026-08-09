@@ -1,5 +1,6 @@
 import { FrontDoor } from "@/components/auth/front-door";
 import { Screen } from "@/components/shell/screen";
+import { safeNext } from "@/lib/auth-paths";
 
 export const metadata = { title: "Sign in" };
 
@@ -14,7 +15,7 @@ export default async function SignInPage({
   searchParams: Promise<{ error?: string; next?: string }>;
 }) {
   const { error, next } = await searchParams;
-  const target = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const target = safeNext(next);
 
   return (
     <Screen className="justify-center gap-5">
