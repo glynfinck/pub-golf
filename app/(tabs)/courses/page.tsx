@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { CoursesList } from "@/components/course/courses-list";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,30 +23,7 @@ export default async function CoursesPage() {
       <ScreenHeader eyebrow="The course book" title="Your courses" />
 
       {courses.length > 0 ? (
-        <Card className="gap-0 px-4 py-1">
-          {courses.map((course, index) => (
-            <Link
-              key={course.id}
-              href={`/courses/${course.id}`}
-              className={cn(courseRow, index > 0 && "border-t border-border")}
-            >
-              <span className="tabular flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-marker font-serif text-sm text-marker">
-                {course.hole_count}
-              </span>
-              <span className="min-w-0 flex-1">
-                <b className="block truncate text-sm">{course.name}</b>
-                <span className="block text-[11px] text-muted-foreground">
-                  {course.hole_count} holes · par {course.par}
-                </span>
-              </span>
-              <ChevronRight
-                size={16}
-                aria-hidden
-                className="shrink-0 text-muted-foreground"
-              />
-            </Link>
-          ))}
-        </Card>
+        <CoursesList courses={courses} />
       ) : (
         <Card className="gap-0 px-4 text-sm text-muted-foreground">
           Nothing of your own in the book yet. Plot a course — or copy a
@@ -87,9 +65,9 @@ export default async function CoursesPage() {
       </section>
 
       <p className="text-center text-[11px] text-muted-foreground">
-        Courses are reusable — every round takes its own snapshot. Tap one to
-        edit, copy or tear it out; pubs come from Google, you bring the par
-        and the drinks.
+        Courses are reusable — every round takes its own snapshot. Tap a
+        course to retouch it; the menu beside it files copies and tears out.
+        Pubs come from Google; you bring the par and the drinks.
       </p>
     </Screen>
   );
