@@ -6,7 +6,16 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { refreshQuietUntil } from "@/lib/action-window";
 import { createClient } from "@/lib/supabase/client";
 
-const LIVE_TABLES = ["rounds", "round_players", "scores", "penalties"];
+// `holes` is on the list because a hole's pub can change mid-round (the
+// shutters come down and the caddy swaps it). Everything else about a hole
+// is fixed at round creation, so this row is quiet until that happens.
+const LIVE_TABLES = [
+  "rounds",
+  "round_players",
+  "scores",
+  "penalties",
+  "holes",
+];
 
 /**
  * The safety-net poll's cadence. Fast enough that a phone which missed an

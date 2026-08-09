@@ -5,6 +5,7 @@ import { Screen } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
+import { SwapPubButton } from "@/components/round/swap-pub-sheet";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -133,6 +134,13 @@ export function WalkingView({ bundle }: { bundle: RoundBundle }) {
         <ArrowUpRight size={15} aria-hidden />
         Directions in Google Maps
       </a>
+
+      {/* The walk is where a shut pub is found out — the group arrives, the
+          shutters are down, and nobody has teed up yet. The way out sits
+          under the directions that led them there. */}
+      {isOfficial ? (
+        <SwapPubButton code={round.code} hole={nextHole} />
+      ) : null}
 
       {/* The walk is the one screen with time to read, so it carries the
           whole card — the same lines the lobby and the rules sheet print. */}
