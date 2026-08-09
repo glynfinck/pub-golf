@@ -5,7 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
-import { APP_NAME } from "@/lib/config";
+import { DESCRIPTION } from "@/lib/config";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
 import { greeting } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -34,13 +34,11 @@ function houseHour(): number {
  * for every other page. "Nine pubs. Par 36. Lowest swigs wins." is a slogan,
  * and this is the one URL where a reader (or a verifier) has not yet been
  * told what the thing does.
+ *
+ * Shared with the schema.org block on the page itself (`components/landing`),
+ * because a verifier reading both wants them to agree.
  */
-export const metadata = {
-  description:
-    `${APP_NAME} is a free scorecard app for pub golf: build a course of ` +
-    "pubs, share a six-character code, and every phone at the table keeps " +
-    "the same live card.",
-};
+export const metadata = { description: DESCRIPTION };
 
 export default async function ClubhousePage() {
   // One wait, not two — the pause on a tab switch is these round trips.
