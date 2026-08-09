@@ -76,8 +76,21 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Host hands Jamie the caddy's card — same sheet ----
   // The caddy carries no card of their own, so the figure gives way to
-  // the standing on Jamie's line.
-  await host.getByRole("button", { name: /caddy · stays sober/i }).click();
+  // the standing on Jamie's line. The handicap raises above each re-render
+  // this sheet, and a click that lands on the node being swapped out fires
+  // no handler — Playwright saw it land, React never heard it, and the
+  // guest's lobby waited out its budget for a CADDY nobody made. The chip
+  // is a toggle, so the retry must read before it taps: aria-pressed is
+  // the commit's own receipt, and only an unpressed chip gets the click.
+  const caddyChip = host.getByRole("button", { name: /caddy · stays sober/i });
+  await expect(async () => {
+    if ((await caddyChip.getAttribute("aria-pressed")) !== "true") {
+      await caddyChip.click({ timeout: 2_000 });
+    }
+    await expect(caddyChip).toHaveAttribute("aria-pressed", "true", {
+      timeout: 1_000,
+    });
+  }).toPass({ timeout: 15_000 });
   await expect(
     guest.getByTestId("lobby-players").getByText("CADDY"),
   ).toBeVisible();

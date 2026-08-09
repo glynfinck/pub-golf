@@ -113,14 +113,25 @@ test("a full house: twenty seats, three phones watching, one card", async ({
       await expect(addPub).toBeEnabled({ timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
 
-    // Hydration proven — every fill from here sticks.
-    await host.getByLabel(/course name/i).fill(`Full House Crawl ${stamp}`);
     await addPub.click();
     await pubField.fill("The Last Orders");
     await addPub.click();
-    await host
-      .getByRole("button", { name: /save the course · 2 holes/i })
-      .click();
+    // The save button answers for the whole form: its label counts the
+    // holes and it enables only once live React also holds a course name.
+    // CI has seen the count reach 2 while the name never made it out of
+    // the DOM, so the name fill and the enablement check retry as one
+    // block — the click stays outside it, because a click that lands must
+    // not repeat.
+    const saveCourse = host.getByRole("button", {
+      name: /save the course · 2 holes/i,
+    });
+    await expect(async () => {
+      await host
+        .getByLabel(/course name/i)
+        .fill(`Full House Crawl ${stamp}`);
+      await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await saveCourse.click();
     await host.waitForURL(/\/courses$/);
 
     await host.goto("/new");

@@ -28,7 +28,6 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
     await expect(addPub).toBeEnabled({ timeout: 1_000 });
   }).toPass({ timeout: 30_000 });
 
-  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
   await addPub.click();
   await pubField.fill("The Other Arms");
   await addPub.click();
@@ -53,7 +52,19 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
     })
     .click();
 
-  await page.getByRole("button", { name: /save the course · 2 holes/i }).click();
+  // The save button answers for the whole form: its label counts the holes
+  // and it enables only once live React also holds a course name. CI has
+  // seen the count reach 2 while the name never made it out of the DOM, so
+  // the name fill and the enablement check retry as one block — the click
+  // stays outside it, because a click that lands must not repeat.
+  const saveCourse = page.getByRole("button", {
+    name: /save the course · 2 holes/i,
+  });
+  await expect(async () => {
+    await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+    await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await saveCourse.click();
   await page.waitForURL(/\/courses$/);
   await expect(page.getByText(`Two Pub Crawl ${stamp}`)).toBeVisible();
   await expect(page.getByText("2 holes · par 9")).toBeVisible();
