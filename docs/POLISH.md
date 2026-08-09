@@ -329,11 +329,12 @@ without the legal URLs from step 3.
 3. Supabase Custom Domains add-on on `quncylgcwfiqsjugnvtv` →
    `auth.pub-golf.glyn.dev`. Add the new callback URI to the Google OAuth
    client *alongside* the old one, update `NEXT_PUBLIC_SUPABASE_URL` in
-   Vercel Production, and do it when no round is live — everyone is signed
-   out once, and guests lose their seats to the rescue flow.
-4. Update DEPLOYMENT.md § 2/3/4 to match. That document is the source of
-   truth for the parts that break quietly, and all three of these are exactly
-   that kind of setting.
+   Vercel Production, and **pin `cookieOptions.name` to the current cookie
+   first** — otherwise the origin change renames the auth cookie and signs
+   everyone out, which for a guest means losing the seat their card lives on.
+   DEPLOYMENT.md § 3 has the derivation and the exact knob.
+4. ✅ DEPLOYMENT.md § 2/3/4 updated ahead of the work — branding table,
+   publishing, the custom-domain procedure and its three side effects.
 
 ### Wave 3 — product debt
 
