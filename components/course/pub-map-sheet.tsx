@@ -440,8 +440,13 @@ function PubMapBody({
                 </div>
               </AdvancedMarker>
             ))}
+            {/* A result that joined the card stops being a candidate: its
+                pint pin retires and the numbered hole ring stands alone,
+                rather than the two stacking on one rooftop. */}
             {results.map((venue) =>
-              venue.lat != null && venue.lng != null ? (
+              venue.lat != null &&
+              venue.lng != null &&
+              holeNumberFor(venue.id) == null ? (
                 <AdvancedMarker
                   key={venue.id}
                   position={{ lat: venue.lat, lng: venue.lng }}
