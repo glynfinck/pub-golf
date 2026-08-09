@@ -5,6 +5,7 @@ import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ClaimCard } from "@/components/round/claim-card";
 import { Podium } from "@/components/round/podium";
 import { RecapCard } from "@/components/round/recap-card";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { ReopenRound, ResultsLive } from "@/components/round/results-live";
 import { RoundBar } from "@/components/round/round-bar";
 import { SameAgain } from "@/components/round/same-again";
@@ -46,10 +47,10 @@ export default async function ResultsPage({
   const normalized = code.toUpperCase();
 
   const user = await getSessionUser();
-  if (!user) redirect(`/join?code=${normalized}`);
+  if (!user) redirect(`/round/${normalized}/rescue`);
 
   const bundle = await getRoundByCode(normalized);
-  if (!bundle || !bundle.me) redirect(`/join?code=${normalized}`);
+  if (!bundle || !bundle.me) redirect(`/round/${normalized}/rescue`);
   if (bundle.round.status !== "finished") redirect(`/round/${normalized}`);
 
   const { round, holes, players, scores, penalties, me } = bundle;
@@ -73,6 +74,10 @@ export default async function ResultsPage({
       <ResultsLive roundId={round.id} />
       <RoundBar round={round} holes={holes} />
       <ScreenHeader eyebrow={`Final · ${round.name}`} title="The 19th hole" />
+
+      {/* A dropped card can still be picked back up at the 19th — claiming
+          it with Google needs the seat on the claimer's own session. */}
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <Podium standings={standings} />
       {winner ? (

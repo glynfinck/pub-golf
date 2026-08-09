@@ -12,10 +12,10 @@ export default async function PlayPage({
   const normalized = code.toUpperCase();
 
   const user = await getSessionUser();
-  if (!user) redirect(`/join?code=${normalized}`);
+  if (!user) redirect(`/round/${normalized}/rescue`);
 
   const bundle = await getRoundByCode(normalized);
-  if (!bundle || !bundle.me) redirect(`/join?code=${normalized}`);
+  if (!bundle || !bundle.me) redirect(`/round/${normalized}/rescue`);
 
   if (bundle.round.status === "lobby") redirect(`/round/${normalized}`);
   if (bundle.round.status === "finished")

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, UserRoundX } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -32,6 +33,8 @@ export function LobbyPlayerSheet({
   onStep,
   showRoleToggle,
   onToggleCaddy,
+  showStrike,
+  onStrike,
   pending,
   handicapsOn,
   handicaps,
@@ -46,16 +49,29 @@ export function LobbyPlayerSheet({
   /** Hosts see the caddy toggle on anyone but themselves. */
   showRoleToggle: boolean;
   onToggleCaddy: () => void;
+  /** Officials see the strike on any guest but the host and themselves. */
+  showStrike: boolean;
+  onStrike: () => void;
   pending: boolean;
   handicapsOn: boolean;
   /** The lobby's shared draft figures — rows and sheet move together. */
   handicaps: ReturnType<typeof useDraftFigures>;
 }) {
+  // Armed per guest, so the ‹ › walk disarms it — and a close does too:
+  // a half-armed confirm must not survive to the next open.
+  const [strikeArmedFor, setStrikeArmedFor] = useState<string | null>(null);
+
   if (!player) return null;
   const name = player.display_name;
+  const strikeArmed = strikeArmedFor === player.id;
+
+  function handleOpenChange(next: boolean) {
+    if (!next) setStrikeArmedFor(null);
+    onOpenChange(next);
+  }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
         className="mx-auto max-w-md rounded-t-2xl"
@@ -128,6 +144,58 @@ export function LobbyPlayerSheet({
                 label="handicap"
               />
             </div>
+          ) : null}
+
+          {showStrike ? (
+            strikeArmed ? (
+              <div className="flex flex-col gap-2.5 rounded-xl border border-hazard/60 bg-card p-4">
+                <h3 className="font-serif text-base font-semibold text-hazard">
+                  Strike {name} from the round?
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Nothing has teed off — their seat just leaves the lobby, and
+                  they can knock to come back any time.
+                </p>
+                <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={pending}
+                    onClick={() => setStrikeArmedFor(null)}
+                  >
+                    Keep them
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={pending}
+                    data-testid="strike-seat-confirm"
+                    onClick={onStrike}
+                  >
+                    Strike the seat
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                data-testid="strike-seat"
+                onClick={() => setStrikeArmedFor(player.id)}
+                className="flex min-h-12 w-full items-center gap-3 text-left focus-visible:outline-none"
+              >
+                <UserRoundX
+                  size={17}
+                  aria-hidden
+                  className="shrink-0 text-hazard"
+                />
+                <span className="min-w-0 flex-1">
+                  <b className="block text-sm text-hazard">
+                    Strike from the round
+                  </b>
+                  <span className="block text-[11px] text-muted-foreground">
+                    For a duplicate join or a wrong number
+                  </span>
+                </span>
+              </button>
+            )
           ) : null}
 
           <SheetClose asChild>
