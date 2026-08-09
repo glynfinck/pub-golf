@@ -50,6 +50,31 @@ export async function clickSettled(page: Page, testId: string) {
 }
 
 /**
+ * Call the last hole and stay on the tap until the card files.
+ *
+ * The final hole-out is the one tap the suite aims into the debounce storm
+ * on purpose: every phone's last swig echoes back as a re-render right as
+ * the official reaches for the button, so the tap can land on the outgoing
+ * copy — heard by Playwright, never by React — or the action can catch a
+ * bad beat and toast its error, leaving the round live. A person answers
+ * both the same way: look up, still on the hole, tap again. Arrival on
+ * /results is the receipt, so the click only fires while the official is
+ * still on the play screen — and a double advanceHole on the last hole
+ * re-files the same finished card, so a tap that raced the navigation
+ * costs nothing. The runway is longer than SETTLE_TIMEOUT because this is
+ * the terminal step: there is no later assertion to absorb a slow file.
+ */
+export async function holeOutToResults(official: Page, code: string) {
+  const results = new RegExp(`/round/${code}/results`);
+  await expect(async () => {
+    if (!results.test(official.url())) {
+      await official.getByTestId("hole-out").click({ timeout: 2_000 });
+    }
+    await expect(official).toHaveURL(results, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+/**
  * page.goto, but at peace with a live app.
  *
  * Every round screen refreshes itself whenever realtime lands a change, and

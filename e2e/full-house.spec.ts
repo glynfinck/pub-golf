@@ -8,7 +8,12 @@ import {
 
 import { signInAs } from "./auth";
 import { drink } from "./drink";
-import { clickSettled, expectSettled, gotoSettled } from "./nav";
+import {
+  clickSettled,
+  expectSettled,
+  gotoSettled,
+  holeOutToResults,
+} from "./nav";
 import { leaveSeats, standOnTheHole, tableDrinks, takeSeats } from "./seats";
 import type { Seat } from "./seats";
 
@@ -258,9 +263,9 @@ test("a full house: twenty seats, three phones watching, one card", async ({
       tableDrinks(crowd, 2, (seat) => (seat.name === "Rue" ? 1 : 3)),
     ]);
 
-    await clickSettled(host, "hole-out");
+    await holeOutToResults(host, code);
     await Promise.all(
-      [host, ana.page, bram.page].map((page) =>
+      [ana.page, bram.page].map((page) =>
         page.waitForURL(new RegExp(`/round/${code}/results`)),
       ),
     );

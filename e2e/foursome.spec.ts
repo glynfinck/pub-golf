@@ -8,7 +8,7 @@ import {
 
 import { signInAs } from "./auth";
 import { drink } from "./drink";
-import { clickSettled, gotoSettled } from "./nav";
+import { clickSettled, gotoSettled, holeOutToResults } from "./nav";
 
 /**
  * The multiplayer suite: more phones than round-flow's pair, all live on the
@@ -191,9 +191,9 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
     drink(cleo, 1),
   ]);
 
-  await clickSettled(host, "hole-out");
+  await holeOutToResults(host, code);
   await Promise.all(
-    [host, ana, bram, cleo].map((page) =>
+    [ana, bram, cleo].map((page) =>
       page.waitForURL(new RegExp(`/round/${code}/results`)),
     ),
   );
