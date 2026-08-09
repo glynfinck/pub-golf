@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 
 import { signInAs } from "./auth";
+import { drink } from "./drink";
 import { clickSettled, gotoSettled } from "./nav";
 
 /**
@@ -39,16 +40,6 @@ async function joinAsGuest(
   return { context, page };
 }
 
-/** Tap +1 SWIG `count` times on one phone. */
-async function drink(page: Page, count: number) {
-  for (let sip = 0; sip < count; sip += 1) {
-    await page.getByTestId("swig-plus").click();
-  }
-  if (count > 0) {
-    await expect(page.getByTestId("swig-count")).toHaveText(String(count));
-  }
-}
-
 test("a foursome: stampede join, four thumbs on one hole, ties and the substitute", async ({
   browser,
 }) => {
@@ -66,22 +57,43 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
   const host = await hostContext.newPage();
 
   await host.goto("/courses/new");
+  // The builder is a controlled form: a fill that lands before React
+  // hydrates is silently wiped when the inputs are taken over — the name
+  // empties, the save button stays disabled for want of it, and the click
+  // waits out the whole budget. The Add button is the one control that
+  // answers back, so fill and listen for the answer as one retried block.
+  // full-house learned this first; this is the same guard.
+  const pubField = host.getByLabel(/add a pub by name/i);
+  const addPub = host.getByRole("button", { name: /add the named pub/i });
+  await expect(async () => {
+    await pubField.fill("The First Leg");
+    await expect(addPub).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+
+  // Hydration proven — every fill from here sticks.
   await host.getByLabel(/course name/i).fill(`Foursome Crawl ${stamp}`);
-  await host.getByLabel(/add a pub by name/i).fill("The First Leg");
-  await host.getByRole("button", { name: /add the named pub/i }).click();
-  await host.getByLabel(/add a pub by name/i).fill("The Last Orders");
-  await host.getByRole("button", { name: /add the named pub/i }).click();
+  await addPub.click();
+  await pubField.fill("The Last Orders");
+  await addPub.click();
   await host.getByRole("button", { name: /save the course · 2 holes/i }).click();
   await host.waitForURL(/\/courses$/);
 
   await host.goto("/new");
+  // Same controlled-form rule: pick the course first and let the create
+  // button's label answer — it only names the course once live React has
+  // registered the selection — then fill the round name on a page that has
+  // proven itself hydrated.
+  const createRound = host.getByRole("button", {
+    name: /create round · 2 holes on foursome crawl/i,
+  });
+  await expect(async () => {
+    await host
+      .getByRole("button", { name: new RegExp(`Foursome Crawl ${stamp}`) })
+      .click();
+    await expect(createRound).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
   await host.getByLabel(/round name/i).fill(`Foursome Open ${stamp}`);
-  await host
-    .getByRole("button", { name: new RegExp(`Foursome Crawl ${stamp}`) })
-    .click();
-  await host
-    .getByRole("button", { name: /create round · 2 holes on foursome crawl/i })
-    .click();
+  await createRound.click();
   await host.waitForURL(/\/round\/[A-Z2-9]{6}$/);
   const code = host.url().split("/").pop()!;
 
