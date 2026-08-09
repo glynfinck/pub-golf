@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { FrontDoor } from "@/components/auth/front-door";
+import { Landing } from "@/components/landing";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
+import { APP_NAME } from "@/lib/config";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
 import { greeting } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -28,19 +29,33 @@ function houseHour(): number {
   );
 }
 
+/**
+ * The root route's own description, overriding the tagline the layout sets
+ * for every other page. "Nine pubs. Par 36. Lowest swigs wins." is a slogan,
+ * and this is the one URL where a reader (or a verifier) has not yet been
+ * told what the thing does.
+ */
+export const metadata = {
+  description:
+    `${APP_NAME} is a free scorecard app for pub golf: build a course of ` +
+    "pubs, share a six-character code, and every phone at the table keeps " +
+    "the same live card.",
+};
+
 export default async function ClubhousePage() {
   // One wait, not two — the pause on a tab switch is these round trips.
   const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
 
-  // A signed-out visitor gets the front door, not a bounce to /signin.
-  // Google's verifier grades the home page itself — the name, the purpose
-  // in prose and the privacy link have to answer at this URL — and it
-  // failed the redirect that used to be here. The layout hides the tab bar
-  // on the same condition, so the door stands alone.
+  // A signed-out visitor gets the landing page, not a bounce to /signin and
+  // not the sign-in screen wearing a paragraph. Google's brand verification
+  // grades this URL, and it rejected both of those in turn: the redirect for
+  // hiding the name and the privacy link, then the sign-in screen for still
+  // not explaining what the app does. The layout hides the tab bar on the
+  // same condition, so the page stands on its own.
   if (!profile) {
     return (
-      <Screen className="justify-center gap-5">
-        <FrontDoor />
+      <Screen className="gap-6">
+        <Landing />
       </Screen>
     );
   }
