@@ -79,7 +79,7 @@ branches on environment.
 
 ## Integration state
 
-The foundation is in: the `entitlements` table (`20260819000000` —
+The foundation is in: the `entitlements` table (`20260821000000` —
 additive; webhook-only writes, member-readable so premium features render
 for the whole table, idempotency schema-level), `lib/billing.ts` (pure,
 unit-tested), `startGreenFeeCheckout` in `lib/actions/billing.ts`
