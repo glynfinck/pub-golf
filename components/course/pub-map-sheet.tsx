@@ -31,7 +31,7 @@ import {
   type Bounds,
   type LatLng,
 } from "@/lib/geo";
-import { mapIdForTheme, MAPS_BROWSER_KEY } from "@/lib/maps";
+import { MAP_STYLE_IDS, mapIdForTheme, MAPS_BROWSER_KEY } from "@/lib/maps";
 import { fetchIpBias, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
@@ -547,6 +547,12 @@ function PubMapBody({
             <p className="text-[11px] text-muted-foreground">
               Pub search needs a Google Places key on the server — the map
               can look, but only add-by-name can build.
+            </p>
+          ) : null}
+          {!MAP_STYLE_IDS.cream && !MAP_STYLE_IDS.midnight ? (
+            <p className="text-[11px] text-muted-foreground">
+              This build carries no map style IDs — the map wears
+              Google&apos;s stock look until they reach the deploy.
             </p>
           ) : null}
         </div>
