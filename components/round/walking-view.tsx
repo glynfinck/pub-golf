@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { Screen } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
@@ -50,7 +51,15 @@ function WalkCountdown({ deadline }: { deadline: Date }) {
 /** The phase between holes: where next, how far, what's the drink. */
 export function WalkingView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, me } = bundle;
-  useLiveRound(round.id);
+  const router = useRouter();
+  // The card is filed the moment the caddy calls the last hole, and
+  // this screen is the one that has to stop being on screen. Going on
+  // the event rather than waiting for the play route's server redirect
+  // to survive a refresh is what keeps a player off a hole nobody is
+  // playing any more.
+  useLiveRound(round.id, {
+    onRoundFinished: () => router.replace(`/round/${round.code}/results`),
+  });
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const { run, pending, busy } = useAction();
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Flag, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -38,7 +39,15 @@ import { cn } from "@/lib/utils";
 
 export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const { round, holes, players, scores, penalties, me } = bundle;
-  useLiveRound(round.id);
+  const router = useRouter();
+  // The card is filed the moment the caddy calls the last hole, and
+  // this screen is the one that has to stop being on screen. Going on
+  // the event rather than waiting for the play route's server redirect
+  // to survive a refresh is what keeps a player off a hole nobody is
+  // playing any more.
+  useLiveRound(round.id, {
+    onRoundFinished: () => router.replace(`/round/${round.code}/results`),
+  });
   const { present, synced } = usePresence(round.id, me?.id ?? null);
   const { run, pending, busy } = useAction();
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
