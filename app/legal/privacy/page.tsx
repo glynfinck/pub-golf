@@ -32,7 +32,7 @@ export default function PrivacyPage() {
 
       <Section heading="If you join as a guest">
         <p>
-          Joining a round needs a code and a name — no account, no email, no
+          Joining a round needs a code and a name: no account, no email, no
           password. You get an anonymous session so the database can tell your
           card from everyone else&apos;s.
         </p>
@@ -57,7 +57,7 @@ export default function PrivacyPage() {
           Google also returns your email address, and our authentication
           database holds it because that is where a Google sign-in puts it.
           Nothing in the app reads it, and{" "}
-          <b>{APP_NAME} never sends email</b> — there is no mailing list, no
+          <b>{APP_NAME} never sends email</b>. There is no mailing list, no
           notification, no password reset, and no mail server configured at
           all. If that ever changes, this page changes first.
         </p>
@@ -80,7 +80,7 @@ export default function PrivacyPage() {
         <p>
           Searching for a pub sends your search text to the Google Places API
           from our server. To aim that search at the right city, we read the
-          approximate location your network gives away — city-level, from the
+          approximate location your network gives away: city-level, from the
           request headers, never stored.
         </p>
         <p>
@@ -124,7 +124,7 @@ export default function PrivacyPage() {
         <p>
           Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and it
           will be done. That is a person answering rather than a button, and{" "}
-          <b>a self-serve control is on the way</b> — until it lands, this is
+          <b>a self-serve control is on the way</b>. Until it lands, this is
           the honest description of the route.
         </p>
         <p>
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
       <Section heading="Changes">
         <p>
           If this page changes, the date at the top changes with it. There is
-          no archive — it is a page in a repository, and its history is the
+          no archive; it is a page in a repository, and its history is the
           repository&apos;s.
         </p>
       </Section>

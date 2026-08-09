@@ -57,7 +57,7 @@ export default function GlobalError({
           </h1>
           <p style={{ margin: "0.5rem 0 0", fontSize: "0.875rem", color: "#5a5f4e" }}>
             Something failed before the page could be laid out. Your card is
-            safe — every score lives on the server, not this screen.
+            safe; every score lives on the server, not this screen.
           </p>
           {error.digest ? (
             <p

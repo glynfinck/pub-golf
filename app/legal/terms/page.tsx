@@ -38,7 +38,7 @@ export default function TermsPage() {
       <Section heading="Drink is your call, not the app's">
         <p>
           The scorecard counts swigs. It has no idea what is in the glass and
-          it never asks — <b>any hole can be played with a soft drink and the
+          it never asks. <b>Any hole can be played with a soft drink and the
           card cannot tell the difference</b>. Whoever is holding the phone
           does not decide what you drink.
         </p>
@@ -73,7 +73,7 @@ export default function TermsPage() {
           The app suggests a forfeit for whoever comes last, and the round can
           carry any local rules a group invents. None of it is enforceable by
           anyone, least of all us. <b>A card is a bit of fun, not a
-          contract</b> — and no rule agreed at a first tee makes anybody do
+          contract</b>, and no rule agreed at a first tee makes anybody do
           something unsafe, illegal or humiliating.
         </p>
       </Section>
@@ -97,7 +97,7 @@ export default function TermsPage() {
           {APP_NAME} is provided as-is. It may be unavailable, it may lose a
           score, and it may change or disappear without notice. To the extent
           the law allows, there is no warranty and no liability for anything
-          that follows from using it — a hobby project cannot underwrite your
+          that follows from using it; a hobby project cannot underwrite your
           evening.
         </p>
         <p>

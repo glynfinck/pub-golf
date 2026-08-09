@@ -179,7 +179,7 @@ export function RulesSheet({
               here rather than behind a legal link because this is the sheet
               a player actually opens, mid-round, in a pub. */}
           <p className="mt-3 border-t border-border pt-3 text-center text-[11px] text-muted-foreground">
-            Any hole plays just as well with a soft drink — the card
+            Any hole plays just as well with a soft drink; the card
             can&apos;t tell. Know your limits, and sort out how everyone gets
             home.
           </p>

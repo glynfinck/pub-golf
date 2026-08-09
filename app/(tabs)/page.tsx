@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { FrontDoor } from "@/components/auth/front-door";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -31,7 +31,19 @@ function houseHour(): number {
 export default async function ClubhousePage() {
   // One wait, not two — the pause on a tab switch is these round trips.
   const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
-  if (!profile) redirect("/signin");
+
+  // A signed-out visitor gets the front door, not a bounce to /signin.
+  // Google's verifier grades the home page itself — the name, the purpose
+  // in prose and the privacy link have to answer at this URL — and it
+  // failed the redirect that used to be here. The layout hides the tab bar
+  // on the same condition, so the door stands alone.
+  if (!profile) {
+    return (
+      <Screen className="justify-center gap-5">
+        <FrontDoor />
+      </Screen>
+    );
+  }
 
   const active = rounds.find((round) => round.status !== "finished");
   const past = rounds.filter((round) => round.status === "finished");

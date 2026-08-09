@@ -193,6 +193,15 @@ verification, a few business days. Everything else applies immediately, and
 none of it blocks publishing — set the rest now if you want a clean screen
 this week.
 
+Brand verification audits the home page itself. The first pass failed on
+exactly this: `/` used to 307 a signed-out visitor to `/signin`, so the name,
+the purpose and the privacy link were nowhere the reviewer looked. Since the
+front-door change, `/` answers signed out with all three at the URL the
+consent screen advertises — `components/auth/front-door.tsx` is one source
+for `/` and `/signin`, so the promise cannot quietly fork. The remaining
+verification item is domain ownership: Search Console, DNS TXT via Vercel,
+from the Google account that owns the Cloud project.
+
 #### Publishing it
 
 **While the consent screen is in *Testing*, only accounts on its test-user

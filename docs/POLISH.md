@@ -335,6 +335,14 @@ without the legal URLs from step 3.
    DEPLOYMENT.md § 3 has the derivation and the exact knob.
 4. ✅ DEPLOYMENT.md § 2/3/4 updated ahead of the work — branding table,
    publishing, the custom-domain procedure and its three side effects.
+5. ✅ **The front door.** Google's first verification pass failed the home
+   page: `/` was a 307 to a sign-in wall, so the name, the purpose and the
+   privacy link were nowhere a reviewer could see them. `/` now renders the
+   shared `FrontDoor` for a signed-out visitor (`components/auth/front-door.tsx`,
+   one source with `/signin` on purpose), the tabs layout hides the tab bar
+   without a session, and `/signin` keeps the `next` deep link and the error
+   line. Still Google's side: Search Console domain verification, from the
+   account that owns the Cloud project.
 
 ### Wave 3 — product debt
 

@@ -22,7 +22,7 @@ export default function NotFound() {
         </h1>
         <p className="mx-auto mt-2 max-w-[36ch] text-sm text-muted-foreground">
           That link doesn&apos;t lead anywhere we know. If you were handed a
-          round, the code is six characters — try it below.
+          round, the code is six characters; try it below.
         </p>
       </div>
       <div className="mx-auto mt-4 flex w-full max-w-60 flex-col gap-3">
