@@ -26,6 +26,16 @@ export const PLACES_FIELD_MASK =
 const IP_TEXT_RADIUS_M = 5_000;
 const IP_NEARBY_RADIUS_M = 3_000;
 
+/** The player's city as Vercel's edge saw it — the default aim for a search
+ * that carries no viewport. Absent locally and on other hosts, and that is
+ * fine: the request just goes out unaimed, as every request did before. */
+export function ipBiasFrom(headers: Headers): LatLng | null {
+  const lat = Number.parseFloat(headers.get("x-vercel-ip-latitude") ?? "");
+  const lng = Number.parseFloat(headers.get("x-vercel-ip-longitude") ?? "");
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 /** A viewport off the wire: numbers in range, north above south, or null. */
 export function parseBounds(value: unknown): Bounds | null {
   if (typeof value !== "object" || value === null) return null;
@@ -122,6 +132,19 @@ export function buildPlacesSearch({
       },
     },
   };
+}
+
+/** Where the server would aim an unaimed search — fetched ahead of any
+ * search so the map sheet opens on the player's city rather than showing
+ * the whole world for the beat the first search takes. */
+export async function fetchIpBias(): Promise<LatLng | null> {
+  try {
+    const response = await fetch("/api/geo");
+    const data = (await response.json()) as { bias?: LatLng | null };
+    return data.bias ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** The one way the browser asks for pubs — the list and the map share it. */

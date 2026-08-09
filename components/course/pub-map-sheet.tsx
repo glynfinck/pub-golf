@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   boundsAround,
   estimateWalkMinutes,
@@ -29,7 +30,7 @@ import {
   type LatLng,
 } from "@/lib/geo";
 import { mapIdForTheme, MAPS_BROWSER_KEY } from "@/lib/maps";
-import { searchPubs } from "@/lib/pub-search";
+import { fetchIpBias, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
 
@@ -59,6 +60,21 @@ export function PubMapSheet({
   holes: DraftHole[];
   onAdd: (pub: FoundPub) => void;
 }) {
+  // The player's city, prefetched while the course is still being typed:
+  // just the request's geo headers echoed back, nothing spent. The sheet
+  // then opens already framed on the right city instead of showing the
+  // whole world for the beat the first search takes.
+  const [homeBias, setHomeBias] = useState<LatLng | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchIpBias().then((found) => {
+      if (!cancelled && found) setHomeBias(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/* The height must ride the same data-[side=bottom] variant the sheet
@@ -79,6 +95,7 @@ export function PubMapSheet({
           initialQuery={initialQuery}
           holes={holes}
           onAdd={onAdd}
+          homeBias={homeBias}
         />
       </SheetContent>
     </Sheet>
@@ -90,10 +107,13 @@ function PubMapBody({
   initialQuery,
   holes,
   onAdd,
+  homeBias,
 }: {
   initialQuery: string;
   holes: DraftHole[];
   onAdd: (pub: FoundPub) => void;
+  /** The player's IP city, when the builder had it ready before open. */
+  homeBias: LatLng | null;
 }) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
@@ -342,7 +362,9 @@ function PubMapBody({
             },
             zoom: 14,
           }
-        : WORLD;
+        : homeBias
+          ? { center: homeBias, zoom: 13 }
+          : WORLD;
 
   return (
     <APIProvider apiKey={MAPS_BROWSER_KEY} onError={() => setMapsFailed(true)}>
@@ -476,6 +498,24 @@ function PubMapBody({
           ) : null}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          {searching && results.length === 0 ? (
+            // Result-shaped placeholders: the list says where the pubs will
+            // land, rather than a spinner saying only "wait".
+            <div aria-hidden>
+              {[0, 1, 2].map((row) => (
+                <div
+                  key={row}
+                  className="flex min-h-13 items-center gap-2.5 border-b border-dotted border-border py-1.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <Skeleton className="mb-1.5 h-4 w-2/5" />
+                    <Skeleton className="h-3 w-3/4" />
+                  </div>
+                  <Skeleton className="h-10 w-19 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : null}
           {results.length === 0 && !searching && !degraded ? (
             <p className="pt-2 text-[11px] text-muted-foreground">
               No pubs on this patch — pan the map and search again, widen

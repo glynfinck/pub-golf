@@ -1,7 +1,7 @@
-import { type LatLng } from "@/lib/geo";
 import { primaryLanguage } from "@/lib/locale";
 import {
   buildPlacesSearch,
+  ipBiasFrom,
   parseBounds,
   PLACES_FIELD_MASK,
 } from "@/lib/pub-search";
@@ -14,16 +14,6 @@ interface GooglePlace {
   location?: { latitude?: number; longitude?: number };
   rating?: number;
   userRatingCount?: number;
-}
-
-/** The player's city as Vercel's edge saw it — the default aim for a search
- * that carries no viewport. Absent locally and on other hosts, and that is
- * fine: the request just goes out unaimed, as every request did before. */
-function ipBiasFrom(headers: Headers): LatLng | null {
-  const lat = Number.parseFloat(headers.get("x-vercel-ip-latitude") ?? "");
-  const lng = Number.parseFloat(headers.get("x-vercel-ip-longitude") ?? "");
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng };
 }
 
 /**
