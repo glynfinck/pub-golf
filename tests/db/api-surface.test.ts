@@ -1,59 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { adminClient, anonymousGuest, signedInUser, visitor } from "../support/clients";
+import { adminClient } from "../support/clients";
 
 /**
- * The API surface, asserted rather than assumed.
+ * Guards `20260819000000_api_surface_hardening`, and only the half of it this
+ * tier can honestly hold down.
  *
- * `20260819000000_api_surface_hardening` revoked EXECUTE on four trigger
- * functions PostgREST was exposing as RPCs. The revoke is four lines and
- * exactly the kind of thing a later migration re-grants by accident — a broad
- * `grant execute on all functions in schema public` would do it silently — so
- * the guard lives here rather than in a comment.
+ * The migration does two things. The revoke is least privilege on four
+ * trigger functions, and there is deliberately **no test for it here**: all
+ * four return `trigger`, PostgREST keeps trigger functions out of its schema
+ * cache entirely, so an "is it callable over the API?" case passes identically
+ * before and after the migration. A test that cannot fail is worse than no
+ * test — it reads as cover. The grant itself was checked with
+ * `has_function_privilege` against Postgres directly when the migration was
+ * written; asserting it from this tier would mean a raw Postgres connection
+ * the db suite deliberately does not carry.
  *
- * A function the caller may not execute is not in that role's schema cache,
- * so PostgREST answers 404. Any error is the pass; a clean response is the
- * regression.
+ * The `search_path` change is the half that can genuinely regress, and it
+ * fails at call time rather than at migration time: an unqualified name that
+ * used to resolve now raises, and the first symptom is creating a round
+ * 500ing. So call it.
  */
-const TRIGGER_FUNCTIONS = [
-  "guard_score_hole_window",
-  "guard_score_mulligans",
-  "handle_new_user",
-  "rls_auto_enable",
-] as const;
-
-describe("trigger functions are not callable as RPCs", () => {
-  for (const fn of TRIGGER_FUNCTIONS) {
-    it(`${fn} is unreachable by a signed-in user`, async () => {
-      const host = await signedInUser("Surface Host");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (host.db.rpc as any)(fn);
-      expect(error).not.toBeNull();
-    });
-
-    it(`${fn} is unreachable by a guest`, async () => {
-      const guest = await anonymousGuest("Surface Guest");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (guest.db.rpc as any)(fn);
-      expect(error).not.toBeNull();
-    });
-
-    it(`${fn} is unreachable signed out`, async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (visitor().rpc as any)(fn);
-      expect(error).not.toBeNull();
-    });
-  }
-});
-
-describe("generate_round_code still mints codes", () => {
-  /**
-   * `set search_path = ''` fails at call time, not at migration time: an
-   * unqualified name that used to resolve now raises, and the first symptom
-   * would be creating a round 500ing. So call it, and hold it to the shape it
-   * promises — six characters from an alphabet with no 0/O/1/I in it, because
-   * the code gets read aloud in a pub.
-   */
+describe("generate_round_code survives its fixed search_path", () => {
   it("returns a six-character code from the unambiguous alphabet", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (adminClient().rpc as any)(
@@ -61,10 +29,11 @@ describe("generate_round_code still mints codes", () => {
     );
 
     expect(error).toBeNull();
+    // No 0/O/1/I: the code gets read aloud across a pub table.
     expect(data).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
   });
 
-  it("does not repeat itself across a handful of calls", async () => {
+  it("keeps minting distinct codes under concurrency", async () => {
     const admin = adminClient();
     const codes = await Promise.all(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,5 +43,21 @@ describe("generate_round_code still mints codes", () => {
     const values = codes.map(({ data }) => data as string | null);
     expect(values.every((code) => typeof code === "string")).toBe(true);
     expect(new Set(values).size).toBe(values.length);
+  });
+
+  it("still resolves the uniqueness lookup against public.rounds", async () => {
+    /**
+     * The loop's exit condition selects from `public.rounds`. With
+     * `search_path = ''` an unqualified `rounds` there would raise 42P01 —
+     * this asserts the qualified name survived the rewrite, by proving the
+     * function completes rather than by reading its body.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (adminClient().rpc as any)(
+      "generate_round_code",
+    );
+
+    expect(error).toBeNull();
+    expect(typeof data).toBe("string");
   });
 });
