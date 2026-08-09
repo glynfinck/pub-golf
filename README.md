@@ -134,6 +134,12 @@ written and unit-tested.
 The row is written before GitHub is called, which is what makes five
 reports a day a number Postgres enforces rather than a number a serverless
 function hopes for, and what keeps a report when GitHub is unreachable.
+Staging carries the token too, so the GitHub half is exercised before it
+reaches players. Those issues are real but never anonymous about it: any
+deployment Vercel does not call `production` files under a `[preview]`
+title with "Not production — safe to close or delete" as the first line of
+the body, so `is:issue "[preview]"` sweeps a testing session up in one go.
+
 Without `GITHUB_ISSUE_TOKEN` the feature still takes reports — they simply
 stay on the table until somebody reads them:
 

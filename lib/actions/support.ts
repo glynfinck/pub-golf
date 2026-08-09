@@ -13,8 +13,10 @@ import {
   issuePayload,
   parseIssueRepo,
   redactRoundCodes,
+  stageTag,
   type BugArea,
   type BugContext,
+  type IssueDraft,
 } from "@/lib/bug-report";
 import { BUILD_REF } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
@@ -134,6 +136,10 @@ export async function reportBug(
     body: report.body,
     context,
     filedAt: row.created_at,
+    // Staging files real issues on purpose — it is the only way to exercise
+    // this path — so it says which deployment it came from and does not have
+    // to be remembered as a test.
+    stage: stageTag(process.env.VERCEL_ENV),
   });
   if (!issue) return { issueUrl: null, issueNumber: null };
 
@@ -153,13 +159,9 @@ export async function reportBug(
  * tracker, a bad token, a repo that has gone away — because none of them are
  * the player's problem and all of them leave the report safely on its row.
  */
-async function fileIssue(draft: {
-  reportId: string;
-  area: BugArea;
-  body: string;
-  context: BugContext;
-  filedAt: string;
-}): Promise<{ number: number; url: string } | null> {
+async function fileIssue(
+  draft: IssueDraft,
+): Promise<{ number: number; url: string } | null> {
   const token = process.env.GITHUB_ISSUE_TOKEN;
   if (!bugTrackerEnabled(token)) return null;
 

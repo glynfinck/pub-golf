@@ -182,6 +182,26 @@ function firstLine(text: string, max = 72): string {
   return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
 }
 
+/**
+ * Which deployment filed this, when it was not production.
+ *
+ * Staging exists to be exercised, so preview deploys do file real issues —
+ * but an issue from staging that reads exactly like an issue from a real
+ * player is a tracker you cannot trust, and "I'll delete the test ones
+ * afterwards" only works if you can tell which those were. Vercel sets
+ * `VERCEL_ENV` on every deployment; anything that is not `production` says
+ * so in the title.
+ *
+ * An absent value reads as `local` rather than as production: a marked
+ * production issue is a cosmetic annoyance, an unmarked staging issue is the
+ * thing being prevented, so the doubt goes that way on purpose.
+ */
+export function stageTag(vercelEnv: string | undefined): string | null {
+  const stage = vercelEnv?.trim().toLowerCase();
+  if (stage === "production") return null;
+  return stage || "local";
+}
+
 export interface IssueDraft {
   reportId: string;
   area: BugArea;
@@ -190,19 +210,30 @@ export interface IssueDraft {
   /** ISO timestamp. Passed in, never read from the clock — same rule as the
    * countdown maths in `lib/time.ts`. */
   filedAt: string;
+  /** `stageTag()`'s answer. Null is production and wears no marker. */
+  stage: string | null;
 }
 
 /**
  * `Scoring — the swigs went back to zero`. The area leads because a tracker
  * is read down its left edge, and the player's own first line follows because
  * nothing summarises a bug like the sentence they reached for.
+ *
+ * A non-production deploy leads with its own name instead, so a test report
+ * is obvious in the list it is about to be deleted from.
  */
-export function issueTitle(draft: Pick<IssueDraft, "area" | "body" | "context">): string {
+export function issueTitle(
+  draft: Pick<IssueDraft, "area" | "body" | "context" | "stage">,
+): string {
   const said = firstLine(
     redactRoundCodes(neutralise(draft.body), draft.context.roundCode),
+    draft.stage ? 72 - draft.stage.length - 3 : 72,
   );
   const area = areaLabel(draft.area);
-  return said ? `${area} — ${said}` : `${area} — reported from the app`;
+  const marker = draft.stage ? `[${draft.stage}] ` : "";
+  return said
+    ? `${marker}${area} — ${said}`
+    : `${marker}${area} — reported from the app`;
 }
 
 /** Table cells hold inline code; a backtick or a pipe in there breaks the row. */
@@ -252,8 +283,12 @@ export function issueBody(draft: IssueDraft): string {
   rows.push(["Device", context.device ? cell(context.device) : "—"]);
   rows.push(["Locale", context.locale ? cell(context.locale) : "—"]);
   rows.push(["Filed", cell(draft.filedAt)]);
+  if (draft.stage) rows.push(["Deployment", cell(draft.stage)]);
 
   return [
+    draft.stage
+      ? `> **Not production.** Filed from the \`${draft.stage}\` deployment — a test report, safe to close or delete.\n`
+      : null,
     `**${areaLabel(draft.area)}**, reported from inside the app.`,
     "",
     "```text",
@@ -267,7 +302,9 @@ export function issueBody(draft: IssueDraft): string {
     `<sub>Report \`${draft.reportId}\` · filed through Pub Golf's report screen.`,
     "The reporter and their round are recorded privately in `bug_reports`;",
     "nothing on this issue identifies either.</sub>",
-  ].join("\n");
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
 }
 
 /** The whole POST body for GitHub's create-an-issue endpoint. */
