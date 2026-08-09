@@ -25,14 +25,16 @@ is this Next version's middleware convention (see the `home` sibling repo).
   snapshotted into `holes` at round creation.
 - The builder's map (`components/course/pub-map-sheet.tsx`) is a
   cloud-styled **Google** vector map on purpose: Google's terms put Places
-  results on a Google basemap only, so the theming lives in two
-  console-authored styles (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM` /
-  `_MIDNIGHT`, riding `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — a browser key,
-  never the server's Places key) and the house draws its own pins. The
-  style masters are vendored in `docs/map-styles/` (Google's stylesheet
-  JSON, every taxonomy feature pinned so no default — blue in the dark
-  variant — bleeds through); re-import them via Map styles → Create
-  style → JSON if the console copies are ever lost. The
+  results on a Google basemap only, so the theming lives in one
+  console-authored map ID (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`, riding
+  `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — a browser key, never the server's
+  Places key) that holds a cream style in its light slot and Midnight in
+  its dark slot; `colorScheme` selects the variant, and the house draws
+  its own pins. The style masters are vendored in `docs/map-styles/`
+  (Google's stylesheet JSON, every taxonomy feature pinned so no default —
+  blue in the dark variant — bleeds through); re-import them via Map
+  styles → Create style → JSON if the console copies are ever lost. The
+  legacy `_CREAM`/`_MIDNIGHT` env names are still read as fallbacks. The
   search route aims every query — viewport bounds when the map framed one,
   else the player's IP city off Vercel's geo headers, never the data
   centre's. Request shaping is pure and unit-tested in `lib/pub-search.ts`;

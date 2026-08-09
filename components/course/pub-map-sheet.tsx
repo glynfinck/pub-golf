@@ -31,7 +31,7 @@ import {
   type Bounds,
   type LatLng,
 } from "@/lib/geo";
-import { MAP_STYLE_IDS, mapIdForTheme, MAPS_BROWSER_KEY } from "@/lib/maps";
+import { MAP_STYLE_ID, mapId, MAPS_BROWSER_KEY } from "@/lib/maps";
 import { fetchIpBias, searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
@@ -415,12 +415,11 @@ function PubMapBody({
         ) : (
           <Map
             key={dark ? "midnight" : "cream"}
-            mapId={mapIdForTheme(resolvedTheme)}
-            // The scheme is the selector: a map ID carries a style per
+            mapId={mapId()}
+            // The scheme is the selector: the map ID carries a style per
             // background (light and dark slots), and colorScheme picks
-            // which one renders. One dual-style map ID in both env vars
-            // flips cream/Midnight on this alone; the unstyled fallback
-            // follows the app theme by the same switch.
+            // which one renders — cream by day, Midnight after dark. The
+            // unstyled fallback follows the app theme by the same switch.
             colorScheme={dark ? ColorScheme.DARK : ColorScheme.LIGHT}
             {...("bounds" in frame
               ? { defaultBounds: { ...frame.bounds, padding: 64 } }
@@ -554,10 +553,10 @@ function PubMapBody({
               can look, but only add-by-name can build.
             </p>
           ) : null}
-          {!MAP_STYLE_IDS.cream && !MAP_STYLE_IDS.midnight ? (
+          {!MAP_STYLE_ID ? (
             <p className="text-[11px] text-muted-foreground">
-              This build carries no map style IDs — the map wears
-              Google&apos;s stock look until they reach the deploy.
+              This build carries no map style ID — the map wears
+              Google&apos;s stock look until it reaches the deploy.
             </p>
           ) : null}
         </div>

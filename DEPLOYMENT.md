@@ -206,12 +206,15 @@ throwaway database are a feature.
 it makes every staging page advertise production URLs for `metadataBase` and
 its Open Graph images.
 
-`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` plus
-`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM`/`_MIDNIGHT` power the course
-builder's map sheet. All three are optional: without the key the builder
-stays list-only, and without the map IDs the sheet falls back to Google's
-stock styling. The browser key is **not** the server's Places key — it is
-referrer-restricted to the app's domains, where the server key must not be.
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` plus `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`
+power the course builder's map sheet — the one map ID holds the cream
+style in its light slot and Midnight in its dark slot, with the map's
+colorScheme selecting the variant (the legacy `_CREAM`/`_MIDNIGHT` names
+are still read as fallbacks). Both are optional: without the key the
+builder stays list-only, and without the map ID the sheet falls back to
+Google's stock styling. The browser key is **not** the server's Places
+key — it is referrer-restricted to the app's domains, where the server
+key must not be.
 
 ### 5. Domains
 
