@@ -3,13 +3,16 @@ import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ProfileForm } from "@/components/profile-form";
 import { BUILD_REF } from "@/lib/config";
+import { signInPath } from "@/lib/auth-paths";
 import { getProfile } from "@/lib/data/rounds";
 
 export const metadata = { title: "Profile" };
 
 export default async function ProfilePage() {
   const profile = await getProfile();
-  if (!profile) redirect("/signin");
+  // Carry the destination: signing in from a deep link should land back
+  // on it, not dump the visitor at the clubhouse.
+  if (!profile) redirect(signInPath("/profile"));
 
   return (
     <Screen withTabBar>
