@@ -23,6 +23,17 @@ is this Next version's middleware convention (see the `home` sibling repo).
 - `lib/course-templates.ts` holds the Invitational fixture (the printed
   scorecard); user-built courses live in `courses`/`course_holes` and are
   snapshotted into `holes` at round creation.
+- The builder's map (`components/course/pub-map-sheet.tsx`) is a
+  cloud-styled **Google** vector map on purpose: Google's terms put Places
+  results on a Google basemap only, so the theming lives in two
+  console-authored styles (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM` /
+  `_MIDNIGHT`, riding `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — a browser key,
+  never the server's Places key) and the house draws its own pins. The
+  search route aims every query — viewport bounds when the map framed one,
+  else the player's IP city off Vercel's geo headers, never the data
+  centre's. Request shaping is pure and unit-tested in `lib/pub-search.ts`;
+  with no browser key the builder is list-only and nothing Google reaches
+  the page.
 - The react-hooks lint rules are strict (purity, no setState in effect
   body) — no `Date.now()` in render; `hooks/use-countdown.ts` is the
   sanctioned timer pattern (rAF before setInterval, null-initial state).

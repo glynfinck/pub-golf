@@ -206,8 +206,12 @@ throwaway database are a feature.
 it makes every staging page advertise production URLs for `metadataBase` and
 its Open Graph images.
 
-`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` are
-optional placeholders; no code reads either one yet.
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` plus
+`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM`/`_MIDNIGHT` power the course
+builder's map sheet. All three are optional: without the key the builder
+stays list-only, and without the map IDs the sheet falls back to Google's
+stock styling. The browser key is **not** the server's Places key — it is
+referrer-restricted to the app's domains, where the server key must not be.
 
 ### 5. Domains
 

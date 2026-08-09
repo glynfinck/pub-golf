@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Plus, Search } from "lucide-react";
+import { Check, Map as MapIcon, Plus, Search } from "lucide-react";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { searchPubs } from "@/lib/pub-search";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/types/supabase-helpers";
 
@@ -25,9 +26,13 @@ export interface FoundPub {
 export function PlaceSearch({
   onAdd,
   nextHoleNumber,
+  onOpenMap,
 }: {
   onAdd: (pub: FoundPub) => void;
   nextHoleNumber: number;
+  /** Opens the map sheet with the current query. Absent when the browser
+   * has no Maps key, and the field stays exactly as it always was. */
+  onOpenMap?: (query: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [manualName, setManualName] = useState("");
@@ -68,18 +73,10 @@ export function PlaceSearch({
       }
       setSearching(true);
       try {
-        const response = await fetch("/api/places/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: trimmed }),
-        });
-        const data = (await response.json()) as {
-          degraded?: boolean;
-          results?: VenueResult[];
-        };
+        const data = await searchPubs({ query: trimmed });
         if (seq !== requestSeq.current) return;
-        setDegraded(Boolean(data.degraded));
-        setResults(data.results ?? []);
+        setDegraded(data.degraded);
+        setResults(data.results);
       } catch {
         if (seq === requestSeq.current) setResults([]);
       } finally {
@@ -108,19 +105,31 @@ export function PlaceSearch({
     <div className="flex flex-col gap-3">
       <div>
         <FieldLabel htmlFor="pub-search">Search pubs</FieldLabel>
-        <div className="relative">
-          <Search
-            size={15}
-            aria-hidden
-            className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            id="pub-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="The Auld Shillelagh…"
-            className="pl-9"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              size={15}
+              aria-hidden
+              className="absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              id="pub-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="The Auld Shillelagh…"
+              className="pl-9"
+            />
+          </div>
+          {onOpenMap ? (
+            <button
+              type="button"
+              aria-label="See pubs on the map"
+              onClick={() => onOpenMap(query)}
+              className="flex size-12 shrink-0 items-center justify-center rounded-lg border-[1.5px] border-fairway text-fairway"
+            >
+              <MapIcon size={18} aria-hidden />
+            </button>
+          ) : null}
         </div>
       </div>
 

@@ -51,8 +51,10 @@ update on every phone in the round as they happen.
 - **Tailwind CSS 4** with the Invitational house style — cream stock,
   fairway green, orange markers — as design tokens in `app/globals.css`,
   and a dark "Midnight Invitational" theme as the opt-in.
-- **Google Maps Platform** (planned) — Places for pub ratings, a
-  cloud-styled map ID for the themed course map.
+- **Google Maps Platform** — server-proxied Places (New) search for the
+  pubs and their ratings, and the course builder's map sheet on a
+  cloud-styled vector map that wears the house theme (cream and Midnight
+  map IDs).
 
 ## Develop
 
