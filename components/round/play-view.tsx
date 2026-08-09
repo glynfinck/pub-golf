@@ -10,6 +10,7 @@ import { HoleStrip } from "@/components/round/hole-strip";
 import { PenaltySheet } from "@/components/round/penalty-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { PositionRibbon } from "@/components/round/position-ribbon";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
 import { TimerRing } from "@/components/round/timer-ring";
 import { useLiveRound } from "@/components/round/use-live-round";
@@ -59,6 +60,11 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const holeRef = useRef(round.current_hole);
   const lastServer = useRef(serverSwigs);
+  // Tap handlers read this mirror, never the render's copy: on a slow main
+  // thread (WebKit mid-round) two taps can dispatch before React re-renders
+  // between them, and both reading the same stale `swigs` collapses two
+  // swigs into one — on screen and in the write that follows.
+  const latestSwigs = useRef(serverSwigs);
   const syncing = useRef(false);
   /** The swig write currently on its way to the server, if any. */
   const inFlight = useRef<Promise<void> | null>(null);
@@ -69,6 +75,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     if (holeRef.current !== round.current_hole) {
       holeRef.current = round.current_hole;
       lastServer.current = serverSwigs;
+      latestSwigs.current = serverSwigs;
       setSwigs(serverSwigs);
       return;
     }
@@ -76,7 +83,10 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     // unless the player is mid-tap with an upsert still in flight.
     if (serverSwigs !== lastServer.current) {
       lastServer.current = serverSwigs;
-      if (!syncing.current) setSwigs(serverSwigs);
+      if (!syncing.current) {
+        latestSwigs.current = serverSwigs;
+        setSwigs(serverSwigs);
+      }
     }
   }, [round.current_hole, serverSwigs]);
 
@@ -115,7 +125,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   }, [flushSwigs]);
 
   function changeSwigs(delta: number) {
-    const next = Math.max(0, swigs + delta);
+    const next = Math.max(0, latestSwigs.current + delta);
+    latestSwigs.current = next;
     setSwigs(next);
     syncing.current = true;
     pendingWrite.current = { hole: round.current_hole, swigs: next };
@@ -142,6 +153,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
 
       const result = await takeMulligan(round.code, round.current_hole);
       if (result.error) return result;
+      latestSwigs.current = 0;
       setSwigs(0);
       lastServer.current = 0;
       setMulliganOpen(false);
@@ -219,6 +231,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         holeNumbers={holes.map((h) => h.number)}
         currentHole={round.current_hole}
       />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">

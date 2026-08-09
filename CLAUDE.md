@@ -112,8 +112,27 @@ owner-scoped. Guests use Supabase anonymous auth so RLS always keys on
 DEFINER function — which since the RLS hardening migration is the *only* way
 into a round. The `round_players` INSERT policy allows exactly one direct
 seat: the creator's own `role='host'` row, gated on `is_round_creator`, which
-is what `createRound` writes between the round and the holes. Any future
-re-seat or rejoin flow needs a SECURITY DEFINER function, not a client insert.
+is what `createRound` writes between the round and the holes. The re-seat
+flow that rule anticipated is **seat rescue** (`20260818000000`): a guest's
+identity is one cookie jar, so when a phone loses it (in-app browsers,
+mostly) the seat — where scores actually live — moves to the new session
+rather than the session being resurrected. A seatless visitor on any round
+route lands on `/round/CODE/rescue`; `request_seat_rescue` only *knocks*
+(two nullable columns on the seat, so officials hear it over the
+round_players realtime subscription they already hold), and
+`approve_seat_rescue` — officials only, the caddy waves you in — is the one
+sanctioned hand-change, let through the guard trigger by a transaction-local
+`pubgolf.seat_rescue` setting nothing else sets. Only anonymous non-host
+seats move (a claimed card signs back in with Google), a knocker already
+seated is refused (strike the spare first), and `get_round_seats` — the one
+surface that shows names to a non-member — is deliberately
+authenticated-only, so a crawler with the link still reads no names
+(`get_round_card` stays the nameless public path). The broom is the
+`officials strike seats` DELETE policy (never the host seat): the struck
+card's scores go on the cascade, penalties it *called* on others keep with
+`called_by` nulled. `tests/db/rls-seat-rescue.test.ts` is the adversarial
+suite; the rescue screen polls `get_round_seats` rather than subscribing,
+because the knocker can't pass RLS until the moment they're waved in.
 Roles are guarded by a `BEFORE UPDATE` trigger rather than a policy, because
 `WITH CHECK` only sees NEW and "your role may not change" is about OLD. Two
 more rules live in triggers for the same reason: `round_players.handicap` is

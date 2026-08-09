@@ -161,6 +161,85 @@ export async function joinRound(code: string, playerName: string) {
   return { code: data as string };
 }
 
+/** A seatless phone knocks on a card it says is its own. Only marks the
+ * seat — the hand change waits for an official's approveSeatRescue, so
+ * picking a mate's name off the list buys nothing but a caddy's frown. */
+export async function requestSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("request_seat_rescue", {
+    join_code: code,
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** An official waves the knocker in: the seat — scores, penalties, name —
+ * moves onto the requester's fresh session. The function re-checks
+ * everything at approval time; this wrapper is the usual UX guard. */
+export async function approveSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  await getOfficiatedRound(supabase, code);
+
+  const { error } = await supabase.rpc("approve_seat_rescue", {
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** "Not them" — an official turns a knock away and the seat stays put. */
+export async function dismissSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  await getOfficiatedRound(supabase, code);
+
+  const { error } = await supabase.rpc("dismiss_seat_rescue", {
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** An official strikes a seat from the round — the duplicate a broken
+ * cookie made, or a gatecrasher. The seat's own scores and penalties go
+ * with it on the cascades; penalties it called on other cards stay. RLS
+ * ("officials strike seats") is the enforcement and it never matches the
+ * host seat; a filtered delete returns no rows, which is why the returned
+ * rows are checked rather than the error. */
+export async function strikeSeat(
+  code: string,
+  playerId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const { data: struck, error } = await supabase
+    .from("round_players")
+    .delete()
+    .eq("id", playerId)
+    .eq("round_id", round.id)
+    .neq("role", "host")
+    .select("id");
+  if (error) return { error: error.message };
+  if (!struck || struck.length === 0)
+    return { error: "That seat is not yours to strike" };
+
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
 /** Host or caddy flips the lobby live and opens hole 1's timer. */
 export async function startRound(code: string): Promise<ActionResult> {
   const supabase = await createClient();

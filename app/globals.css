@@ -229,6 +229,60 @@
   }
 }
 
+/* The full green (PuttGreen): the same putt across the whole panel — a
+   longer roll on a slower clock, so the rescue screen's wait reads
+   patient rather than busy. Distances are the wide viewBox's own. */
+.putt-green-ball {
+  transform-box: view-box;
+  animation: putt-green-roll 3.2s infinite;
+}
+.putt-green-pennant {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: putt-green-flick 3.2s infinite;
+}
+@keyframes putt-green-roll {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.17, 0.67, 0.3, 0.99);
+  }
+  70% {
+    transform: translateX(222px);
+  }
+  76% {
+    transform: translateX(222px);
+    animation-timing-function: ease-in;
+  }
+  82% {
+    transform: translate(224px, 8px);
+    opacity: 1;
+  }
+  85% {
+    transform: translate(224px, 10px);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes putt-green-flick {
+  0%,
+  78% {
+    transform: rotate(0deg);
+  }
+  83% {
+    transform: rotate(-8deg);
+  }
+  92%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
 /* Reduced motion: the information survives, the movement doesn't — the
    sweep inks the full rule, the ball rests at the lip. */
 @media (prefers-reduced-motion: reduce) {
@@ -241,6 +295,13 @@
     transform: translateX(50px);
   }
   .putt-pennant {
+    animation: none;
+  }
+  .putt-green-ball {
+    animation: none;
+    transform: translateX(222px);
+  }
+  .putt-green-pennant {
     animation: none;
   }
 }
