@@ -175,6 +175,24 @@
   }
 }
 
+/* Tab-bar sweep: the same marker ink, riding the tab bar's top hairline
+   while the next tab's screen is fetched (TabBar's navigation transition).
+   Overflow-hidden keeps the bar from painting past the screen edges, so
+   the sweep hangs just inside the border rather than above it. */
+.tab-busy {
+  overflow: hidden;
+}
+.tab-busy::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 3px;
+  width: 30%;
+  background: var(--color-marker);
+  animation: rule-sweep 1.05s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
 /* The putt (components/ui/putt.tsx): the ball rolls the leader dots,
    dies at the lip, hangs a beat, drops in; the pennant flicks as it
    falls. Transforms measure in the mark's own viewBox units. */
@@ -287,6 +305,10 @@
    sweep inks the full rule, the ball rests at the lip. */
 @media (prefers-reduced-motion: reduce) {
   .rule-busy::after {
+    animation: none;
+    width: 100%;
+  }
+  .tab-busy::after {
     animation: none;
     width: 100%;
   }

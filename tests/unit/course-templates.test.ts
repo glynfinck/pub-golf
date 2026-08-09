@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CURATED_COURSES,
+  coursePar,
+  courseWalkMinutes,
+  curatedCourse,
   INVITATIONAL_COURSE,
   reverseCourse,
   templateForHoleCount,
@@ -121,6 +125,34 @@ describe("templateForHoleCount", () => {
     holes[source].penalties[0].strokes = 99;
     expect(holes[source + 9].penalties[0].strokes).not.toBe(99);
     expect(INVITATIONAL_COURSE[source].penalties[0].strokes).not.toBe(99);
+  });
+});
+
+describe("CURATED_COURSES", () => {
+  it("serves the printed card and its reverse under stable slugs", () => {
+    // The slugs are route keys (/courses/curated/[slug]) — renaming one
+    // breaks every bookmark, so a rename here has to be meant.
+    expect(CURATED_COURSES.map((course) => course.slug)).toEqual([
+      "invitational",
+      "invitational-reversed",
+    ]);
+    expect(curatedCourse("invitational")?.holes).toBe(INVITATIONAL_COURSE);
+    expect(curatedCourse("no-such-card")).toBeUndefined();
+  });
+
+  it("plays every curated card at the printed par 36", () => {
+    for (const course of CURATED_COURSES) {
+      expect(course.holes).toHaveLength(9);
+      expect(coursePar(course.holes)).toBe(36);
+    }
+  });
+
+  it("walks the same total in either direction", () => {
+    const walks = CURATED_COURSES.map((course) =>
+      courseWalkMinutes(course.holes),
+    );
+    expect(new Set(walks).size).toBe(1);
+    expect(walks[0]).toBe(courseWalkMinutes(INVITATIONAL_COURSE));
   });
 });
 

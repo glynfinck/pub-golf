@@ -49,6 +49,54 @@ export function reverseCourse<
   }));
 }
 
+export interface CuratedCourse {
+  slug: string;
+  name: string;
+  /** One line under the name in the course book. */
+  blurb: string;
+  holes: TemplateHole[];
+}
+
+/**
+ * The house cards: read-only in the course book, copied into `courses`
+ * when a member wants one of their own to tweak. A copy keeps the printed
+ * walk legs verbatim — these pubs carry no coordinates to re-measure.
+ */
+export const CURATED_COURSES: CuratedCourse[] = [
+  {
+    slug: "invitational",
+    name: "The Invitational",
+    blurb: "The printed card — nine pubs, London Fields to Finsbury Park.",
+    holes: INVITATIONAL_COURSE,
+  },
+  {
+    slug: "invitational-reversed",
+    name: "The Invitational · reversed",
+    blurb: "The same nine pubs walked the other way — the 19th tees off first.",
+    holes: reverseCourse(INVITATIONAL_COURSE),
+  },
+];
+
+/** The curated card behind a course-book link, or undefined for a bad slug. */
+export function curatedCourse(slug: string): CuratedCourse | undefined {
+  return CURATED_COURSES.find((course) => course.slug === slug);
+}
+
+/** Σ par — the number printed beside a card's name. */
+export function coursePar(holes: { par: number }[]): number {
+  return holes.reduce((sum, hole) => sum + hole.par, 0);
+}
+
+/** Σ walk legs — the walking share of the 19th-hole estimate. */
+export function courseWalkMinutes(
+  holes: { walk_minutes_to_next: number | null }[],
+): number {
+  return holes.reduce(
+    (sum, hole) => sum + (hole.walk_minutes_to_next ?? 0),
+    0,
+  );
+}
+
 /** Trim or repeat the template to the requested hole count. */
 export function templateForHoleCount(count: number): TemplateHole[] {
   const holes: TemplateHole[] = [];
