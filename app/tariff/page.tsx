@@ -1,15 +1,16 @@
+import Link from "next/link";
+
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
+import { SUPPORT_EMAIL } from "@/lib/config";
 
 export const metadata = {
   title: "The tariff",
   description:
     "What Pub Golf costs: playing is free, always. The green fee and the honesty box, priced like a pint.",
 };
-
-const SUPPORT_EMAIL = "glynfinck@gmail.com";
 
 /**
  * The public price list — deliberately reachable signed-out, because the
@@ -75,6 +76,11 @@ export default function TariffPage() {
           <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-fairway">
             {SUPPORT_EMAIL}
           </a>
+          . The slightly longer version — refunds, delivery, disputes — lives
+          in{" "}
+          <Link href="/small-print" className="font-bold text-fairway">
+            the small print
+          </Link>
           .
         </p>
       </section>

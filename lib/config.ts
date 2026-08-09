@@ -16,3 +16,10 @@ export const SITE_URL =
 export const APP_NAME = "Pub Golf";
 export const FLAGSHIP_GAME = "Pub Golf";
 export const TAGLINE = "Nine pubs. Par 36. Lowest swigs wins.";
+
+/**
+ * Where the club secretary reads mail. Printed on the public tariff and
+ * small-print pages — the surfaces a payment processor reviews — so it
+ * lives here rather than inline in either.
+ */
+export const SUPPORT_EMAIL = "glynfinck@gmail.com";
