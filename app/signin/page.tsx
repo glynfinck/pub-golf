@@ -47,6 +47,13 @@ export default async function SignInPage({
           Enter a code — no account needed
         </Link>
       </p>
+
+      <p className="text-center text-xs text-muted-foreground">
+        <Link href="/tariff" className="underline underline-offset-2">
+          The tariff
+        </Link>{" "}
+        — playing is free, always.
+      </p>
     </Screen>
   );
 }
