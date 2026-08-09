@@ -33,15 +33,17 @@ export default function TariffPage() {
           label={<b className="text-foreground">Playing, joining, scoring</b>}
           value={<b className="text-foreground">free, always</b>}
         />
-        <DotLeaderRow label="Green fee — extras for one round" value="£4" />
+        <DotLeaderRow label="Green fee — a day of extras" value="£4" />
         <DotLeaderRow label="Honesty box — a tip, if you like" value="from £3" />
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        The green fee unlocks extras for a single round — league standings
-        across rounds, the printed card, your colours on the recap — one
-        payment covering the whole table. Both taps are still being fitted;
-        the prices above are what they&apos;ll cost when the bar opens.
+        The green fee is a day pass, the way a real course means it: every
+        round you host for 24 hours gets league standings across rounds, the
+        printed card, and your colours on the recap — one payment covering
+        the whole table, with the time remaining always on show. Both taps
+        are still being fitted; the prices above are what they&apos;ll cost
+        when the bar opens.
       </p>
 
       <section>

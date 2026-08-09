@@ -151,7 +151,13 @@ printed pack).
   members flag stamps into the ruleset snapshot at tee-off (checked once,
   never mid-round), guarded by a BEFORE UPDATE trigger that admits it
   only while the host holds a live pass — the same OLD-vs-NEW pattern as
-  roles and handicaps. (Alternatives considered and set aside:
+  roles and handicaps. The pass is always visible while it runs: an
+  active-pass card in the Clubhouse and a "Covered — 16h left" line in
+  the members' options group, on the sanctioned `use-countdown` pattern.
+  That stays the right side of the covenant's "no countdown timers" rule,
+  which bans sales clocks — fake urgency before purchase — not a fact
+  about something already owned, shown only after buying.
+  (Alternatives considered and set aside:
   consume-on-completion forgives a 17-of-18-holes abandon; a movable
   credit that attaches at tee-off is strictest per-round but needs three
   user-visible states and the most rules for the least warmth.)
