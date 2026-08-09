@@ -1,7 +1,41 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
 import { expectSettled } from "./nav";
+
+/**
+ * Add a pub through the builder's by-name row.
+ *
+ * Three separate races meet on this one button, and CI found the second of
+ * them on WebKit — a 90-second hang that passed on retry, which
+ * `failOnFlakyTests` correctly calls a failure:
+ *
+ * 1. Hydration. A fill landing before React is live is silently wiped.
+ * 2. The row clears itself. `addManual` calls setManualName(""), so a fill
+ *    landing in the same beat as that re-render is wiped by it too — and the
+ *    button then sits disabled, because it enables on text it never saw. It
+ *    stays *briefly* clickable on the "Added" flash alone, which is why this
+ *    only bites once the flash expires and why it looked like a stall.
+ * 3. The flash changes the button's width, so a click aimed at it mid-swap
+ *    is a click at a moving target.
+ *
+ * So: wait for the button back at rest, then retry the fill until React
+ * itself holds the text — the input is controlled, so its DOM value *is*
+ * React's state, and that is the only honest proof. The click stays outside
+ * the retry, because a click that lands must never repeat.
+ */
+async function addPubByName(page: Page, name: string) {
+  const field = page.getByLabel(/add a pub by name/i);
+  const button = page.getByRole("button", { name: /add the named pub/i });
+
+  await expect(button).toHaveText("Add");
+  await expect(async () => {
+    await field.fill(name);
+    await expect(field).toHaveValue(name, { timeout: 1_000 });
+    await expect(button).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await button.click();
+}
 
 test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
@@ -18,19 +52,8 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expectSettled(page, "masthead-back", (back) =>
     expect(back).toHaveAttribute("href", "/courses"),
   );
-  // Same controlled-form race full-house documents: a fill landing before
-  // hydration is silently wiped, so prove the page live through the Add
-  // button (it enables only when React sees text) before typing the name.
-  const pubField = page.getByLabel(/add a pub by name/i);
-  const addPub = page.getByRole("button", { name: /add the named pub/i });
-  await expect(async () => {
-    await pubField.fill("The Test Tavern");
-    await expect(addPub).toBeEnabled({ timeout: 1_000 });
-  }).toPass({ timeout: 30_000 });
-
-  await addPub.click();
-  await pubField.fill("The Other Arms");
-  await addPub.click();
+  await addPubByName(page, "The Test Tavern");
+  await addPubByName(page, "The Other Arms");
 
   // Dress hole 1: par up, a proper drink, a water hazard with a note.
   await page.getByRole("button", { name: /raise par on hole 1/i }).click();
@@ -132,19 +155,9 @@ test("edit the running order without tearing up the card", async ({ page }) => {
 
   await page.goto("/courses/new");
 
-  // Same controlled-form race the test above documents: prove the page is
-  // live through the Add button before typing anything that matters.
-  const pubField = page.getByLabel(/add a pub by name/i);
-  const addPub = page.getByRole("button", { name: /add the named pub/i });
-  await expect(async () => {
-    await pubField.fill("Alpha Arms");
-    await expect(addPub).toBeEnabled({ timeout: 1_000 });
-  }).toPass({ timeout: 30_000 });
-  await addPub.click();
-  await pubField.fill("Beta Bar");
-  await addPub.click();
-  await pubField.fill("Gamma Tavern");
-  await addPub.click();
+  await addPubByName(page, "Alpha Arms");
+  await addPubByName(page, "Beta Bar");
+  await addPubByName(page, "Gamma Tavern");
 
   const holeNames = page.getByTestId("draft-hole-name");
   await expect(holeNames).toHaveText(["Alpha Arms", "Beta Bar", "Gamma Tavern"]);
@@ -164,9 +177,13 @@ test("edit the running order without tearing up the card", async ({ page }) => {
     .getByRole("button", { name: /manage hole 1 · alpha arms/i })
     .click();
   await page.getByTestId("change-pub").click();
+  // The picker's own by-name row is a controlled input on a panel that has
+  // only just mounted, so the fill retries until React holds it — same rule
+  // as addPubByName, and the click stays outside the retry for the same one.
   const pickField = page.getByLabel(/or name the pub yourself/i);
   await expect(async () => {
     await pickField.fill("Delta Inn");
+    await expect(pickField).toHaveValue("Delta Inn", { timeout: 1_000 });
     await expect(
       page.getByRole("button", { name: /choose the named pub/i }),
     ).toBeEnabled({ timeout: 1_000 });
@@ -186,6 +203,7 @@ test("edit the running order without tearing up the card", async ({ page }) => {
   const insertField = page.getByLabel(/or name the pub yourself/i);
   await expect(async () => {
     await insertField.fill("Epsilon House");
+    await expect(insertField).toHaveValue("Epsilon House", { timeout: 1_000 });
     await expect(
       page.getByRole("button", { name: /insert the named pub/i }),
     ).toBeEnabled({ timeout: 1_000 });
