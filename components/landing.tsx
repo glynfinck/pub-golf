@@ -135,6 +135,14 @@ export function Landing() {
           <Link href="/legal/terms" className="font-bold text-fairway">
             Terms
           </Link>
+          <span aria-hidden>·</span>
+          {/* main added this to the sign-in footer while this page was in
+              review. The landing replaces that footer for a signed-out
+              visitor, so without it the tariff would have quietly vanished
+              from the home page. */}
+          <Link href="/tariff" className="font-bold text-fairway">
+            The tariff
+          </Link>
         </p>
       </footer>
     </>
