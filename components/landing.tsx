@@ -3,8 +3,34 @@ import Link from "next/link";
 import { HouseMark } from "@/components/ui/house-mark";
 import { buttonVariants } from "@/components/ui/button";
 import { RuleDouble } from "@/components/ui/rule";
-import { APP_NAME, TAGLINE } from "@/lib/config";
+import { APP_NAME, DESCRIPTION, SITE_URL, TAGLINE } from "@/lib/config";
 import { cn } from "@/lib/utils";
+
+/**
+ * The same three facts the page states in prose — what it is called, what it
+ * does, and where it lives — in the form a machine reads without having to
+ * parse English.
+ *
+ * Google's brand verification has failed twice on exactly those points ("your
+ * home page does not explain the purpose of your app", "the app name ... does
+ * not match the app name on your home page"), so the page now answers them
+ * four times over: the `<title>`, the `<h1>`, `og:site_name` and this. `name`
+ * is the load-bearing string — it must stay spelled the way the consent
+ * screen spells it, which is why it comes from APP_NAME rather than a literal.
+ *
+ * Deliberately no `offers`: playing is free but the green fee is not, and a
+ * flat price of zero here would be the one dishonest line on the page.
+ */
+const SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: APP_NAME,
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: "GameApplication",
+  operatingSystem: "Any",
+  browserRequirements: "Requires JavaScript.",
+};
 
 /**
  * The home page a stranger lands on, and the one Google's brand verification
@@ -37,6 +63,14 @@ import { cn } from "@/lib/utils";
 export function Landing() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        // Built from our own constants, so there is no untrusted string to
+        // escape — but JSON.stringify is still the only thing that goes in
+        // here, never interpolated copy.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SCHEMA) }}
+      />
+
       <RuleDouble head />
 
       <header className="text-center">
