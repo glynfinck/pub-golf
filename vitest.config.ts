@@ -55,6 +55,20 @@ export default defineConfig({
       {
         resolve: { alias },
         test: {
+          name: "sandbox",
+          environment: "node",
+          include: ["tests/sandbox/**/*.test.ts"],
+          // The one tier that talks to real Stripe (test mode only — the
+          // suite refuses a live key). Never part of the PR gate: it runs
+          // from its own dispatch/weekly workflow, and skips entirely when
+          // STRIPE_SECRET_KEY is absent.
+          testTimeout: 30_000,
+          retry: 0,
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
           name: "stress",
           environment: "node",
           include: ["tests/stress/**/*.test.ts"],

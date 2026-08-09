@@ -1,0 +1,46 @@
+name: Stripe sandbox smoke
+
+# The one workflow that talks to real Stripe (test mode only — both the
+# seeder and the suite refuse a live key). Deliberately not part of the
+# required `verify` gate: third-party network is flake, and the gate fails
+# flakes. Run it by hand after Stripe-side changes, and weekly to catch
+# drift between the sandbox, the live account's expectations, and
+# lib/tariff.ts.
+#
+# Needs one repository secret: STRIPE_SANDBOX_SECRET_KEY, a sandbox
+# secret key (sk_test_...). Absent, the run comes up green with everything
+# skipped — a schedule firing before the sandbox exists is not a failure.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Idempotent: an existing lookup key is left alone, so the weekly
+      # run can seed blind. A fresh sandbox comes out mirroring the live
+      # tariff — products, multi-currency prices, tax codes.
+      - name: Seed the sandbox tariff
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SANDBOX_SECRET_KEY }}
+        run: node scripts/stripe-seed.mjs
+
+      # Verifies the seeded account against lib/tariff.ts — the seeder
+      # cannot import TS, so this cross-check is what catches the two
+      # drifting apart — then opens (and expires) a real checkout session.
+      - name: Smoke the tariff and a real checkout session
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SANDBOX_SECRET_KEY }}
+        run: npm run test:stripe

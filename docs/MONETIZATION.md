@@ -99,6 +99,18 @@ the real route and reads the row back out of Postgres. Real-sandbox
 smoke tests stay out of the required gate on purpose: third-party
 network is flake, and the gate fails flakes.
 
+The sandbox tier (`npm run test:stripe`, `tests/sandbox/`) is the one
+place tests talk to real Stripe — test mode only; suite and seeder both
+refuse a live key. `scripts/stripe-seed.mjs` mirrors the tariff into any
+sandbox idempotently, and the smoke suite verifies the account against
+`lib/tariff.ts` (the seeder can't import TS, so this cross-check is what
+catches drift) and opens, then expires, a real checkout session — the
+API-shape failures the offline spec can't see, like the Managed Payments
+tax-code rejection the live account once handed us. It runs from
+`.github/workflows/stripe-sandbox.yml` (manual dispatch + Monday
+mornings), needs the `STRIPE_SANDBOX_SECRET_KEY` repo secret, and comes
+up green-but-skipped until that secret exists.
+
 Not built on purpose: any green-fee purchase UI. Nothing premium exists
 to unlock yet, and the covenant says money only ever buys something real
 — the unlock sheet ships alongside the first extra (the league or the
