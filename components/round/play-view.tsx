@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Flag, Minus, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Screen } from "@/components/shell/screen";
@@ -68,6 +68,8 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const syncing = useRef(false);
   /** The swig write currently on its way to the server, if any. */
   const inFlight = useRef<Promise<void> | null>(null);
+  /** The swig write still waiting on the debounce, if any. */
+  const pendingWrite = useRef<{ hole: number; swigs: number } | null>(null);
   useEffect(() => {
     // New hole (caddy advanced): reset the local counter to server state.
     if (holeRef.current !== round.current_hole) {
@@ -88,24 +90,48 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
     }
   }, [round.current_hole, serverSwigs]);
 
+  /** Send whatever the debounce is still holding, now. */
+  const flushSwigs = useCallback(() => {
+    const write = pendingWrite.current;
+    if (!write) return;
+    pendingWrite.current = null;
+    // Held so a mulligan can wait this out — see takeHalfPint.
+    inFlight.current = upsertScore(round.code, write.hole, write.swigs)
+      .then((result) => {
+        lastServer.current = write.swigs;
+        if (result.error) toast.error(result.error);
+      })
+      .finally(() => {
+        syncing.current = false;
+        inFlight.current = null;
+      });
+  }, [round.code]);
+
+  // The debounce must never be the reason a swig is lost. When this screen
+  // goes away mid-window — the caddy holes out and every phone moves on,
+  // or the phone pockets — send what is pending rather than trusting a
+  // 400ms timer to survive the teardown. Same write, same guard: the
+  // one-hole grace exists for exactly this tap.
+  useEffect(() => {
+    const flush = () => {
+      clearTimeout(debounce.current);
+      flushSwigs();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [flushSwigs]);
+
   function changeSwigs(delta: number) {
     const next = Math.max(0, latestSwigs.current + delta);
     latestSwigs.current = next;
     setSwigs(next);
     syncing.current = true;
+    pendingWrite.current = { hole: round.current_hole, swigs: next };
     clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => {
-      // Held so a mulligan can wait this out — see takeHalfPint.
-      inFlight.current = upsertScore(round.code, round.current_hole, next)
-        .then((result) => {
-          lastServer.current = next;
-          if (result.error) toast.error(result.error);
-        })
-        .finally(() => {
-          syncing.current = false;
-          inFlight.current = null;
-        });
-    }, 400);
+    debounce.current = setTimeout(flushSwigs, 400);
   }
 
   /**
@@ -121,6 +147,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   function takeHalfPint() {
     run(async () => {
       clearTimeout(debounce.current);
+      pendingWrite.current = null;
       await inFlight.current;
       syncing.current = false;
 

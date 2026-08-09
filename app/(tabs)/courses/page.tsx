@@ -7,6 +7,8 @@ import { RuleDouble } from "@/components/ui/rule";
 import { getMyCourses } from "@/lib/data/courses";
 import { cn } from "@/lib/utils";
 
+export const metadata = { title: "The course book" };
+
 export default async function CoursesPage() {
   const courses = await getMyCourses();
 

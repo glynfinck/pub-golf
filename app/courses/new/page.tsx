@@ -7,21 +7,25 @@ import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
+import { PubMapSheet } from "@/components/course/pub-map-sheet";
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { HouseMark } from "@/components/ui/house-mark";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { useAction } from "@/hooks/use-action";
 import { createCourse } from "@/lib/actions/courses";
+import { MAPS_BROWSER_KEY } from "@/lib/maps";
 
 /** The course builder: search Google for the pubs, dress each hole with
- * par and drink, save. No map — the Maps app handles directions on the
- * night. */
+ * par and drink, save. The map sheet shows the patch when the browser has
+ * a Maps key; the Maps app still handles directions on the night. */
 export default function NewCoursePage() {
   const router = useRouter();
   const { run, pending, busy } = useAction();
   const [name, setName] = useState("");
   const [holes, setHoles] = useState<DraftHole[]>([]);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapQuery, setMapQuery] = useState("");
 
   function addPub(pub: FoundPub) {
     setHoles((current) => [
@@ -84,7 +88,27 @@ export default function NewCoursePage() {
         />
       </div>
 
-      <PlaceSearch onAdd={addPub} nextHoleNumber={holes.length + 1} />
+      <PlaceSearch
+        onAdd={addPub}
+        nextHoleNumber={holes.length + 1}
+        onOpenMap={
+          MAPS_BROWSER_KEY
+            ? (query) => {
+                setMapQuery(query);
+                setMapOpen(true);
+              }
+            : undefined
+        }
+      />
+      {MAPS_BROWSER_KEY ? (
+        <PubMapSheet
+          open={mapOpen}
+          onOpenChange={setMapOpen}
+          initialQuery={mapQuery}
+          holes={holes}
+          onAdd={addPub}
+        />
+      ) : null}
 
       {holes.map((hole, index) => (
         <HoleEditor

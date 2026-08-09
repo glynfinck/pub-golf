@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 
 import { signInAs } from "./auth";
+import { drink } from "./drink";
 import { clickSettled, expectSettled, gotoSettled } from "./nav";
 import { leaveSeats, standOnTheHole, tableDrinks, takeSeats } from "./seats";
 import type { Seat } from "./seats";
@@ -73,15 +74,6 @@ async function joinAsGuest(
   return { context, page };
 }
 
-/** Tap +1 SWIG `count` times on one phone. */
-async function drink(page: Page, count: number) {
-  for (let sip = 0; sip < count; sip += 1) {
-    await page.getByTestId("swig-plus").click();
-  }
-  if (count > 0) {
-    await expect(page.getByTestId("swig-count")).toHaveText(String(count));
-  }
-}
 
 test("a full house: twenty seats, three phones watching, one card", async ({
   browser,

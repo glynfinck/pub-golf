@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { APP_NAME, FLAGSHIP_GAME, SITE_URL, TAGLINE } from "@/lib/config";
+import { APP_NAME, SITE_URL, TAGLINE } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,7 +10,11 @@ export const metadata: Metadata = {
   // path and nothing unfurls.
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${APP_NAME} — ${FLAGSHIP_GAME}`,
+    // The app and its flagship game became the same words when the
+    // "Parlour" name retired, so gluing them read "Pub Golf — Pub Golf".
+    // The bare name is the clubhouse tab; every other screen titles
+    // itself through the template.
+    default: APP_NAME,
     template: `%s · ${APP_NAME}`,
   },
   description: TAGLINE,

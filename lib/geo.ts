@@ -1,3 +1,18 @@
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+/** A map viewport, Google-style: north/south latitudes, east/west
+ * longitudes. East may read numerically below west when the viewport
+ * crosses the antimeridian. */
+export interface Bounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
 /** Great-circle distance in km. */
 export function haversineKm(
   lat1: number,
@@ -32,4 +47,48 @@ export function estimateWalkMinutes(
     return null;
   const km = haversineKm(from.lat, from.lng, to.lat, to.lng);
   return Math.max(1, Math.round(km * 12.5));
+}
+
+/**
+ * The circle that covers a viewport: centred on the bounds, radius out to a
+ * corner. Nearby Search only takes circles, and only up to 50 km — a
+ * zoomed-out map gets the biggest circle Google will answer rather than an
+ * error, and the 100 m floor keeps a fully-zoomed street asking a
+ * street-sized question.
+ */
+export function boundsToCircle(bounds: Bounds): {
+  center: LatLng;
+  radiusMeters: number;
+} {
+  const lat = (bounds.north + bounds.south) / 2;
+  // Across the antimeridian the eastern edge reads below the western one:
+  // walk half the eastward span and wrap back into range.
+  const span =
+    bounds.east >= bounds.west
+      ? bounds.east - bounds.west
+      : bounds.east + 360 - bounds.west;
+  let lng = bounds.west + span / 2;
+  if (lng > 180) lng -= 360;
+  const radiusKm = haversineKm(lat, lng, bounds.north, bounds.east);
+  return {
+    center: { lat, lng },
+    radiusMeters: Math.min(50_000, Math.max(100, Math.round(radiusKm * 1000))),
+  };
+}
+
+/**
+ * A square viewport centred on a point — for aiming a patch search at a
+ * spot the camera has not settled on yet (the just-located player).
+ */
+export function boundsAround(center: LatLng, radiusMeters: number): Bounds {
+  const dLat = radiusMeters / 111_320;
+  const cosLat = Math.max(0.01, Math.cos((center.lat * Math.PI) / 180));
+  const dLng = radiusMeters / (111_320 * cosLat);
+  const wrap = (lng: number) => (lng > 180 ? lng - 360 : lng < -180 ? lng + 360 : lng);
+  return {
+    north: Math.min(90, center.lat + dLat),
+    south: Math.max(-90, center.lat - dLat),
+    east: wrap(center.lng + dLng),
+    west: wrap(center.lng - dLng),
+  };
 }
