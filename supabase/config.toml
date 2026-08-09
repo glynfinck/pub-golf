@@ -40,6 +40,20 @@ enable_anonymous_sign_ins = true
 # same switch set (Authentication -> Advanced).
 enable_manual_linking = true
 
+# Every guest is an anonymous sign-in, and gotrue rations those to 30 per hour
+# per IP by default. That is under two tables: the stress tier seats twenty
+# phones per case and the Playwright matrix seats seventeen again per engine,
+# so the default turns a whole CI run into 429s partway through — and the
+# failure arrives as "Anonymous sign-ins are rate limited", nowhere near the
+# test that spent the budget.
+#
+# Local only, and deliberately absent from [remotes.preview.auth] below: the
+# same number is a real abuse guard on a hosted project, where nobody is
+# minting twenty sessions a minute on purpose. This is the one place local and
+# preview are meant to disagree.
+[auth.rate_limit]
+anonymous_users = 3600
+
 [auth.sms]
 enable_signup = false
 
@@ -67,3 +81,74 @@ enabled = true
 # Analytics defaults to port 54327, which the `home` stack occupies.
 [analytics]
 enabled = false
+
+# ---------------------------------------------------------------------------
+# Remote overrides.
+#
+# Everything above this line is LOCAL-first on purpose: site_url is
+# localhost:3105, the email provider is on so the Playwright suite can seed a
+# host session, and the Google credentials come from .env.local. None of it
+# may ever reach a hosted project — which is why DEPLOYMENT.md forbids
+# `supabase config push`.
+#
+# Branching does not ask. Its deploy runs a `Configure` step on every commit
+# pushed to a tracked git branch, and that step applies THIS FILE to the
+# branch project. This block is the only reason preview's auth survives it.
+#
+# Production is deliberately NOT declared here. It is configured by hand in
+# the dashboard, and its deploy only touches migrations, functions and
+# buckets. A [remotes.production] block would hand this file the production
+# auth server, which is precisely what we have been avoiding.
+# ---------------------------------------------------------------------------
+[remotes.preview]
+project_id = "xssmjzinaghxjncoezez"
+
+[remotes.preview.auth]
+enabled = true
+site_url = "https://pub-golf-preview.glyn.dev"
+# The wildcard admits Vercel's throwaway per-PR preview URLs, which point at
+# this branch project too (the Preview env vars are environment-wide).
+# signInWithOAuth passes redirectTo = location.origin, and gotrue answers an
+# unlisted origin by silently falling back to site_url — stranding the PKCE
+# verifier cookie on the vercel.app origin, so the code exchange fails and
+# sign-in bounces. `*` stops at dots, so the pattern reaches exactly this
+# project's deployments under the team and nothing wider. Google needs no
+# per-URL entry: its authorized redirect URI is the Supabase callback, which
+# never varies.
+additional_redirect_urls = [
+  "https://pub-golf-preview.glyn.dev/**",
+  "https://pub-golf-*-glynfincks-projects.vercel.app/**",
+]
+# Restated rather than inherited from [auth] above. The docs describe the
+# remote block as a merge but do not promise the depth of it, and these two
+# going missing is not a visible error — it is guests unable to join and the
+# claim button failing, which is most of the app, quietly.
+enable_anonymous_sign_ins = true
+enable_manual_linking = true
+
+# Staging matches production: Google only. Local keeps email on solely so
+# e2e/auth.ts can mint a host session; nothing seeds sessions on preview.
+[remotes.preview.auth.email]
+enable_signup = false
+enable_confirmations = false
+
+[remotes.preview.auth.sms]
+enable_signup = false
+
+# Both values are *branch* secrets, not GitHub ones. Set once with:
+#
+#   supabase secrets set --project-ref xssmjzinaghxjncoezez \
+#     SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=... \
+#     SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
+#
+# They reuse the names local dev already uses, so there is one pair to know.
+# If either fails to resolve, Configure writes an empty credential and Google
+# sign-in breaks on preview with no error anywhere — check the branch's
+# deploy log first.
+#
+# skip_nonce_check is deliberately absent: it is a local-dev workaround for
+# the 127.0.0.1 callback and has no business on a hosted project.
+[remotes.preview.auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"

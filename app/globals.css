@@ -146,3 +146,162 @@
     inset 0 0 0 4px var(--color-card),
     inset 0 0 0 5px var(--color-border);
 }
+
+/* The busy vocabulary — waits that earn furniture (past lib/time.ts's
+   BUSY_DELAY_MS) get the house line-work set in motion, never a spinner. */
+
+/* Masthead sweep: the screen's opening double rule carries a marker-ink
+   sweep while the round is committing something (RuleDouble busy). */
+.rule-busy {
+  position: relative;
+  overflow: hidden;
+}
+.rule-busy::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 30%;
+  background: var(--color-marker);
+  animation: rule-sweep 1.05s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+@keyframes rule-sweep {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(345%);
+  }
+}
+
+/* The putt (components/ui/putt.tsx): the ball rolls the leader dots,
+   dies at the lip, hangs a beat, drops in; the pennant flicks as it
+   falls. Transforms measure in the mark's own viewBox units. */
+.putt-ball {
+  transform-box: view-box;
+  animation: putt-roll 2.2s infinite;
+}
+.putt-pennant {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: pennant-flick 2.2s infinite;
+}
+@keyframes putt-roll {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.17, 0.67, 0.3, 0.99);
+  }
+  68% {
+    transform: translateX(50px);
+  }
+  74% {
+    transform: translateX(50px);
+    animation-timing-function: ease-in;
+  }
+  80% {
+    transform: translate(52px, 8px);
+    opacity: 1;
+  }
+  83% {
+    transform: translate(52px, 10px);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes pennant-flick {
+  0%,
+  76% {
+    transform: rotate(0deg);
+  }
+  81% {
+    transform: rotate(-8deg);
+  }
+  90%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* The full green (PuttGreen): the same putt across the whole panel — a
+   longer roll on a slower clock, so the rescue screen's wait reads
+   patient rather than busy. Distances are the wide viewBox's own. */
+.putt-green-ball {
+  transform-box: view-box;
+  animation: putt-green-roll 3.2s infinite;
+}
+.putt-green-pennant {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: putt-green-flick 3.2s infinite;
+}
+@keyframes putt-green-roll {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.17, 0.67, 0.3, 0.99);
+  }
+  70% {
+    transform: translateX(222px);
+  }
+  76% {
+    transform: translateX(222px);
+    animation-timing-function: ease-in;
+  }
+  82% {
+    transform: translate(224px, 8px);
+    opacity: 1;
+  }
+  85% {
+    transform: translate(224px, 10px);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes putt-green-flick {
+  0%,
+  78% {
+    transform: rotate(0deg);
+  }
+  83% {
+    transform: rotate(-8deg);
+  }
+  92%,
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Reduced motion: the information survives, the movement doesn't — the
+   sweep inks the full rule, the ball rests at the lip. */
+@media (prefers-reduced-motion: reduce) {
+  .rule-busy::after {
+    animation: none;
+    width: 100%;
+  }
+  .putt-ball {
+    animation: none;
+    transform: translateX(50px);
+  }
+  .putt-pennant {
+    animation: none;
+  }
+  .putt-green-ball {
+    animation: none;
+    transform: translateX(222px);
+  }
+  .putt-green-pennant {
+    animation: none;
+  }
+}

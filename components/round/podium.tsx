@@ -15,7 +15,7 @@ function Column({
     <div className="flex flex-1 flex-col items-center justify-end gap-1.5">
       <div className="font-serif text-base italic">{row.name}</div>
       <div className="tabular font-mono text-[11px] text-muted-foreground">
-        {row.gross} · {formatToPar(row.toPar)}
+        {row.handicap > 0 ? row.net : row.gross} · {formatToPar(row.netToPar)}
       </div>
       <div
         className={cn(

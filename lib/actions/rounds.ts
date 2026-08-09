@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { templateForHoleCount } from "@/lib/course-templates";
+import { reverseCourse, templateForHoleCount } from "@/lib/course-templates";
+import {
+  MULLIGAN_STROKES,
+  MAX_MULLIGANS,
+  MAX_HANDICAP,
+} from "@/lib/rules";
+import { rematchName } from "@/lib/rematch";
+import { readRuleset } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
-
-const HOLE_TIMER_MINUTES = 20;
+import { deadlineFrom } from "@/lib/time";
+import type { Json } from "@/types/database";
 
 export type ActionResult = { error?: string; finished?: boolean };
 
@@ -15,10 +22,27 @@ const createRoundSchema = z.object({
   holes: z.coerce.number().int().min(1).max(18),
   /** A saved course to copy; null plays the Invitational template. */
   courseId: z.string().uuid().nullable().optional(),
+  /** Play the course back down — last pub first, walks intact. */
+  reversed: z.boolean().default(false),
   format: z.enum(["stroke", "stableford", "match", "scramble"]),
   hazards: z.boolean(),
   timer: z.boolean(),
   softSub: z.boolean(),
+  /** Planned minutes at each pub — the 19th-hole estimate, and the shot
+   * clock's length when `timer` is on. */
+  minutesPerPub: z.coerce.number().int().min(5).max(60).default(20),
+  /** The advertised first tee (ISO). Advisory — printed on the lobby and
+   * the invite; the host still tees off whenever the group is stood there. */
+  scheduledTeeOff: z.string().nullable().optional(),
+  /** Whether the host is handicapping this round at all. */
+  handicaps: z.boolean().default(false),
+  /** Mulligans per player for the whole round; 0 turns them off. */
+  mulligans: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_MULLIGANS)
+    .default(0),
   penalties: z.array(z.object({ strokes: z.number(), reason: z.string() })),
 });
 
@@ -46,9 +70,17 @@ export async function createRound(input: CreateRoundInput) {
       ruleset: {
         format: parsed.format,
         hazards: parsed.hazards,
-        holeTimerMinutes: parsed.timer ? HOLE_TIMER_MINUTES : null,
+        // The shot clock runs at the planned pub pace — one number, two jobs.
+        holeTimerMinutes: parsed.timer ? parsed.minutesPerPub : null,
+        minutesPerPub: parsed.minutesPerPub,
+        scheduledTeeOff: parsed.scheduledTeeOff ?? null,
         softSubstituteScoresPar: parsed.softSub,
         penalties: parsed.penalties,
+        handicaps: parsed.handicaps,
+        mulligans: parsed.mulligans,
+        // Snapshotted, not read from the constant at scoring time: changing
+        // the house price later must never rescore a round already played.
+        mulliganStrokes: MULLIGAN_STROKES,
       },
     })
     .select()
@@ -76,6 +108,7 @@ export async function createRound(input: CreateRoundInput) {
     par: number;
     hazard: string | null;
     hazard_note: string | null;
+    penalties: Json;
     walk_minutes_to_next: number | null;
   }[];
   if (parsed.courseId) {
@@ -94,11 +127,13 @@ export async function createRound(input: CreateRoundInput) {
       par: hole.par,
       hazard: hole.hazard,
       hazard_note: hole.hazard_note,
+      penalties: hole.penalties,
       walk_minutes_to_next: hole.walk_minutes_to_next,
     }));
   } else {
     template = templateForHoleCount(parsed.holes);
   }
+  if (parsed.reversed) template = reverseCourse(template);
   if (!parsed.hazards)
     template = template.map((hole) => ({
       ...hole,
@@ -126,12 +161,91 @@ export async function joinRound(code: string, playerName: string) {
   return { code: data as string };
 }
 
+/** A seatless phone knocks on a card it says is its own. Only marks the
+ * seat — the hand change waits for an official's approveSeatRescue, so
+ * picking a mate's name off the list buys nothing but a caddy's frown. */
+export async function requestSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("request_seat_rescue", {
+    join_code: code,
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** An official waves the knocker in: the seat — scores, penalties, name —
+ * moves onto the requester's fresh session. The function re-checks
+ * everything at approval time; this wrapper is the usual UX guard. */
+export async function approveSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  await getOfficiatedRound(supabase, code);
+
+  const { error } = await supabase.rpc("approve_seat_rescue", {
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** "Not them" — an official turns a knock away and the seat stays put. */
+export async function dismissSeatRescue(
+  code: string,
+  seatId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  await getOfficiatedRound(supabase, code);
+
+  const { error } = await supabase.rpc("dismiss_seat_rescue", {
+    seat: seatId,
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** An official strikes a seat from the round — the duplicate a broken
+ * cookie made, or a gatecrasher. The seat's own scores and penalties go
+ * with it on the cascades; penalties it called on other cards stay. RLS
+ * ("officials strike seats") is the enforcement and it never matches the
+ * host seat; a filtered delete returns no rows, which is why the returned
+ * rows are checked rather than the error. */
+export async function strikeSeat(
+  code: string,
+  playerId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const { data: struck, error } = await supabase
+    .from("round_players")
+    .delete()
+    .eq("id", playerId)
+    .eq("round_id", round.id)
+    .neq("role", "host")
+    .select("id");
+  if (error) return { error: error.message };
+  if (!struck || struck.length === 0)
+    return { error: "That seat is not yours to strike" };
+
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
 /** Host or caddy flips the lobby live and opens hole 1's timer. */
 export async function startRound(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -194,9 +308,7 @@ export async function advanceHole(code: string): Promise<ActionResult> {
       current_hole: round.current_hole + 1,
       hole_phase: "walking",
       hole_deadline_at: null,
-      walk_deadline_at: walkMinutes
-        ? new Date(Date.now() + walkMinutes * 60_000).toISOString()
-        : null,
+      walk_deadline_at: deadlineFrom(Date.now(), walkMinutes),
     })
     .eq("id", round.id);
   if (error) return { error: error.message };
@@ -213,7 +325,7 @@ export async function teeUpHole(code: string): Promise<ActionResult> {
   if (round.status !== "live" || round.hole_phase !== "walking")
     return { error: "The group isn't walking" };
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -276,6 +388,109 @@ export async function addPenalty(
   return {};
 }
 
+/**
+ * Take a mulligan: wipe this hole and start the drink again, for the
+ * price of a half pint on the card.
+ *
+ * The allowance is for the whole round, so the count is read across every
+ * hole. This check is the friendly message — the real enforcement is the
+ * scores trigger, which is the only thing an attacker with the anon key
+ * cannot route around.
+ */
+export async function takeMulligan(
+  code: string,
+  holeNumber: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const context = await getMemberContext(supabase, code);
+  if ("error" in context) return context;
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("ruleset")
+    .eq("id", context.roundId)
+    .maybeSingle();
+  const ruleset = readRuleset(round?.ruleset);
+  if (ruleset.mulligans < 1)
+    return { error: "This round isn't playing mulligans" };
+
+  const { data: myScores } = await supabase
+    .from("scores")
+    .select("hole_number, mulligans")
+    .eq("round_id", context.roundId)
+    .eq("player_id", context.playerId);
+
+  const used = (myScores ?? []).reduce(
+    (sum, score) => sum + score.mulligans,
+    0,
+  );
+  if (used >= ruleset.mulligans)
+    return { error: "No mulligans left on your card" };
+
+  const onThisHole =
+    (myScores ?? []).find((score) => score.hole_number === holeNumber)
+      ?.mulligans ?? 0;
+
+  const { error } = await supabase.from("scores").upsert(
+    {
+      round_id: context.roundId,
+      player_id: context.playerId,
+      hole_number: holeNumber,
+      swigs: 0,
+      mulligans: onThisHole + 1,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "player_id,hole_number" },
+  );
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/** Marker's card: an official corrects the mulligans on a player-hole.
+ * Officials only — a player raising their own allowance is exactly what the
+ * scores trigger exists to stop. */
+export async function setPlayerMulligans(
+  code: string,
+  playerId: string,
+  holeNumber: number,
+  count: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const ruleset = readRuleset(round.ruleset);
+  const next = Math.max(0, Math.round(count));
+  if (next > MAX_MULLIGANS)
+    return { error: "That is more mulligans than any round allows" };
+
+  const { data: existing } = await supabase
+    .from("scores")
+    .select("hole_number, mulligans")
+    .eq("round_id", round.id)
+    .eq("player_id", playerId);
+
+  const elsewhere = (existing ?? [])
+    .filter((score) => score.hole_number !== holeNumber)
+    .reduce((sum, score) => sum + score.mulligans, 0);
+  if (elsewhere + next > ruleset.mulligans)
+    return { error: "That is over this round's allowance" };
+
+  const { error } = await supabase.from("scores").upsert(
+    {
+      round_id: round.id,
+      player_id: playerId,
+      hole_number: holeNumber,
+      mulligans: next,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "player_id,hole_number" },
+  );
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
 /** Marker's card: an official calls a penalty on any player. The entry is
  * attributed to the official, so "who called it" shows on the card. */
 export async function callPenaltyOn(
@@ -322,7 +537,7 @@ export async function reopenHole(
   if (!Number.isInteger(holeNumber) || holeNumber < 1 || holeNumber > lastHole)
     return { error: "That hole is not on this course" };
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   const { error } = await supabase
     .from("rounds")
     .update({
@@ -335,7 +550,16 @@ export async function reopenHole(
     .eq("id", round.id);
   if (error) return { error: error.message };
   revalidatePath(`/round/${code}`);
-  return {};
+
+  // Server-side, because a client push cannot win this race. Reopening
+  // fires two refreshes at the tapping phone — the realtime echo, and the
+  // one Next runs when this action's revalidate comes back — and a refresh
+  // landing inside a router.push cancels it, dropping the caddy back on the
+  // marker's card as if the button had done nothing. A redirect is part of
+  // the action's own response, so there is nothing left to interrupt.
+  // Both callers want it: the marker's card and the results page alike are
+  // reopening the round to play it.
+  redirect(`/round/${code}/play`);
 }
 
 /** Re-arm the current hole's shared countdown (caddy's discretion —
@@ -344,7 +568,7 @@ export async function resetHoleTimer(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
-  const ruleset = round.ruleset as { holeTimerMinutes?: number | null };
+  const ruleset = readRuleset(round.ruleset);
   if (!ruleset.holeTimerMinutes)
     return { error: "This round has no hole timer" };
 
@@ -352,6 +576,37 @@ export async function resetHoleTimer(code: string): Promise<ActionResult> {
     .from("rounds")
     .update({ hole_deadline_at: holeDeadline(ruleset) })
     .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  return {};
+}
+
+/**
+ * Officials set a player's handicap — the strokes that come off their gross
+ * to give the net the round is won on.
+ *
+ * Not gated on the lobby: players can join a round that has already teed off,
+ * and the marker's card is already where officials put the record straight
+ * after the fact. The round_players trigger is what actually stops a player
+ * flattering their own card.
+ */
+export async function setPlayerHandicap(
+  code: string,
+  playerId: string,
+  handicap: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const next = Math.round(handicap);
+  if (!Number.isFinite(next) || next < 0 || next > MAX_HANDICAP)
+    return { error: `A handicap runs from 0 to ${MAX_HANDICAP}` };
+
+  const { error } = await supabase
+    .from("round_players")
+    .update({ handicap: next })
+    .eq("id", playerId)
+    .eq("round_id", round.id);
   if (error) return { error: error.message };
   revalidatePath(`/round/${code}`);
   return {};
@@ -451,14 +706,197 @@ export async function removePenalty(code: string, penaltyId: string): Promise<Ac
   return {};
 }
 
+/** The host renames the round — the name column only; the ruleset snapshot
+ * and the code stay exactly as dealt. */
+export async function renameRound(
+  code: string,
+  name: string,
+): Promise<ActionResult> {
+  const parsed = z.string().trim().min(1).max(80).safeParse(name);
+  if (!parsed.success)
+    return { error: "A round needs a name — 80 letters at most" };
+
+  const supabase = await createClient();
+  const { round } = await getHostedRound(supabase, code);
+
+  const { error } = await supabase
+    .from("rounds")
+    .update({ name: parsed.data })
+    .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return {};
+}
+
+/** The host tears up the card: the round and everything on it — holes,
+ * seats, scores, penalties — goes with it, on the FK cascades. Host only,
+ * never the caddy: officiating runs a round, it does not own one. RLS is
+ * the real enforcement ("hosts delete rounds"); a filtered delete removes
+ * nothing and returns nothing, which is why the returned rows are checked
+ * rather than the error. */
+export async function deleteRound(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getHostedRound(supabase, code);
+
+  const { data: deleted, error } = await supabase
+    .from("rounds")
+    .delete()
+    .eq("id", round.id)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!deleted || deleted.length === 0)
+    return { error: "Only the host can tear up this card" };
+
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return {};
+}
+
+/** Same again: a brand-new round off this one's own snapshot — its ruleset
+ * and its holes, never the saved course, which may have changed since the
+ * night was built. Fresh code, fresh lobby, tee time cleared, host seated;
+ * everyone else arrives through join_round with the new code, the same
+ * door as any round. */
+export async function rehostRound(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round, userId } = await getHostedRound(supabase, code);
+
+  const { data: holes } = await supabase
+    .from("holes")
+    .select(
+      "number, venue_id, venue_name, drink, par, hazard, hazard_note, penalties, walk_minutes_to_next",
+    )
+    .eq("round_id", round.id)
+    .order("number");
+  if (!holes || holes.length === 0)
+    return { error: "This round has no holes to replay" };
+
+  // Through readRuleset, never a re-cast: the copy is the old snapshot
+  // normalised, with the one advisory field a new night cannot inherit.
+  const old = readRuleset(round.ruleset);
+  const { data: next, error } = await supabase
+    .from("rounds")
+    .insert({
+      name: rematchName(round.name).slice(0, 80),
+      host: userId,
+      ruleset: {
+        format: old.format,
+        hazards: old.hazards,
+        holeTimerMinutes: old.holeTimerMinutes,
+        minutesPerPub: old.minutesPerPub,
+        scheduledTeeOff: null,
+        softSubstituteScoresPar: old.softSubstituteScoresPar,
+        penalties: old.penalties,
+        handicaps: old.handicaps,
+        mulligans: old.mulligans,
+        mulliganStrokes: old.mulliganStrokes,
+      },
+    })
+    .select("id, code")
+    .single();
+  if (error) return { error: `Could not set the table: ${error.message}` };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // Seat the host before the holes — the holes policy reads round_players.
+  const { error: playerError } = await supabase.from("round_players").insert({
+    round_id: next.id,
+    profile_id: userId,
+    display_name: profile?.display_name ?? "Host",
+    role: "host",
+  });
+  if (playerError) {
+    // Don't leave a half-set table behind — the delete policy lets us tidy.
+    await supabase.from("rounds").delete().eq("id", next.id);
+    return { error: `Could not seat the host: ${playerError.message}` };
+  }
+
+  const { error: holesError } = await supabase
+    .from("holes")
+    .insert(holes.map((hole) => ({ ...hole, round_id: next.id })));
+  if (holesError) {
+    await supabase.from("rounds").delete().eq("id", next.id);
+    return { error: `Could not build the course: ${holesError.message}` };
+  }
+
+  redirect(`/round/${next.code}`);
+}
+
+/** An official files the card early: the round ends now, for everyone, and
+ * the standings stand as played. Honest maths — unplayed holes take the
+ * substitute for every card alike, so stopping short buys nobody a
+ * stroke. */
+export async function fileCardEarly(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  if (round.status !== "live")
+    return { error: "Only a live round can be filed early" };
+
+  const { error } = await supabase
+    .from("rounds")
+    .update({
+      status: "finished",
+      hole_deadline_at: null,
+      walk_deadline_at: null,
+    })
+    .eq("id", round.id);
+  if (error) return { error: error.message };
+  revalidatePath(`/round/${code}`);
+  revalidatePath("/rounds");
+  revalidatePath("/");
+  return { finished: true };
+}
+
+/** The round's course, back into the book: copies this round's holes —
+ * walks, hazards and local rules as they were actually played — into a
+ * saved course owned by the host, so the night can be built on again. */
+export async function saveRoundAsCourse(code: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round, userId } = await getHostedRound(supabase, code);
+
+  const { data: holes } = await supabase
+    .from("holes")
+    .select(
+      "number, venue_id, venue_name, drink, par, hazard, hazard_note, penalties, walk_minutes_to_next",
+    )
+    .eq("round_id", round.id)
+    .order("number");
+  if (!holes || holes.length === 0)
+    return { error: "This round has no holes to save" };
+
+  const { data: course, error } = await supabase
+    .from("courses")
+    .insert({ owner: userId, name: round.name })
+    .select("id")
+    .single();
+  if (error) return { error: error.message };
+
+  const { error: holesError } = await supabase
+    .from("course_holes")
+    .insert(holes.map((hole) => ({ ...hole, course_id: course.id })));
+  if (holesError) {
+    // Don't leave a hole-less course behind.
+    await supabase.from("courses").delete().eq("id", course.id);
+    return { error: holesError.message };
+  }
+
+  revalidatePath("/courses");
+  return {};
+}
+
 // ---------- helpers ----------
 
 type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
 
 function holeDeadline(ruleset: { holeTimerMinutes?: number | null }) {
-  return ruleset.holeTimerMinutes
-    ? new Date(Date.now() + ruleset.holeTimerMinutes * 60_000).toISOString()
-    : null;
+  return deadlineFrom(Date.now(), ruleset.holeTimerMinutes);
 }
 
 /** Fetch the round and assert the caller is host or caddy (UX guard — RLS
@@ -487,6 +925,27 @@ async function getOfficiatedRound(supabase: ServerSupabase, code: string) {
     throw new Error("Only the host or caddy can do that");
 
   return { round, playerRowId: player.id };
+}
+
+/** Fetch the round and assert the caller is its host — the manage sheet's
+ * lifecycle actions (tear up, rematch, rename, save the course) are the
+ * host's alone, and the caddy is deliberately not enough. UX guard like
+ * getOfficiatedRound; the delete policy is the enforcement that holds. */
+async function getHostedRound(supabase: ServerSupabase, code: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/signin");
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("*")
+    .eq("code", code.toUpperCase())
+    .maybeSingle();
+  if (!round) throw new Error("Round not found");
+  if (round.host !== user.id) throw new Error("Only the host can do that");
+
+  return { round, userId: user.id };
 }
 
 async function getMemberContext(supabase: ServerSupabase, code: string) {

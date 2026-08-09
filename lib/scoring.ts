@@ -4,12 +4,21 @@ export interface StandingRow {
   playerId: string;
   name: string;
   role: string;
-  /** Swigs + penalty strokes across holes played. */
+  /** Swigs + penalty strokes + mulligans, across holes played. */
   gross: number;
   penaltyStrokes: number;
+  /** Mulligans taken so far — the count, not the strokes. */
+  mulligans: number;
   holesPlayed: number;
   /** Gross minus the par of the holes actually played. */
   toPar: number;
+  /** The player's whole-round handicap, as set by the officials. */
+  handicap: number;
+  /** How much of it is in play yet — see computeStandings. */
+  handicapApplied: number;
+  /** Gross minus the handicap in play. This is what the round is won on. */
+  net: number;
+  netToPar: number;
   rank: number;
   isYou: boolean;
 }
@@ -24,27 +33,47 @@ export interface StandingsOptions {
   /** Substitute = par when true (the friendly default), double par —
    * the maximum — when false. */
   softSubstituteScoresPar: boolean;
+  /** What one mulligan costs on the card. */
+  mulliganStrokes: number;
 }
+
+const DEFAULT_OPTIONS: StandingsOptions = {
+  filedThrough: 0,
+  softSubstituteScoresPar: true,
+  mulliganStrokes: 1,
+};
 
 /**
  * Live standings: players may be on different holes mid-round, so ranking
  * uses score-to-par over holes each player has actually recorded, exactly
  * like a golf leaderboard mid-tournament. Filed holes always count —
  * unplayed drinks score the substitute, never zero.
+ *
+ * Handicaps come off gross to give net, and net is what the round is won on.
+ * They arrive **pro rata**, though: a flat six shots off from the first hole
+ * would put a six-handicap six under before they had drunk anything, and this
+ * leaderboard is read all night, not just at the end. So a player holds the
+ * share of their handicap matching the holes they have played — which is the
+ * whole handicap by the time the card is filed, and an honest number before.
  */
 export function computeStandings(
   holes: Pick<Tables<"holes">, "number" | "par">[],
-  players: Pick<Tables<"round_players">, "id" | "display_name" | "role">[],
-  scores: Pick<Tables<"scores">, "player_id" | "hole_number" | "swigs">[],
+  players: Pick<
+    Tables<"round_players">,
+    "id" | "display_name" | "role" | "handicap"
+  >[],
+  scores: Pick<
+    Tables<"scores">,
+    "player_id" | "hole_number" | "swigs" | "mulligans"
+  >[],
   penalties: Pick<Tables<"penalties">, "player_id" | "strokes">[],
   myPlayerId?: string,
-  options: StandingsOptions = { filedThrough: 0, softSubstituteScoresPar: true },
+  options: StandingsOptions = DEFAULT_OPTIONS,
 ): StandingRow[] {
   const rows = players.map((player) => {
+    const myScores = scores.filter((score) => score.player_id === player.id);
     const scoreByHole = new Map(
-      scores
-        .filter((score) => score.player_id === player.id)
-        .map((score) => [score.hole_number, score.swigs]),
+      myScores.map((score) => [score.hole_number, score.swigs]),
     );
 
     let swigs = 0;
@@ -53,7 +82,9 @@ export function computeStandings(
     for (const hole of holes) {
       const recorded = scoreByHole.get(hole.number) ?? 0;
       if (hole.number <= options.filedThrough) {
-        // Filed: a drink with no swigs on it never happened.
+        // Filed: a drink with no swigs on it never happened. That holds even
+        // after a mulligan — resetting a hole must never buy a free
+        // one, so the substitute lands and the mulligan is still charged.
         swigs +=
           recorded > 0
             ? recorded
@@ -73,7 +104,21 @@ export function computeStandings(
     const penaltyStrokes = penalties
       .filter((penalty) => penalty.player_id === player.id)
       .reduce((sum, penalty) => sum + penalty.strokes, 0);
-    const gross = swigs + penaltyStrokes;
+    // Every mulligan is charged, wherever on the card it was taken —
+    // the same rule penalties already follow.
+    const mulligans = myScores.reduce(
+      (sum, score) => sum + score.mulligans,
+      0,
+    );
+    const gross =
+      swigs + penaltyStrokes + mulligans * options.mulliganStrokes;
+
+    const handicap = player.handicap;
+    const handicapApplied =
+      holes.length > 0
+        ? Math.round((handicap * holesPlayed) / holes.length)
+        : 0;
+    const net = gross - handicapApplied;
 
     return {
       playerId: player.id,
@@ -81,20 +126,26 @@ export function computeStandings(
       role: player.role,
       gross,
       penaltyStrokes,
+      mulligans,
       holesPlayed,
       toPar: gross - parPlayed,
+      handicap,
+      handicapApplied,
+      net,
+      netToPar: net - parPlayed,
       rank: 0,
       isYou: player.id === myPlayerId,
     };
   });
 
   rows.sort(
-    (a, b) => a.toPar - b.toPar || b.holesPlayed - a.holesPlayed || a.gross - b.gross,
+    (a, b) =>
+      a.netToPar - b.netToPar || b.holesPlayed - a.holesPlayed || a.net - b.net,
   );
   rows.forEach((row, index) => {
     // Shared placings on equal score-to-par, golf style.
     row.rank =
-      index > 0 && rows[index - 1].toPar === row.toPar
+      index > 0 && rows[index - 1].netToPar === row.netToPar
         ? rows[index - 1].rank
         : index + 1;
   });
@@ -136,19 +187,39 @@ export function computeSuperlatives(
     }
   }
 
+  // Order of `players` is the join order the page selected; `scores` arrives
+  // with no ORDER BY at all, so the winner of a tie may not be decided by
+  // where a row happened to land in the result set. Two players level on the
+  // best hole of the night is ordinary — par 1 at the World's End, both down
+  // in one — and the recap naming a different one on each realtime refresh
+  // reads as the board glitching. So ties go to the earlier hole, then to
+  // the earlier seat: whoever set the mark first keeps it.
+  const seatOrder = new Map(players.map((player, index) => [player.id, index]));
   let bestHole: Superlatives["bestHole"] = null;
+  let bestAt = { hole: Infinity, seat: Infinity };
   for (const score of scores) {
     if (score.swigs === 0) continue; // an undrunk drink is nobody's best hole
     const par = parByHole.get(score.hole_number);
     const name = nameById.get(score.player_id);
     if (par === undefined || !name) continue;
     const toPar = score.swigs - par;
-    if (!bestHole || toPar < bestHole.toPar) {
+    const at = {
+      hole: score.hole_number,
+      seat: seatOrder.get(score.player_id) ?? Infinity,
+    };
+    const beatsIt =
+      !bestHole ||
+      toPar < bestHole.toPar ||
+      (toPar === bestHole.toPar &&
+        (at.hole < bestAt.hole ||
+          (at.hole === bestAt.hole && at.seat < bestAt.seat)));
+    if (beatsIt) {
       bestHole = {
         name,
         venue: venueByHole.get(score.hole_number) ?? `hole ${score.hole_number}`,
         toPar,
       };
+      bestAt = at;
     }
   }
 

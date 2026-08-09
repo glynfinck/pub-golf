@@ -1,14 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
-import { RuleDouble } from "@/components/ui/rule";
+import { HouseMark } from "@/components/ui/house-mark";
+import { PendingLabel } from "@/components/ui/pending-label";
+import { useAction } from "@/hooks/use-action";
 import { createCourse } from "@/lib/actions/courses";
 
 /** The course builder: search Google for the pubs, dress each hole with
@@ -16,7 +19,7 @@ import { createCourse } from "@/lib/actions/courses";
  * night. */
 export default function NewCoursePage() {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [name, setName] = useState("");
   const [holes, setHoles] = useState<DraftHole[]>([]);
 
@@ -29,12 +32,13 @@ export default function NewCoursePage() {
         par: 4,
         hazard: null,
         hazard_note: null,
+        penalties: [],
       },
     ]);
   }
 
   function save() {
-    startTransition(async () => {
+    run(async () => {
       const result = await createCourse({
         name,
         holes: holes.map((hole) => ({
@@ -44,15 +48,15 @@ export default function NewCoursePage() {
           par: hole.par,
           hazard: hole.hazard,
           hazard_note: hole.hazard_note,
+          // A rule with no offence on it is a half-typed thought, not a rule.
+          penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
           lat: hole.lat,
           lng: hole.lng,
         })),
       });
-      if (result.error) toast.error(result.error);
-      else {
-        toast.success("Course saved to the book.");
-        router.push("/courses");
-      }
+      if (result.error) return result;
+      toast.success("Course saved to the book.");
+      router.push("/courses");
     });
   }
 
@@ -60,7 +64,11 @@ export default function NewCoursePage() {
 
   return (
     <Screen>
-      <RuleDouble />
+      <Masthead
+        back={{ href: "/courses", label: "Courses" }}
+        center={<HouseMark className="mx-auto size-6" />}
+        busy={busy}
+      />
       <ScreenHeader
         eyebrow={`New course · ${holes.length} holes so far`}
         title="Plot the course"
@@ -105,9 +113,12 @@ export default function NewCoursePage() {
         disabled={pending || !name.trim() || holes.length === 0}
         className="mt-auto"
       >
-        {pending
-          ? "Filing the course…"
-          : `Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`}
+        <PendingLabel
+          pending={pending}
+          busy={busy}
+          label={`Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`}
+          pendingLabel="Filing the course"
+        />
       </Button>
     </Screen>
   );

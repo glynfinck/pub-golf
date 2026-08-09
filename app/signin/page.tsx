@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { GoogleSignIn } from "@/components/auth/google-sign-in";
 import { Screen } from "@/components/shell/screen";
+import { HouseMark } from "@/components/ui/house-mark";
 import { APP_NAME, TAGLINE } from "@/lib/config";
 
 export default async function SignInPage({
@@ -18,28 +19,9 @@ export default async function SignInPage({
   return (
     <Screen className="justify-center gap-8">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex size-20 items-center justify-center rounded-full border-2 border-fairway">
-          <svg viewBox="0 0 28 28" className="size-9" aria-hidden fill="none">
-            <line
-              x1="11"
-              y1="3"
-              x2="11"
-              y2="22"
-              stroke="var(--fairway)"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-            <path d="M 11 3.5 L 22 6.5 L 11 10.5 Z" fill="var(--marker)" />
-            <ellipse
-              cx="14"
-              cy="23"
-              rx="8"
-              ry="2.6"
-              stroke="var(--fairway)"
-              strokeWidth="1.6"
-            />
-          </svg>
-        </div>
+        {/* No ring around it any more: the mark carries its own plate, and a
+            squircle inside a circle is two frames arguing. */}
+        <HouseMark className="mx-auto mb-4 size-20 rounded-2xl" />
         <h1 className="font-serif text-4xl tracking-[0.08em] uppercase">
           {APP_NAME}
         </h1>

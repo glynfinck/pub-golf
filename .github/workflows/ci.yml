@@ -1,5 +1,12 @@
 name: CI
 
+# `main` and `preview` are the two release branches. Both are deployed by the
+# platforms themselves, not from here — Vercel's git integration builds the
+# app, Supabase's GitHub integration applies the migrations. See DEPLOYMENT.md.
+#
+# So this workflow ships nothing. It is the proof, not the pipeline: it must
+# stay a required status check on both branches, because a merge is the only
+# thing that reaches a release branch and a deploy follows it unconditionally.
 on:
   push:
     branches: [main, preview]
@@ -33,6 +40,17 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Pure logic — scoring substitutions, placings, clock and walk maths.
+      # Runs before Docker: the whole tier costs less than one `supabase
+      # start`, so a broken leaderboard never pays for a container boot.
+      - name: Unit tests
+        run: npm test
+
+      # Moved above `supabase start`: tsc needs no stack, so a type error is
+      # reported in seconds rather than after the stack has come up.
+      - name: Typecheck
+        run: npm run typecheck
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -42,156 +60,84 @@ jobs:
           supabase start
           supabase db reset   # deterministic: re-applies migrations from scratch
 
-      # The service role key is for the e2e suite only — it seeds host sessions
-      # with the admin API, since Google's consent screen can't be driven here.
+      # The service role key is spent two ways: the e2e suite seeds host
+      # sessions with the admin API (Google's consent screen can't be driven
+      # here), and the db suite reads rows back past RLS with it.
+      #
+      # `jq -r` prints the string "null" for a field that isn't there, so a key
+      # that failed to resolve used to end up in .env.local looking perfectly
+      # real and only announced itself much later as a permission error. Each
+      # value is checked here instead, where the log still says which one.
       - name: Point the app at local Supabase
         run: |
           STATUS=$(supabase status -o json)
+          API_URL=$(jq -r '.API_URL // empty' <<<"$STATUS")
+          ANON=$(jq -r '.ANON_KEY // .PUBLISHABLE_KEY // empty' <<<"$STATUS")
+          SERVICE=$(jq -r '.SERVICE_ROLE_KEY // .SECRET_KEY // empty' <<<"$STATUS")
+
+          missing=""
+          [ -n "$API_URL" ] || missing="$missing API_URL"
+          [ -n "$ANON" ]    || missing="$missing ANON_KEY"
+          [ -n "$SERVICE" ] || missing="$missing SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error title=Supabase status is missing keys::supabase status -o json had no:$missing"
+            echo "Fields it did offer: $(jq -r 'keys | join(", ")' <<<"$STATUS")"
+            exit 1
+          fi
+
           {
-            echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL <<<"$STATUS")"
-            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY <<<"$STATUS")"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$STATUS")"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
           } >> .env.local
 
-      - name: Typecheck
-        run: npm run typecheck
+      # RLS is the app's real access control — every server action reaches
+      # Postgres through PostgREST on the caller's own session — so it is
+      # verified against the database directly, and before the build: a policy
+      # regression should not wait on webpack and a browser download.
+      - name: RLS + database tests
+        run: npm run test:db
+
+      # The same stack, crowded: twenty sessions on one round — the join
+      # stampede, the score storm, the mulligan burst, a full eighteen-hole
+      # card. Races only surface under contention, so this tier is in the
+      # gate rather than on a schedule: a nightly red is a report nobody
+      # owns, a PR red is a diff somebody is already looking at.
+      - name: Stress tests (twenty sessions)
+        run: npm run test:stress
 
       - name: Build
         run: npm run build
 
-      # Two browser contexts play a full round against the seeded stack above:
-      # OTP sign-in via Mailpit, create, guest join, caddy controls, results.
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      # Browser contexts play full rounds against the seeded stack above:
+      # create, guest join, caddy controls, live score sync, a four-phone
+      # foursome, results. The host session is minted with the admin API in
+      # e2e/auth.ts — Google's consent screen cannot be driven from CI.
+      #
+      # Three engines, because playwright.config.ts runs a platform matrix
+      # (Android Chrome, iOS Safari, desktop Firefox) and the suite fails at
+      # startup if an engine in the matrix has no browser installed.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit firefox
 
       - name: E2E tests (Playwright)
         run: npm run test:e2e
 
+      # Both halves are real now: playwright-report/ carries the html report
+      # the CI reporter writes, and test-results/ holds each failure's
+      # error-context.md (the page snapshot at the moment it failed, error
+      # toasts included) plus the step-by-step trace.zip recorded for any
+      # test that needed a retry — open it at trace.playwright.dev.
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
 
       - name: Stop Supabase
         if: always()
         run: supabase stop --no-backup || true
-
-  # ---------------------------------------------------------------------------
-  # migrate: push migrations to the production Supabase project. Runs BEFORE
-  # the app deploys (see the deploy job) so production code never boots against
-  # an older schema. Migration validity is already proven by verify's
-  # `supabase db reset` on a fresh database.
-  #
-  # This job only ever runs `db push` (additive, tracked, transactional) —
-  # never `db reset`. It skips cleanly until the Supabase secrets exist, so the
-  # pipeline is green before you've finished wiring credentials.
-  # ---------------------------------------------------------------------------
-  migrate:
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    concurrency: production-migrate # never overlap prod migrations
-    outputs:
-      ready: ${{ steps.guard.outputs.ready }}
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check Supabase secrets
-        id: guard
-        env:
-          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          PW: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          if [ -n "$TOKEN" ] && [ -n "$REF" ] && [ -n "$PW" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Migrations skipped::Add SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF and SUPABASE_DB_PASSWORD secrets to enable production migrations."
-          fi
-
-      - uses: supabase/setup-cli@v1
-        if: steps.guard.outputs.ready == 'true'
-        with:
-          version: latest
-
-      - name: Link project
-        if: steps.guard.outputs.ready == 'true'
-        run: supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}" --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
-
-      - name: Show migration state & plan
-        if: steps.guard.outputs.ready == 'true'
-        run: |
-          echo "::group::Applied vs. pending"
-          supabase migration list --password "${{ secrets.SUPABASE_DB_PASSWORD }}" || true
-          echo "::endgroup::"
-          echo "::group::Dry run (statements that will be applied)"
-          supabase db push --dry-run --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
-          echo "::endgroup::"
-
-      - name: Apply migrations
-        if: steps.guard.outputs.ready == 'true'
-        run: supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
-
-  # ---------------------------------------------------------------------------
-  # deploy: ship the app to Vercel production — only after migrate has applied
-  # the schema. Vercel's own git auto-deploy for `main` is switched OFF in
-  # vercel.json precisely so this job is the only path to production; otherwise
-  # Vercel would race the migrate job and new code could serve an old schema.
-  #
-  # Preview deploys for non-main branches still run through Vercel's git
-  # integration as normal — they point at whatever Supabase you configure for
-  # the preview environment.
-  # ---------------------------------------------------------------------------
-  deploy:
-    needs: migrate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    concurrency: production-deploy
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Check Vercel secrets
-        id: guard
-        env:
-          TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          ORG: ${{ secrets.VERCEL_ORG_ID }}
-          PROJECT: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          if [ -n "$TOKEN" ] && [ -n "$ORG" ] && [ -n "$PROJECT" ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=Deploy skipped::Add VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID secrets to enable production deploys."
-          fi
-
-      - name: Install Vercel CLI
-        if: steps.guard.outputs.ready == 'true'
-        run: npm i -g vercel@latest
-
-      # Pulls the production environment variables set in the Vercel project,
-      # so the build here is byte-for-byte what Vercel would have built.
-      - name: Pull Vercel environment
-        if: steps.guard.outputs.ready == 'true'
-        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
-
-      - name: Build
-        if: steps.guard.outputs.ready == 'true'
-        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
-
-      - name: Deploy to production
-        if: steps.guard.outputs.ready == 'true'
-        run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"

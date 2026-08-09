@@ -2,20 +2,24 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { ChevronRight, Minus, Plus } from "lucide-react";
-import { toast } from "sonner";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { MarkerPlayerSheet } from "@/components/round/marker-player-sheet";
-import { penaltyOptions } from "@/components/round/penalty-sheet";
+import { RescueKnock } from "@/components/round/rescue-knock";
+import { penaltyOptions } from "@/lib/penalty-options";
 import { useLiveRound } from "@/components/round/use-live-round";
+import { RoundBar } from "@/components/round/round-bar";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { RuleDouble } from "@/components/ui/rule";
+import { PendingLabel } from "@/components/ui/pending-label";
+import { useAction } from "@/hooks/use-action";
+import { useDraftFigures } from "@/hooks/use-draft-figures";
 import { reopenHole, setPlayerScore } from "@/lib/actions/rounds";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { readHolePenalties, readRuleset } from "@/lib/ruleset";
 import { cn, formatToPar } from "@/lib/utils";
 
 /**
@@ -30,37 +34,56 @@ export function MarkersCardView({
   bundle: RoundBundle;
   viewedHole: number;
 }) {
-  const { round, holes, players, scores, penalties } = bundle;
+  const { round, holes, players, scores, penalties, me } = bundle;
   useLiveRound(round.id);
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   const [sheetPlayerId, setSheetPlayerId] = useState<string | null>(null);
 
   const hole = holes.find((h) => h.number === viewedHole) ?? holes[0];
   const roaming =
     round.status === "finished" || viewedHole !== round.current_hole;
-  const ruleset = round.ruleset as {
-    penalties?: { strokes: number; reason: string }[];
-  };
-  const options = penaltyOptions(ruleset.penalties);
+  const ruleset = readRuleset(round.ruleset);
+  const options = penaltyOptions(
+    ruleset.penalties,
+    readHolePenalties(hole.penalties),
+  );
   const sheetPlayer =
     players.find((player) => player.id === sheetPlayerId) ?? null;
 
-  function swigsFor(playerId: string) {
-    return (
-      scores.find(
-        (score) =>
-          score.player_id === playerId && score.hole_number === viewedHole,
-      )?.swigs ?? 0
+  function scoreFor(playerId: string) {
+    return scores.find(
+      (score) =>
+        score.player_id === playerId && score.hole_number === viewedHole,
     );
   }
 
+  // Optimistic swigs, per player-hole: the figure moves on the caddy's tap
+  // and a burst of taps becomes one write. Keyed by hole as well as player
+  // so a roam to another hole never wears this one's overlay.
+  const figureKey = (playerId: string) => `${viewedHole}:${playerId}`;
+  const figures = useDraftFigures({
+    server: Object.fromEntries(
+      players.map((player) => [
+        figureKey(player.id),
+        scoreFor(player.id)?.swigs ?? 0,
+      ]),
+    ),
+    write: (key, value) => {
+      const playerId = key.slice(key.indexOf(":") + 1);
+      return setPlayerScore(round.code, playerId, viewedHole, value);
+    },
+  });
+
+  function swigsFor(playerId: string) {
+    return figures.valueOf(figureKey(playerId));
+  }
+
   function adjust(playerId: string, delta: number) {
-    const next = Math.max(0, swigsFor(playerId) + delta);
-    startTransition(async () => {
-      const result = await setPlayerScore(round.code, playerId, viewedHole, next);
-      if (result.error) toast.error(result.error);
-    });
+    figures.set(
+      figureKey(playerId),
+      Math.max(0, swigsFor(playerId) + delta),
+    );
   }
 
   function viewHole(n: number) {
@@ -72,12 +95,10 @@ export function MarkersCardView({
     );
   }
 
+  // reopenHole redirects to the live hole itself — see the action. Doing it
+  // here meant racing two refreshes with a router.push, and losing.
   function reopen() {
-    startTransition(async () => {
-      const result = await reopenHole(round.code, viewedHole);
-      if (result.error) toast.error(result.error);
-      else router.push(`/round/${round.code}/play`);
-    });
+    run(() => reopenHole(round.code, viewedHole));
   }
 
   const backHref =
@@ -87,7 +108,7 @@ export function MarkersCardView({
 
   return (
     <Screen>
-      <RuleDouble />
+      <RoundBar round={round} holes={holes} hole={viewedHole} busy={busy} />
       <ScreenHeader
         eyebrow={`Caddy · ${roaming ? "reviewing" : "hole"} ${viewedHole}`}
         title="The marker's card"
@@ -104,6 +125,8 @@ export function MarkersCardView({
         viewingHole={viewedHole}
         onSelect={viewHole}
       />
+
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <div className="text-sm">
         <span className="font-serif italic">{hole.venue_name}</span>
@@ -126,6 +149,7 @@ export function MarkersCardView({
       <Card className="gap-0 px-4 py-1">
         {players.map((player, index) => {
           const swigs = swigsFor(player.id);
+          const settling = figures.settling(figureKey(player.id));
           const holePenalties = penalties.filter(
             (row) =>
               row.player_id === player.id && row.hole_number === viewedHole,
@@ -135,6 +159,7 @@ export function MarkersCardView({
             0,
           );
           const delta = swigs + penaltyStrokes - hole.par;
+          const mulligans = scoreFor(player.id)?.mulligans ?? 0;
           return (
             <div
               key={player.id}
@@ -170,6 +195,11 @@ export function MarkersCardView({
                       : swigs === 0
                         ? "no swigs — scores the substitute"
                         : formatToPar(delta)}
+                    {mulligans > 0
+                      ? ` · ${mulligans} ${
+                          mulligans === 1 ? "mulligan" : "mulligans"
+                        }`
+                      : ""}
                   </span>
                 </span>
                 <ChevronRight
@@ -182,19 +212,24 @@ export function MarkersCardView({
                 <button
                   type="button"
                   aria-label={`Fewer swigs for ${player.display_name} on hole ${viewedHole}`}
-                  disabled={pending || swigs === 0}
+                  disabled={swigs === 0}
                   onClick={() => adjust(player.id, -1)}
                   className="flex size-9 items-center justify-center rounded-full border-[1.5px] border-border text-muted-foreground disabled:opacity-30"
                 >
                   <Minus size={15} aria-hidden />
                 </button>
-                <span className="tabular min-w-6 text-center font-serif text-xl">
+                <span
+                  className={cn(
+                    "tabular min-w-6 text-center font-serif text-xl",
+                    // Ahead of the server: marker ink until Postgres echoes it.
+                    settling && "text-marker",
+                  )}
+                >
                   {swigs}
                 </span>
                 <button
                   type="button"
                   aria-label={`More swigs for ${player.display_name} on hole ${viewedHole}`}
-                  disabled={pending}
                   onClick={() => adjust(player.id, 1)}
                   className="flex size-9 items-center justify-center rounded-full border-[1.5px] border-good text-good disabled:opacity-30"
                 >
@@ -221,7 +256,12 @@ export function MarkersCardView({
               onClick={reopen}
               className="flex min-h-12 items-center justify-center rounded-xl border-[1.5px] border-hazard text-sm font-bold text-hazard disabled:opacity-40"
             >
-              Reopen hole {viewedHole} for everyone
+              <PendingLabel
+                pending={pending}
+                busy={busy}
+                label={`Reopen hole ${viewedHole} for everyone`}
+                pendingLabel={`Reopening hole ${viewedHole} on every phone`}
+              />
             </button>
             {round.status !== "finished" ? (
               <Button onClick={() => viewHole(round.current_hole)}>
@@ -246,6 +286,20 @@ export function MarkersCardView({
         )}
         players={players}
         options={options}
+        mulligans={
+          sheetPlayerId ? (scoreFor(sheetPlayerId)?.mulligans ?? 0) : 0
+        }
+        mulligansOffered={ruleset.mulligans > 0}
+        canStrike={
+          sheetPlayer !== null &&
+          sheetPlayer.role !== "host" &&
+          sheetPlayer.id !== me?.id
+        }
+        scoredHoles={
+          scores.filter(
+            (score) => score.player_id === sheetPlayerId && score.swigs > 0,
+          ).length
+        }
       />
     </Screen>
   );

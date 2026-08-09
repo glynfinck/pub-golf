@@ -1,6 +1,7 @@
 "use client";
 
 import { useCountdown } from "@/hooks/use-countdown";
+import { formatClock, isUrgent, spokenClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,9 +17,10 @@ export function Countdown({
   className?: string;
 }) {
   const remainingMs = useCountdown(deadline);
+  const spoken = spokenClock(remainingMs);
 
   // Render a placeholder until the first client tick (hydration safety).
-  if (remainingMs === null) {
+  if (spoken === null) {
     return (
       <span className={cn("tabular font-mono font-bold", className)}>
         --:--
@@ -26,21 +28,16 @@ export function Countdown({
     );
   }
 
-  const totalSeconds = Math.ceil(remainingMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const urgent = totalSeconds <= 120;
-
   return (
     <span
       className={cn(
         "tabular font-mono font-bold",
-        urgent ? "text-hazard" : "text-foreground",
+        isUrgent(remainingMs) ? "text-hazard" : "text-foreground",
         className,
       )}
-      aria-label={`${minutes} minutes ${seconds} seconds left on this hole`}
+      aria-label={`${spoken} left on this hole`}
     >
-      {minutes}:{seconds.toString().padStart(2, "0")}
+      {formatClock(remainingMs)}
     </span>
   );
 }

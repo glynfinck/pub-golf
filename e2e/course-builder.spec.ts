@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import { signInAs } from "./auth";
+import { expectSettled } from "./nav";
 
 test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
@@ -11,12 +12,26 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
 
   // ---- Plot a two-pub course by name (works with or without a key) ----
   await page.goto("/courses/new");
-  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+  // The builder hangs from the same masthead as every no-tab-bar screen,
+  // and its way back is the course book. Count first: mid-navigation the
+  // outgoing and incoming screens both hold a masthead for a moment.
+  await expectSettled(page, "masthead-back", (back) =>
+    expect(back).toHaveAttribute("href", "/courses"),
+  );
+  // Same controlled-form race full-house documents: a fill landing before
+  // hydration is silently wiped, so prove the page live through the Add
+  // button (it enables only when React sees text) before typing the name.
+  const pubField = page.getByLabel(/add a pub by name/i);
+  const addPub = page.getByRole("button", { name: /add the named pub/i });
+  await expect(async () => {
+    await pubField.fill("The Test Tavern");
+    await expect(addPub).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
 
-  await page.getByLabel(/add a pub by name/i).fill("The Test Tavern");
-  await page.getByRole("button", { name: /add the named pub/i }).click();
-  await page.getByLabel(/add a pub by name/i).fill("The Other Arms");
-  await page.getByRole("button", { name: /add the named pub/i }).click();
+  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+  await addPub.click();
+  await pubField.fill("The Other Arms");
+  await addPub.click();
 
   // Dress hole 1: par up, a proper drink, a water hazard with a note.
   await page.getByRole("button", { name: /raise par on hole 1/i }).click();
@@ -26,6 +41,18 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
     .getByLabel(/hazard note for hole 1/i)
     .fill("No toilet for the whole hole");
 
+  // A local rule on hole 1 only — the hazard note says what the rule is, this
+  // says what it costs.
+  await page.getByRole("button", { name: /add a local rule/i }).first().click();
+  await page
+    .getByLabel(/local rule 1 on hole 1/i)
+    .fill("Drinking with your right hand");
+  await page
+    .getByRole("button", {
+      name: /raise the strokes on local rule 1 of hole 1/i,
+    })
+    .click();
+
   await page.getByRole("button", { name: /save the course · 2 holes/i }).click();
   await page.waitForURL(/\/courses$/);
   await expect(page.getByText(`Two Pub Crawl ${stamp}`)).toBeVisible();
@@ -33,6 +60,10 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
 
   // ---- The saved course appears in the round wizard and plays ----
   await page.goto("/new");
+  // The wizard's masthead walks back to the clubhouse it was opened from.
+  await expectSettled(page, "masthead-back", (back) =>
+    expect(back).toHaveAttribute("href", "/"),
+  );
   await page.getByLabel(/round name/i).fill(`Course Test ${stamp}`);
   await page
     .getByRole("button", { name: new RegExp(`Two Pub Crawl ${stamp}`) })
@@ -50,6 +81,35 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expect(page.getByTestId("hole-venue")).toHaveText("The Test Tavern");
   await expect(page.getByText("Pint of the black stuff")).toBeVisible();
   await expect(page.getByText(/no toilet for the whole hole/i)).toBeVisible();
+
+  // The local rule is on hole 1's sheet, under its own heading, alongside the
+  // house shortcuts — and it followed the course into the round's snapshot.
+  // Scoped to the sheet: the play screen behind it carries a presence line
+  // reading "1 OF 1 ON THIS HOLE", which a loose text match also finds.
+  const sheet = page.getByRole("dialog");
+  await page.getByRole("button", { name: /penalties/i }).click();
+  await expect(sheet.getByText("On this hole", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: /call drinking with your right hand \+3/i,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /call spill \+1/i }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Hole 2 was never given one, so its sheet is the house list alone.
+  await page.getByTestId("hole-out").click();
+  await page.getByTestId("tee-up").click();
+  await expect(page.getByTestId("hole-venue")).toHaveText("The Other Arms");
+  await page.getByRole("button", { name: /penalties/i }).click();
+  await expect(
+    page.getByRole("button", {
+      name: /call drinking with your right hand \+3/i,
+    }),
+  ).toBeHidden();
+  await expect(sheet.getByText("On this hole", { exact: true })).toBeHidden();
 });
 
 test("pub search returns real venues when a Places key is configured", async ({

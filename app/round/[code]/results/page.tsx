@@ -1,17 +1,39 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ClaimCard } from "@/components/round/claim-card";
 import { Podium } from "@/components/round/podium";
 import { RecapCard } from "@/components/round/recap-card";
+import { RescueKnock } from "@/components/round/rescue-knock";
 import { ReopenRound, ResultsLive } from "@/components/round/results-live";
+import { RoundBar } from "@/components/round/round-bar";
+import { SameAgain } from "@/components/round/same-again";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
-import { RuleDouble } from "@/components/ui/rule";
 import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
+import { getRoundCard } from "@/lib/data/round-card";
+import { readRuleset } from "@/lib/ruleset";
 import { computeStandings, computeSuperlatives } from "@/lib/scoring";
 import { cn, formatToPar } from "@/lib/utils";
+
+/** No winner in the title — the results page redirects a signed-out visitor,
+ * and the preview must not hand out what the page will not. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ code: string }>;
+}): Promise<Metadata> {
+  const { code } = await params;
+  const round = await getRoundCard(code.toUpperCase());
+  if (!round) return { title: "The 19th hole" };
+
+  return {
+    title: `${round.name} — the 19th hole`,
+    description: `${round.holeCount} holes, par ${round.par}. The card, filed.`,
+  };
+}
 
 export default async function ResultsPage({
   params,
@@ -25,18 +47,21 @@ export default async function ResultsPage({
   const normalized = code.toUpperCase();
 
   const user = await getSessionUser();
-  if (!user) redirect(`/join?code=${normalized}`);
+  if (!user) redirect(`/round/${normalized}/rescue`);
 
   const bundle = await getRoundByCode(normalized);
-  if (!bundle || !bundle.me) redirect(`/join?code=${normalized}`);
+  if (!bundle || !bundle.me) redirect(`/round/${normalized}/rescue`);
   if (bundle.round.status !== "finished") redirect(`/round/${normalized}`);
 
   const { round, holes, players, scores, penalties, me } = bundle;
-  const ruleset = round.ruleset as { softSubstituteScoresPar?: boolean };
+  const ruleset = readRuleset(round.ruleset);
   const standings = computeStandings(holes, players, scores, penalties, me?.id, {
     filedThrough: holes.length,
-    softSubstituteScoresPar: ruleset.softSubstituteScoresPar ?? true,
+    softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
+    mulliganStrokes: ruleset.mulliganStrokes,
   });
+  // Handicaps only earn their column when somebody is actually carrying one.
+  const handicapped = standings.some((row) => row.handicap > 0);
   const superlatives = computeSuperlatives(holes, players, scores, penalties);
   const winner = standings[0];
   const last = standings[standings.length - 1];
@@ -47,8 +72,12 @@ export default async function ResultsPage({
   return (
     <Screen>
       <ResultsLive roundId={round.id} />
-      <RuleDouble />
+      <RoundBar round={round} holes={holes} />
       <ScreenHeader eyebrow={`Final · ${round.name}`} title="The 19th hole" />
+
+      {/* A dropped card can still be picked back up at the 19th — claiming
+          it with Google needs the seat on the claimer's own session. */}
+      <RescueKnock code={round.code} players={players} me={me} />
 
       <Podium standings={standings} />
       {winner ? (
@@ -58,7 +87,9 @@ export default async function ResultsPage({
         >
           {winner.name} takes the round
           <span className="block font-sans text-[11px] not-italic text-muted-foreground">
-            {winner.gross} gross · {formatToPar(winner.toPar)} ·{" "}
+            {winner.gross} gross ·{" "}
+            {handicapped ? `${winner.net} net · ` : ""}
+            {formatToPar(winner.netToPar)} ·{" "}
             {winner.penaltyStrokes > 0
               ? `${winner.penaltyStrokes} penalty strokes`
               : "a clean card"}
@@ -87,11 +118,20 @@ export default async function ResultsPage({
                     caddy
                   </span>
                 ) : null}
+                {handicapped && row.handicap > 0 ? (
+                  <span className="ml-1.5 text-[10px] text-muted-foreground">
+                    hcp {row.handicap}
+                  </span>
+                ) : null}
               </span>
             }
             value={
               <span className="tabular font-mono text-xs">
-                <b>{row.gross}</b> · {formatToPar(row.toPar)}
+                <b>{handicapped ? row.net : row.gross}</b>
+                {handicapped ? (
+                  <span className="text-muted-foreground"> ({row.gross})</span>
+                ) : null}{" "}
+                · {formatToPar(row.netToPar)}
               </span>
             }
           />
@@ -110,8 +150,8 @@ export default async function ResultsPage({
         <ClaimCard
           name={me.display_name}
           rank={myRow?.rank ?? standings.length}
-          gross={myRow?.gross ?? 0}
-          toPar={myRow?.toPar ?? 0}
+          gross={myRow ? (handicapped ? myRow.net : myRow.gross) : 0}
+          toPar={myRow?.netToPar ?? 0}
         />
       ) : null}
 
@@ -135,8 +175,18 @@ export default async function ResultsPage({
         superlatives={superlatives}
       />
 
+      {me?.role === "host" ? <SameAgain code={round.code} /> : null}
+
       <div className="flex gap-3">
-        <Link href="/" className={cn(buttonVariants(), "flex-1")}>
+        <Link
+          href="/"
+          className={cn(
+            buttonVariants({
+              variant: me?.role === "host" ? "outline" : "default",
+            }),
+            "flex-1",
+          )}
+        >
           Back to the clubhouse
         </Link>
         {isOfficial ? (

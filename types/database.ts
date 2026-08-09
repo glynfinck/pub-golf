@@ -43,6 +43,7 @@ export type Database = {
           id: string
           number: number
           par: number
+          penalties: Json
           venue_id: string | null
           venue_name: string
           walk_minutes_to_next: number | null
@@ -55,6 +56,7 @@ export type Database = {
           id?: string
           number: number
           par: number
+          penalties?: Json
           venue_id?: string | null
           venue_name: string
           walk_minutes_to_next?: number | null
@@ -67,6 +69,7 @@ export type Database = {
           id?: string
           number?: number
           par?: number
+          penalties?: Json
           venue_id?: string | null
           venue_name?: string
           walk_minutes_to_next?: number | null
@@ -146,6 +149,7 @@ export type Database = {
           id: string
           number: number
           par: number
+          penalties: Json
           round_id: string
           venue_id: string | null
           venue_name: string
@@ -158,6 +162,7 @@ export type Database = {
           id?: string
           number: number
           par: number
+          penalties?: Json
           round_id: string
           venue_id?: string | null
           venue_name: string
@@ -170,6 +175,7 @@ export type Database = {
           id?: string
           number?: number
           par?: number
+          penalties?: Json
           round_id?: string
           venue_id?: string | null
           venue_name?: string
@@ -232,11 +238,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "penalties_player_id_fkey"
-            columns: ["player_id"]
+            foreignKeyName: "penalties_player_id_round_id_fkey"
+            columns: ["player_id", "round_id"]
             isOneToOne: false
             referencedRelation: "round_players"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "round_id"]
           },
           {
             foreignKeyName: "penalties_round_id_fkey"
@@ -268,27 +274,36 @@ export type Database = {
       round_players: {
         Row: {
           display_name: string
+          handicap: number
           id: string
           joined_at: string
           profile_id: string
+          rescue_requested_at: string | null
+          rescue_requested_by: string | null
           role: string
           round_id: string
           withdrew_at_hole: number | null
         }
         Insert: {
           display_name: string
+          handicap?: number
           id?: string
           joined_at?: string
           profile_id: string
+          rescue_requested_at?: string | null
+          rescue_requested_by?: string | null
           role?: string
           round_id: string
           withdrew_at_hole?: number | null
         }
         Update: {
           display_name?: string
+          handicap?: number
           id?: string
           joined_at?: string
           profile_id?: string
+          rescue_requested_at?: string | null
+          rescue_requested_by?: string | null
           role?: string
           round_id?: string
           withdrew_at_hole?: number | null
@@ -297,6 +312,13 @@ export type Database = {
           {
             foreignKeyName: "round_players_profile_id_fkey"
             columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "round_players_rescue_requested_by_fkey"
+            columns: ["rescue_requested_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -422,6 +444,7 @@ export type Database = {
         Row: {
           hole_number: number
           id: string
+          mulligans: number
           player_id: string
           round_id: string
           swigs: number
@@ -430,6 +453,7 @@ export type Database = {
         Insert: {
           hole_number: number
           id?: string
+          mulligans?: number
           player_id: string
           round_id: string
           swigs?: number
@@ -438,6 +462,7 @@ export type Database = {
         Update: {
           hole_number?: number
           id?: string
+          mulligans?: number
           player_id?: string
           round_id?: string
           swigs?: number
@@ -445,11 +470,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scores_player_id_fkey"
-            columns: ["player_id"]
+            foreignKeyName: "scores_player_id_round_id_fkey"
+            columns: ["player_id", "round_id"]
             isOneToOne: false
             referencedRelation: "round_players"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "round_id"]
           },
           {
             foreignKeyName: "scores_round_id_fkey"
@@ -501,7 +526,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
+      dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
+      get_round_card: {
+        Args: { join_code: string }
+        Returns: {
+          created_at: string
+          hole_count: number
+          name: string
+          par: number
+          status: string
+        }[]
+      }
       get_round_preview: {
         Args: { join_code: string }
         Returns: {
@@ -515,11 +552,29 @@ export type Database = {
           tee_off_at: string
         }[]
       }
+      get_round_seats: {
+        Args: { join_code: string }
+        Returns: {
+          claimable: boolean
+          display_name: string
+          holes_scored: number
+          mine: boolean
+          requested: boolean
+          requested_by_me: boolean
+          role: string
+          seat_id: string
+        }[]
+      }
+      is_round_creator: { Args: { round: string }; Returns: boolean }
       is_round_member: { Args: { round: string }; Returns: boolean }
       is_round_official: { Args: { round: string }; Returns: boolean }
       join_round: {
         Args: { join_code: string; player_name: string }
         Returns: string
+      }
+      request_seat_rescue: {
+        Args: { join_code: string; seat: string }
+        Returns: undefined
       }
     }
     Enums: {

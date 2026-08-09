@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { estimateWalkMinutes } from "@/lib/geo";
+import { MAX_LOCAL_RULES } from "@/lib/rules";
 import { createClient } from "@/lib/supabase/server";
 
 export type CourseActionResult = { error?: string };
@@ -19,6 +20,15 @@ const courseSchema = z.object({
         par: z.number().int().min(1).max(20),
         hazard: z.enum(["water", "bunker", "dogleg"]).nullable(),
         hazard_note: z.string().trim().max(200).nullable(),
+        penalties: z
+          .array(
+            z.object({
+              strokes: z.number().int().min(1).max(20),
+              reason: z.string().trim().min(1).max(80),
+            }),
+          )
+          .max(MAX_LOCAL_RULES)
+          .default([]),
         lat: z.number().nullable(),
         lng: z.number().nullable(),
       }),
@@ -57,6 +67,7 @@ export async function createCourse(
     par: hole.par,
     hazard: hole.hazard,
     hazard_note: hole.hazard ? hole.hazard_note : null,
+    penalties: hole.penalties,
     walk_minutes_to_next:
       index < all.length - 1 ? estimateWalkMinutes(hole, all[index + 1]) : null,
   }));

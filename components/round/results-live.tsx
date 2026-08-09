@@ -1,9 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
-import { toast } from "sonner";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
+import { PendingLabel } from "@/components/ui/pending-label";
+import { useAction } from "@/hooks/use-action";
 import { reopenHole } from "@/lib/actions/rounds";
 
 /** Keeps the results page live — if the caddy reopens the round or edits
@@ -21,20 +21,20 @@ export function ReopenRound({
   code: string;
   lastHole: number;
 }) {
-  const [pending, startTransition] = useTransition();
+  const { run, pending, busy } = useAction();
   return (
     <Button
       variant="outline"
       disabled={pending}
       data-testid="reopen-round"
-      onClick={() =>
-        startTransition(async () => {
-          const result = await reopenHole(code, lastHole);
-          if (result.error) toast.error(result.error);
-        })
-      }
+      onClick={() => run(() => reopenHole(code, lastHole))}
     >
-      {pending ? "Reopening…" : "Reopen the last hole"}
+      <PendingLabel
+        pending={pending}
+        busy={busy}
+        label="Reopen the last hole"
+        pendingLabel="Reopening the last hole"
+      />
     </Button>
   );
 }

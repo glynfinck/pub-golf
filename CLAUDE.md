@@ -1,4 +1,4 @@
-# Parlour (pub-golf)
+# Pub Golf
 
 This is NOT the Next.js you know: v16 has breaking changes — check
 `node_modules/next/dist/docs/` before writing framework code. `proxy.ts`
@@ -27,14 +27,66 @@ is this Next version's middleware convention (see the `home` sibling repo).
   body) — no `Date.now()` in render; `hooks/use-countdown.ts` is the
   sanctioned timer pattern (rAF before setInterval, null-initial state).
   For hydration guards use `useSyncExternalStore`, not a mounted effect.
-- Dark ("Midnight Invitational") is the default theme; cream is the light
-  theme, and `.theme-cream` re-asserts it inside dark subtrees (the results
-  recap). Engraving utilities: `rule-double`, `leader`, `engraved`.
+- Cream is the default theme (it lives on `:root`, so there is no `.light`
+  class to write); dark ("Midnight Invitational") is the opt-in, and
+  `.theme-cream` re-asserts cream inside dark subtrees (the results recap).
+  Engraving utilities: `rule-double`, `leader`, `engraved`.
 - To-par renders as `−2 / +3 / even` (formatToPar) — never golf's lone "E".
+- The mark is a **pint with a flagstick in it**, and it is artwork rather
+  than code: the masters live in `public/brand/` (`icon-dark`, `icon-cream`,
+  the 192/512 install sizes, `banner-dark`). Every surface reads one of
+  them — `app/favicon.ico` (16/32/48), `app/apple-icon.png`, the manifest,
+  and `HouseMark`, which renders the dark and cream plates and lets CSS pick
+  so the swap costs no JavaScript and cannot flash the wrong one. The Open
+  Graph cards read `assets/og-mark.png`, vendored beside the fonts on
+  purpose: both are read off the filesystem at render time and only
+  `assets/` is proven to reach the serverless bundle.
+  Regenerate icons with `sharp` and **`.ensureAlpha()`** — Next's ICO
+  decoder rejects a non-RGBA PNG, and `sips` writes RGB whenever the source
+  has no alpha, which fails the build rather than the file.
+- The lockups (glass left, name right) are generated, not drawn:
+  `node scripts/brand-lockups.mjs` writes `lockup-*` (transparent and
+  `-stock`) and `letterhead-*` (tagline beneath) for both grounds into
+  `public/brand/`, compositing the trimmed mark masters with the vendored
+  EB Garamond via Satori — the same renderer as `lib/og.tsx`, so the
+  letterforms match the OG cards. The wordmark is the sign-in masthead's
+  voice verbatim (serif, uppercase, `tracking-[0.08em]`, foreground ink);
+  change the voice there and these regenerate to follow, not the reverse.
+- `lib/mark.ts` is now only the pennant geometry the `Putt` busy animation
+  putts at — it stopped being the logo when the artwork arrived, and there
+  is no static SVG copy left to pin against it.
+- Open Graph cards live in `lib/og.tsx` (mirroring the `home` repo's module)
+  and always render on **cream stock**, whatever the app theme, for the reason
+  the recap card does: what you hand round is printed. Satori draws no
+  `border: double`, no `outline` and no `box-shadow: inset`, so the engraving
+  kit is rebuilt out of stacked divs. It also cannot use a CSS font stack —
+  real TTFs are vendored in `assets/fonts/`.
+- A card route must answer with an image even when its round does not exist;
+  throwing there is a broken preview, not a 404. Round data comes from
+  `get_round_card` (SECURITY DEFINER, anon-executable) because a crawler has
+  no session — deliberately no player names and no scores, since the round
+  routes redirect a signed-out visitor.
 - Zero swigs = the drink never happened. On FILED holes computeStandings
   substitutes par (softSubstituteScoresPar, default) or double par (max
   score) — a 0 never scores as a free under-par hole. The in-progress hole
-  only counts once swigs > 0.
+  only counts once swigs > 0. This still holds after a mulligan:
+  resetting a hole never buys a free one.
+- `rounds.ruleset` is read through `readRuleset` in `lib/ruleset.ts` and
+  nowhere else — never re-cast the jsonb inline. It fills in defaults, so a
+  round created before a rule existed reads as that rule being off.
+- Three per-round rules ride on the ruleset snapshot: `penalties` (the house
+  table), `mulligans`/`mulliganStrokes`, and `handicaps`. Mulligans were
+  "breakfast balls" until the pre-launch rename (migration
+  `20260813000000_mulligans`, deliberately non-additive) — if an old name
+  resurfaces anywhere, it lost that rename, not a synonym. Holes
+  carry their own `penalties` jsonb — local rules, merged after the house
+  list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
+  the join key for the undo and the ×N count.
+- Handicaps come off gross to give **net**, and net is what the round is won
+  on — `StandingRow` carries both, and ranking is on `netToPar`. They arrive
+  pro rata (`handicap × holesPlayed / holes.length`) so the live board stays
+  honest; that is the whole handicap once the card is filed. With every
+  handicap at 0, net is gross and nothing on screen changes.
 
 ## Data model (supabase/migrations)
 
@@ -46,8 +98,66 @@ live/walking + `walk_deadline_at` for the between-holes walk) → `holes`
 marker entries). `courses`/`course_holes` are the builder's output,
 owner-scoped. Guests use Supabase anonymous auth so RLS always keys on
 `auth.uid()`; joining goes through the `join_round(code, name)` SECURITY
-DEFINER function. Regenerate types after schema changes:
+DEFINER function — which since the RLS hardening migration is the *only* way
+into a round. The `round_players` INSERT policy allows exactly one direct
+seat: the creator's own `role='host'` row, gated on `is_round_creator`, which
+is what `createRound` writes between the round and the holes. The re-seat
+flow that rule anticipated is **seat rescue** (`20260818000000`): a guest's
+identity is one cookie jar, so when a phone loses it (in-app browsers,
+mostly) the seat — where scores actually live — moves to the new session
+rather than the session being resurrected. A seatless visitor on any round
+route lands on `/round/CODE/rescue`; `request_seat_rescue` only *knocks*
+(two nullable columns on the seat, so officials hear it over the
+round_players realtime subscription they already hold), and
+`approve_seat_rescue` — officials only, the caddy waves you in — is the one
+sanctioned hand-change, let through the guard trigger by a transaction-local
+`pubgolf.seat_rescue` setting nothing else sets. Only anonymous non-host
+seats move (a claimed card signs back in with Google), a knocker already
+seated is refused (strike the spare first), and `get_round_seats` — the one
+surface that shows names to a non-member — is deliberately
+authenticated-only, so a crawler with the link still reads no names
+(`get_round_card` stays the nameless public path). The broom is the
+`officials strike seats` DELETE policy (never the host seat): the struck
+card's scores go on the cascade, penalties it *called* on others keep with
+`called_by` nulled. `tests/db/rls-seat-rescue.test.ts` is the adversarial
+suite; the rescue screen polls `get_round_seats` rather than subscribing,
+because the knocker can't pass RLS until the moment they're waved in.
+Roles are guarded by a `BEFORE UPDATE` trigger rather than a policy, because
+`WITH CHECK` only sees NEW and "your role may not change" is about OLD. Two
+more rules live in triggers for the same reason: `round_players.handicap` is
+officials-only (a player editing their own passes the self policy, so only
+OLD-vs-NEW can tell), and `scores.mulligans` is capped at the round's
+allowance (a count across sibling rows, which WITH CHECK can never see).
+A third — `guard_score_hole_window` — is the cheatproofing pass
+(`20260814000000`): non-officials cannot write future holes, cannot lower a
+filed hole, cannot lower the last hole once the card is filed, cannot
+first-write a hole filed longer ago than one (the substitute stands), and
+never take a mulligan off their own row. The **one-hole grace**
+(`20260815000000`) is load-bearing, not a loophole: `advanceHole`
+increments `current_hole` immediately while the play screen debounces swigs
+by 400ms, so the hole directly behind the live one is the only hole an
+honest late tap can be aimed at — refusing it silently scored that player
+the par substitute while their own screen showed their swigs, and officials
+never saw it because the guard exempts them. `penalties.strokes` is
+schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
+retraction follows `called_by`, not whose card it sits on. All raise
+`42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
+is the adversarial suite. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
+
+Two hosted environments, both deployed by the platforms rather than from this
+repo — Vercel's git integration builds the app, Supabase's GitHub integration
+applies the migrations, and CI ships nothing (see `DEPLOYMENT.md`). `main` →
+`pub-golf.glyn.dev` on `quncylgcwfiqsjugnvtv`; `preview` → the staging domain
+on the persistent branch project `xssmjzinaghxjncoezez`. Because the two
+integrations do not wait for each other, **migrations must be additive and
+readable by the currently-deployed code** — PostgREST fails a whole request
+with `42703` on a missing column, so a non-additive change is a visible outage
+for the minute or two the deploy takes. `supabase/config.toml` stays
+local-first and is never `config push`ed; the one thing that legitimately
+reaches a hosted project is its `[remotes.preview]` block, which Configure
+applies to the branch on every push. Anything added to `[auth]` for local dev
+must be considered for that block too, or local and preview silently disagree.
 
 Auth is **Google-only, and deliberately email-free**: hosting a round needs
 a Google sign-in (`signInWithOAuth` → `/auth/callback` exchanges the PKCE
@@ -66,12 +176,64 @@ any hole via `/round/CODE/card?hole=N` without moving the round.
 
 ## Testing
 
-`npm run test:e2e` runs Playwright (Pixel 7 profile, port 3105) against the
-real local Supabase stack — two browser contexts play a full round: create,
-guest join, caddy promotion + controls (tee off, back/forward, reset timer,
-marker's card edits, reopen), live score sync, results. The stack must be
-running (`supabase start`), and `.env.local` needs
-`SUPABASE_SERVICE_ROLE_KEY`.
+`npm test` runs the Vitest `unit` project (`tests/unit/**`) — pure logic only:
+scoring substitutions and placings (`lib/scoring.ts`), formatting, course
+templates, walk estimates, penalty options, clock maths. **No stack, no
+network, no clock** — every helper takes the time it needs as an argument, so
+`lib/time.ts` is where countdown maths lives and `Date.now()` stays out of the
+functions. Rules belong in the lowest layer that can hold them: if a browser is
+proving something a function call could prove, it is in the wrong place.
+
+`npm run test:db` runs the Vitest `db` project (`tests/db/**`) against the
+local stack, driving Postgres with per-role supabase-js clients
+(`tests/support/clients.ts`: `adminClient`, `signedInUser`, `anonymousGuest`,
+`visitor`) and bypassing the server actions entirely. That is the point —
+every action reaches Postgres through PostgREST on the caller's own session,
+so **RLS is the only real enforcement** and `getOfficiatedRound` is a UX guard.
+Fixtures come from `tests/support/factories.ts` and register themselves for an
+`afterEach` scoped delete: **never `truncate`, never an unscoped `delete`** —
+the Playwright suite uses the same stack minutes later. Two rules for this
+tier: `adminClient()` is for seeding and reading a row back, never the subject
+of a test; and an UPDATE that RLS filters out returns *no error and no rows*,
+so a blocked write is proven by re-reading the row, never by `error === null`.
+
+`adminClient()` drives PostgREST as `service_role`, so **a new table needs a
+grant to `service_role` as well as `authenticated`** — this stack does not
+auto-expose new tables to the Data API roles, and the whole db tier goes dark
+the moment one is missed. Default privileges in
+`20260811000000_service_role_grants.sql` cover tables a later migration
+creates, but a table created by any other owner would still need it by hand.
+Read the error shape: `42501 permission denied` is always the table grant; a
+policy refusal returns no rows and no error at all.
+
+`npm run test:stress` runs the Vitest `stress` project (`tests/stress/**`) —
+the db tier turned up to a full table: twenty sessions on one round
+(`tests/support/table.ts` seats them), the join stampede, the score storm,
+the mulligan-allowance burst, and an eighteen-hole soak. Same stack, same
+factories, same scoped teardown, same "re-read through adminClient, never
+trust the response" rule; `retry: 0` for the same reason as db — a race that
+shows one run in three is the tier's whole point. Setup goes through
+`pooled()` (bounded fan-out) because arriving is not the experiment; the
+moment under test uses bare `Promise.all` and says so. It found real bugs at
+launch (the mulligan trigger's read-then-check let concurrent raises beat the
+allowance — fixed by the seat lock in `20260816000000`), which is why it runs
+in the PR gate, not on a schedule. It needs `[auth.rate_limit]
+anonymous_users` raised in `config.toml` (local only, never preview): every
+guest is an anonymous sign-in and gotrue's default 30/hour is under two
+tables' worth.
+
+`npm run test:e2e` runs Playwright (port 3105) against the real local
+Supabase stack, once per row of a platform matrix — Android Chrome
+(Pixel 7), iOS Safari (iPhone 15/WebKit) and desktop Firefox — so
+`npx playwright install chromium webkit firefox` once before the first run.
+Two browser contexts play a full round in `round-flow`: create, guest join,
+caddy promotion + controls (tee off, back/forward, reset timer, marker's
+card edits, reopen), live score sync, results; `foursome` plays four phones
+at once (stampede join, concurrent scoring, ties, the zero-swig substitute,
+a latecomer joining a live round). The stack must be running
+(`supabase start`), and `.env.local` needs `SUPABASE_SERVICE_ROLE_KEY`.
+Multi-session Postgres races (join stampede, debounce vs marker collisions)
+live in the db tier — `tests/db/multiplayer-concurrency.test.ts` — not here.
 
 Host sessions are seeded by `e2e/auth.ts`, not driven through the UI —
 Google's consent screen can't be automated. It creates a confirmed user with
@@ -87,8 +249,21 @@ auth.uid()` for INSERT..RETURNING; the realtime socket must carry the
 user JWT (`supabase.realtime.setAuth`) or RLS silently filters all events;
 after `supabase stop/start` or `db reset`, RESTART the dev server on 3105
 (kill it and let Playwright respawn) or realtime events stop reaching
-pages — and expect the first e2e run after a cold stack boot to flake once
-on the lobby realtime assertion.
+pages.
+
+**A pass on retry is a failure.** CI sets `failOnFlakyTests`, so a test
+that goes green on attempt two fails the run: retries are there to record
+a trace (`trace: "on-first-retry"`), never to launder a red. This is not
+pedantry — a "flaky" line once hid a real scoring bug, where swigs written
+inside the hole-out debounce were refused and the hole silently scored the
+par substitute, behind a green check. Assertions racing a realtime
+`router.refresh()` are the usual suspect: Next mounts the outgoing and
+incoming view together for a beat, so **counting a testid and then acting
+on it must retry as one block** — `expectSettled`/`clickSettled` in
+`e2e/nav.ts` do that with `toPass`; a bare `toHaveCount(1)` followed by a
+separate `await` is the bug it looks like it prevents. In CI the suite
+runs against `next start` (the build the job already made), so `CI=1
+npx playwright test` after `npm run build` reproduces CI exactly.
 
 ## Local ports
 
