@@ -2,7 +2,13 @@ import type { Metadata, Viewport } from "next";
 import { ThemeColor } from "@/components/theme-color";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { APP_NAME, GROUND, SITE_URL, TAGLINE } from "@/lib/config";
+import {
+  APP_NAME,
+  GROUND,
+  SITE_URL,
+  SITE_VERIFICATION,
+  TAGLINE,
+} from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,6 +35,12 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description: TAGLINE,
+  // Search Console's HTML-tag proof, when there is one to render. Google's
+  // brand verification checks that the home page's domain is registered to
+  // the account that owns the Cloud project, and this is one of the two ways
+  // to say so (see SITE_VERIFICATION). Null until the env var is set, which
+  // Next resolves to no tag at all rather than an empty one.
+  verification: { google: SITE_VERIFICATION },
   openGraph: {
     siteName: APP_NAME,
     type: "website",

@@ -14,16 +14,36 @@ dotenv.config({ path: ".env.local", quiet: true });
 export default defineConfig({
   testDir: "./e2e",
   timeout: process.env.CI ? 180_000 : 90_000,
-  // 15s locally, 30s on CI, and the number is not arbitrary. Most waits here
+  // 30s locally, 45s on CI, and the numbers are not arbitrary: they are the
+  // product's own worst-case catch-up plus room to render it. Most waits here
   // are one phone waiting on another phone's write, which travels as a
-  // realtime event — and when an event is missed, `useLiveRound`'s safety-net
-  // poll is what catches up, on a POLL_MS of 10s. That leaves under five
-  // seconds for a fetch, a server render and a hydration before a 15s
-  // expectation gives up, which is comfortable on a laptop and simply is not
-  // on a two-core runner already hosting Postgres, PostgREST, Realtime, Next
-  // and WebKit. The gap between the product's catch-up interval and the
-  // suite's patience was the flake.
-  expect: { timeout: process.env.CI ? 30_000 : 15_000 },
+  // realtime event — and the socket is a hint, not a contract, so the number
+  // that matters is how long a phone can take when an event is simply
+  // dropped. Two terms, both read off the source:
+  //
+  //   POLL_MS               10s  the safety-net poll in use-live-round.ts
+  //   ACTION_QUIET_CAP_MS   15s  the deferral in lib/action-window.ts
+  //                        ----
+  //                         25s  before the refetch is even allowed to start
+  //
+  // The earlier budget counted the poll and missed the quiet window, which
+  // left ~5s on CI for an RSC fetch, a server render and a hydration — and
+  // `full-house` on WebKit spends that just being twenty phones. It timed
+  // out at 30s waiting for the play view after a tee-up, then passed on
+  // retry, which under failOnFlakyTests is a red run.
+  //
+  // Raising this absorbs latency, not wrongness: an assertion that waits for
+  // the right value still fails on the wrong one, and a view that never
+  // arrives still fails — only slower. The thing it must never become is a
+  // number picked to make a red go away, which is why the arithmetic is
+  // written out rather than the result.
+  //
+  // The real fix is one layer down: the safety-net poll defers behind the
+  // action quiet window, though it is the net for a *dropped* event rather
+  // than the echo of our own write, so a phone that missed one can sit ~25s
+  // behind. Narrowing that is a change to live-round machinery and wants its
+  // own branch and its own reproduction.
+  expect: { timeout: process.env.CI ? 45_000 : 30_000 },
   // Retries exist to produce evidence, not to launder a red run: a retried
   // test records a trace (see `trace` below), and `failOnFlakyTests` then
   // fails the run anyway. Green has to mean green — a pass-on-retry once hid

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { RoundsList } from "@/components/round/rounds-list";
 import { Card } from "@/components/ui/card";
+import { signInPath } from "@/lib/auth-paths";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
 
 export const metadata = { title: "Rounds" };
@@ -9,7 +10,9 @@ export const metadata = { title: "Rounds" };
 export default async function RoundsPage() {
   // One wait, not two — the pause on a tab switch is these round trips.
   const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
-  if (!profile) redirect("/signin");
+  // Carry the destination: signing in from a deep link should land back
+  // on it, not dump the visitor at the clubhouse.
+  if (!profile) redirect(signInPath("/rounds"));
 
   return (
     <Screen withTabBar>

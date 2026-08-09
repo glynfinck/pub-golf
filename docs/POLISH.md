@@ -337,12 +337,23 @@ without the legal URLs from step 3.
    publishing, the custom-domain procedure and its three side effects.
 5. ✅ **The front door.** Google's first verification pass failed the home
    page: `/` was a 307 to a sign-in wall, so the name, the purpose and the
-   privacy link were nowhere a reviewer could see them. `/` now renders the
-   shared `FrontDoor` for a signed-out visitor (`components/auth/front-door.tsx`,
-   one source with `/signin` on purpose), the tabs layout hides the tab bar
-   without a session, and `/signin` keeps the `next` deep link and the error
-   line. Still Google's side: Search Console domain verification, from the
-   account that owns the Cloud project.
+   privacy link were nowhere a reviewer could see them. `/` answers signed
+   out now, the tabs layout hides the tab bar without a session, and
+   `/signin` keeps the `next` deep link and the error line
+   (`components/auth/front-door.tsx` is that lean screen).
+6. ✅ **The landing page.** The second pass failed the front door too — "does
+   not explain the purpose of your app", and the app name "does not match the
+   app name on your home page". A page arguing entirely with one Google
+   button reads as a door, not a description. `components/landing.tsx` is what
+   `/` renders for a signed-out visitor: `APP_NAME` as the `<h1>`, what the
+   app is in plain words, how a round works, Privacy/Terms in the footer, and
+   a schema.org `WebApplication` block restating the name and purpose for a
+   machine. `/signin` deliberately keeps the lean screen.
+7. ⏳ **Domain ownership** — the third finding, and the only one the repo
+   cannot close. Search Console, from the account that owns the Cloud
+   project; DEPLOYMENT.md § 2 has both routes (DNS TXT on `glyn.dev`, or the
+   `GOOGLE_SITE_VERIFICATION` tag for the subdomain alone). Re-submitting the
+   branding panel before this is verified just returns all three findings.
 
 ### Wave 3 — product debt
 

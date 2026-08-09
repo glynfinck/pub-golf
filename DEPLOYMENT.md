@@ -193,14 +193,60 @@ verification, a few business days. Everything else applies immediately, and
 none of it blocks publishing — set the rest now if you want a clean screen
 this week.
 
-Brand verification audits the home page itself. The first pass failed on
-exactly this: `/` used to 307 a signed-out visitor to `/signin`, so the name,
-the purpose and the privacy link were nowhere the reviewer looked. Since the
-front-door change, `/` answers signed out with all three at the URL the
-consent screen advertises — `components/auth/front-door.tsx` is one source
-for `/` and `/signin`, so the promise cannot quietly fork. The remaining
-verification item is domain ownership: Search Console, DNS TXT via Vercel,
-from the Google account that owns the Cloud project.
+Brand verification audits the home page itself, and it has taken three passes
+to satisfy. Worth reading in order, because each pass failed on a different
+thing and the fixes are all still load-bearing:
+
+1. **`/` used to 307 a signed-out visitor to `/signin`.** The name, the
+   purpose and the privacy link were nowhere the reviewer looked. Fixed by
+   answering signed out at the URL the consent screen advertises.
+2. **The sign-in screen with a paragraph bolted on top still "does not
+   explain the purpose of your app", and its app name "does not match".** A
+   page whose whole visual argument is one Google button reads as a door, not
+   a description. Fixed by `components/landing.tsx`, which `/` renders for a
+   signed-out visitor: `APP_NAME` as the `<h1>` spelled exactly as the consent
+   screen spells it, what the app is in the first paragraph in words a
+   stranger already knows, how a round works, and Privacy/Terms in the footer.
+   `/signin` deliberately does *not* render it — it stays the lean one-tap
+   screen (`components/auth/front-door.tsx`) for people who know what they
+   came for.
+3. **Domain ownership** — see below. This one is not a page-copy problem, and
+   no amount of rewriting the home page will clear it.
+
+#### Proving you own the home page
+
+> "The website of your home page URL is not registered to you."
+
+Google means Search Console, and it means **the same Google account that owns
+the Cloud project** — verifying from a second account you also control does
+not count, and is the usual reason this finding survives a re-submission.
+
+Prefer the DNS route, because one property covers both things Google checks:
+the home page URL *and* the `glyn.dev` authorized domain on the consent screen.
+
+1. [Search Console](https://search.google.com/search-console) → add property →
+   **Domain** → `glyn.dev`.
+2. Copy the TXT record it prints. `glyn.dev` is on Vercel nameservers, so it
+   goes in Vercel → Domains → `glyn.dev` → DNS: type `TXT`, name `@`, value
+   `google-site-verification=…`.
+3. Wait for propagation (minutes, occasionally an hour), then hit **Verify**.
+
+If you would rather not touch DNS, the fallback verifies the app's own
+subdomain only — you would still need step 1 above for the authorized domain:
+
+1. Search Console → add property → **URL prefix** →
+   `https://pub-golf.glyn.dev/` → **HTML tag**.
+2. Put the token in `GOOGLE_SITE_VERIFICATION` in Vercel's Production
+   environment. It is read at build time, so **redeploy** — the tag is not
+   there until you do. `curl -s https://pub-golf.glyn.dev | grep
+   google-site-verification` is the check.
+3. Verify.
+
+Only once Search Console shows the property verified is it worth answering the
+branding panel — the button to press is *"I have fixed the issues"* /
+*"Request re-verification"*. Re-submitting against an unverified domain simply
+returns the same three findings, including the two the home page has already
+answered.
 
 #### Publishing it
 
