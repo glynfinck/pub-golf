@@ -61,10 +61,10 @@ Created via the Stripe MCP (live mode, account `acct_1U2ZUZRvKayBe2Nz`,
 **tax-inclusive**: the sticker is the price. Code resolves prices by
 `lookup_key`, never by hardcoded id.
 
-| Product | lookup_key | GBP | USD | CAD |
-| --- | --- | --- | --- | --- |
-| The green fee (`prod_V2ewNtObRI3fq7`) | `green_fee` | £4 | $5 | C$7 |
-| The honesty box (`prod_V2ewOnbYvJY3Ul`) | `honesty_box` | min £3 · preset £5 | min $4 · preset $7 | min C$5 · preset C$9 |
+| Product | lookup_key | GBP | USD | EUR | CAD | AUD |
+| --- | --- | --- | --- | --- | --- | --- |
+| The green fee (`prod_V2ewNtObRI3fq7`) | `green_fee` | £4 | $5 | €5 | C$7 | A$8 |
+| The honesty box (`prod_V2ewOnbYvJY3Ul`) | `honesty_box` | min £3 · preset £5 | min $4 · preset $7 | min €4 · preset €6 | min C$5 · preset C$9 | min A$6 · preset A$10 |
 
 The honesty box is a customer-chooses-amount price
 (`custom_unit_amount`), so it works from Checkout or a Payment Link
@@ -76,6 +76,33 @@ entitlements are needed to ship it):
 created yet — phase three earns it first. For local dev, mirror both
 products in a sandbox under the same lookup keys so the code never
 branches on environment.
+
+## Integration state
+
+The foundation is in: the `entitlements` table (`20260819000000` —
+additive; webhook-only writes, member-readable so premium features render
+for the whole table, idempotency schema-level), `lib/billing.ts` (pure,
+unit-tested), `startGreenFeeCheckout` in `lib/actions/billing.ts`
+(officials only; resolves the price by lookup key; fulfilment never
+here), the webhook at `app/api/billing/webhook` (signature-verified;
+23505 answered 200), and the honesty box on the results screen behind
+`NEXT_PUBLIC_HONESTY_BOX_URL` — paste the Payment Link in and phase one
+is on. `STRIPE_SECRET_KEY` empty = billing off entirely, the maps-key
+pattern. `types/database.ts` was extended by hand for the new table —
+regenerate from the local stack at the next schema change.
+
+CI proves the loop with no Stripe anywhere in it:
+`tests/db/rls-entitlements.test.ts` is the adversarial policy suite, and
+`e2e/billing-webhook.spec.ts` posts events signed with Stripe's own
+`generateTestHeaderString` (dummy secret, pure crypto, zero network) at
+the real route and reads the row back out of Postgres. Real-sandbox
+smoke tests stay out of the required gate on purpose: third-party
+network is flake, and the gate fails flakes.
+
+Not built on purpose: any green-fee purchase UI. Nothing premium exists
+to unlock yet, and the covenant says money only ever buys something real
+— the unlock sheet ships alongside the first extra (the league or the
+printed pack).
 
 ## The covenant (product rules, public)
 

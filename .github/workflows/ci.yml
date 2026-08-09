@@ -89,6 +89,13 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
+            # Billing touches no real Stripe anywhere in CI. The webhook spec
+            # signs its own events with this dummy secret (Stripe's own
+            # generateTestHeaderString), and the dummy secret key only has to
+            # be non-empty for the route to consider billing configured —
+            # neither value is ever sent to Stripe.
+            echo "STRIPE_SECRET_KEY=sk_test_ci_dummy"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_ci_dummy"
           } >> .env.local
 
       # RLS is the app's real access control — every server action reaches

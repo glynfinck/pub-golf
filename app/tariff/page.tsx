@@ -24,8 +24,8 @@ export default function TariffPage() {
       <Masthead back={{ href: "/", label: "Clubhouse" }} />
       <ScreenHeader eyebrow="The Clubhouse" title="The tariff" />
       <p className="text-sm text-muted-foreground">
-        Same as the sign on the wall. Checkout shows your own currency — £4
-        reads $5 or C$7 abroad.
+        Same as the sign on the wall. Checkout shows your own money — the £4
+        green fee reads $5, €5, C$7 or A$8 abroad.
       </p>
 
       <Card className="gap-2.5 px-4">
