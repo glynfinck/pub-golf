@@ -193,9 +193,12 @@ verification, a few business days. Everything else applies immediately, and
 none of it blocks publishing — set the rest now if you want a clean screen
 this week.
 
-Brand verification audits the home page itself, and it has taken three passes
-to satisfy. Worth reading in order, because each pass failed on a different
-thing and the fixes are all still load-bearing:
+Brand verification audits the home page itself, and it has taken several
+passes. Worth reading in order, because each pass failed on a different thing
+and the fixes are all still load-bearing. The lesson underneath them: read
+Google's [quick reference guides](https://support.google.com/cloud/topic/13841839)
+rather than the one-line finding — the findings are summaries, and the
+remediation text under each one says what is actually being checked.
 
 1. **`/` used to 307 a signed-out visitor to `/signin`.** The name, the
    purpose and the privacy link were nowhere the reviewer looked. Fixed by
@@ -212,6 +215,28 @@ thing and the fixes are all still load-bearing:
    came for.
 3. **Domain ownership** — see below. This one is not a page-copy problem, and
    no amount of rewriting the home page will clear it.
+4. **Both content findings survived a page that plainly answered them**, which
+   is what sent us to the guides. Two things were actually wrong, and neither
+   is what the findings' wording suggests:
+
+   * *"Does not explain the purpose of your app"* is not only about the
+     product. The [App Homepage](https://support.google.com/cloud/answer/13807376)
+     guide asks the page to "explain with transparency the purpose for which
+     your app requests user data", and its remediation says to explain the
+     purpose "**and how it uses Google user data you are requesting**". The
+     landing page described the app beautifully and never once said what it
+     asks Google for. It now carries a "Why Pub Golf asks for a Google
+     sign-in" section naming all three — name, account id, email — what each
+     is for, and that nothing else is requested. Those claims are the same
+     claims `/legal/privacy` makes; change one page and change the other, or
+     they start lying in different directions.
+   * *"The app name does not match"* was a CSS transform. The masthead is set
+     in caps, so the page **read** `PUB GOLF` while the consent screen says
+     `Pub Golf` — the DOM had the right string in the title, the `<h1>` and
+     the prose, and the rendered form is evidently what gets compared. The
+     landing `<h1>` is no longer `uppercase`. The mark's voice has not moved:
+     it lives on the sign-in masthead, which is what
+     `scripts/brand-lockups.mjs` reads.
 
 #### Proving you own the home page
 
