@@ -11,6 +11,7 @@ import {
   Polyline,
   useMap,
   type MapCameraChangedEvent,
+  type MapEvent,
 } from "@vis.gl/react-google-maps";
 import { Check, LocateFixed, Plus, Search } from "lucide-react";
 import type { DraftHole } from "@/components/course/hole-editor";
@@ -22,6 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
+import { PuttGreen } from "@/components/ui/putt";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   boundsAround,
@@ -129,6 +131,13 @@ function PubMapBody({
   const [locateNote, setLocateNote] = useState<string | null>(null);
   const [mapsFailed, setMapsFailed] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  // Orienting: the sheet opened before anyone knew where to look — no
+  // course on the map, no city prefetched. The world sits under a veil
+  // until the first honest frame arrives (the city, a search fit, or the
+  // results saying there is nothing to frame).
+  const [orienting, setOrienting] = useState(
+    () => holes.every((hole) => hole.lat == null) && homeBias == null,
+  );
 
   const requestSeq = useRef(0);
   const mapHandle = useRef<google.maps.Map | null>(null);
@@ -220,7 +229,12 @@ function PubMapBody({
       } catch {
         if (seq === requestSeq.current) setResults([]);
       } finally {
-        if (seq === requestSeq.current) setSearching(false);
+        if (seq === requestSeq.current) {
+          setSearching(false);
+          // Whatever came back, the map now shows the truest frame it
+          // will get without the player's help.
+          setOrienting(false);
+        }
       }
     },
     [fitTo],
@@ -236,12 +250,28 @@ function PubMapBody({
     return () => clearTimeout(timeout);
   }, [query, runSearch]);
 
+  // The city can arrive after the map does — the sheet opened faster than
+  // /api/geo answered. Frame it the moment it is known, unless something
+  // truer (a search fit, the player's own hand) got there first.
+  useEffect(() => {
+    if (!orienting || !homeBias) return;
+    const timeout = setTimeout(() => {
+      const map = mapHandle.current;
+      if (!map) return;
+      programmaticRef.current = true;
+      map.panTo(homeBias);
+      map.setZoom(13);
+      setOrienting(false);
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, [orienting, homeBias]);
+
   function handleCameraChanged(event: MapCameraChangedEvent) {
     viewportRef.current = event.detail.bounds;
     if (settledRef.current && !programmaticRef.current) setMoved(true);
   }
 
-  function handleIdle() {
+  function handleIdle(event: MapEvent) {
     if (pendingFitRef.current) {
       const apply = pendingFitRef.current;
       pendingFitRef.current = null;
@@ -251,6 +281,14 @@ function PubMapBody({
     }
     if (!settledRef.current) {
       settledRef.current = true;
+      // The map may have mounted before the prefetched city was in hand;
+      // frame it now rather than opening on the world.
+      if (orienting && homeBias) {
+        programmaticRef.current = true;
+        event.map.panTo(homeBias);
+        event.map.setZoom(13);
+        setOrienting(false);
+      }
       // The sheet's opening question, when the pill didn't bring one:
       // what's on this patch — the course's if it framed one, the
       // player's city otherwise (the route aims by IP with no bounds).
@@ -438,6 +476,13 @@ function PubMapBody({
           </Map>
         )}
         <MapHandle handleRef={mapHandle} />
+
+        {orienting && !mapsFailed ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background">
+            <PuttGreen className="max-w-56 px-6 text-muted-foreground" />
+            <p className="eyebrow">Finding your patch</p>
+          </div>
+        ) : null}
 
         <div className="absolute top-3 right-14 left-3">
           <div className="relative">
