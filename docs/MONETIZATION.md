@@ -13,9 +13,9 @@ separates the only plausible payer from everyone else:
   via `linkIdentity`), so entitlements key on the same uid everything else
   does. **Guests never cross the payment boundary** — joining stays code +
   first name, no account, no price ever rendered on a guest surface.
-- **Email-free auth is not a blocker**: hosted checkout (Stripe Checkout or a
-  merchant of record) collects its own receipt email. No Resend, no emailed
-  codes — the auth covenant in CLAUDE.md survives.
+- **Email-free auth is not a blocker**: Stripe Checkout collects its own
+  receipt email. No Resend, no emailed codes — the auth covenant in
+  CLAUDE.md survives.
 - **Premium round features ride the ruleset snapshot** through `readRuleset`,
   like mulligans and handicaps: entitlement is checked once at round
   creation, never mid-round, so webhook lag or a refund can never brick a
@@ -33,19 +33,27 @@ separates the only plausible payer from everyone else:
 
 ## Provider
 
-Start with a **merchant of record** (Lemon Squeezy first choice, Paddle
-fallback, Polar worth a look): ~5% + 50¢ but *they* own VAT/GST registration
-and remittance, which at hobby scale is worth far more than the ~3-point
-premium over Stripe (~14p on a £4 fee). Move to **Stripe Checkout + Stripe
-Tax** when revenue justifies owning tax admin — the swap hides entirely
-behind the entitlements table; nothing else in the app knows the provider.
+**Stripe** (decided). Stripe Checkout hosted pages — native Apple Pay and
+Google Pay, card data never touches the app, PCI stays at the
+self-assessment tier. Setup: Checkout Sessions from a server action;
+fulfilment on the `checkout.session.completed` webhook (never the success
+redirect), verified against the raw body and idempotent on event id;
+Stripe Tax on from day one; the domain registered for Apple Pay;
+`stripe listen` forwarding webhooks to the local stack in dev.
+
+Known trade-off, noted honestly: Stripe computes tax but the merchant
+registers and remits it, and cross-border digital sales can in principle
+carry VAT/GST duties from the first sale (UK/EU rules for overseas
+sellers). If that ever grows teeth, merchants of record (Lemon Squeezy,
+Paddle, Polar) are the escape hatch — the swap hides entirely behind the
+entitlements table; nothing else in the app knows the provider.
 
 Fee floor: nothing on the tariff under ~£3, or fixed fees eat the payment.
 
 ## The covenant (product rules, public)
 
 1. **Joining is free forever.** Guests are the growth loop.
-2. **Nothing free today ever becomes paid.** No clawbacks — themes,
+2. **What's free stays free.** No clawbacks — themes,
    handicaps, mulligans, table size, saved courses are grandfathered for
    everyone. New money buys new things only.
 3. **The host pays, never the table.** One buyer, at planning time.
@@ -58,7 +66,7 @@ Fee floor: nothing on the tariff under ~£3, or fixed fees eat the payment.
 ## What we sell
 
 - **The green fee** (core): ~£4, one-time, host pays, unlocks extras for one
-  round — league night (multi-round standings), the printed pack (A4 card +
+  round — the league (multi-round standings), the printed pack (A4 card +
   trophy card), colours/crest on the recap, curated course packs. All *new*
   features; the free game is untouched.
 - **The honesty box** (ships first): pay-what-you-feel tip (£3/£5/£10) on
@@ -92,4 +100,6 @@ revenue.
 House copy rules apply: dry, in the golf fiction, no exclamation marks, no
 emojis. Every price sentence answers *how much, for whom, how often* in one
 breath ("Green fee · £4 — one round, the whole table"). Free is the first
-line of the tariff page. Declines are plain ("Not tonight"), never guilt.
+line of the tariff page. Declines are plain ("Not this round"), never
+guilt. Copy never assumes a time of day — rounds are played in daylight as
+often as after dark, so no "tonight", no "today", no "evening" anywhere.
