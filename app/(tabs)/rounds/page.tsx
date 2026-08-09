@@ -4,6 +4,8 @@ import { RoundsList } from "@/components/round/rounds-list";
 import { Card } from "@/components/ui/card";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
 
+export const metadata = { title: "Rounds" };
+
 export default async function RoundsPage() {
   const profile = await getProfile();
   if (!profile) redirect("/signin");

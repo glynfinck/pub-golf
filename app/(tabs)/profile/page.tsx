@@ -3,6 +3,8 @@ import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ProfileForm } from "@/components/profile-form";
 import { getProfile } from "@/lib/data/rounds";
 
+export const metadata = { title: "Profile" };
+
 export default async function ProfilePage() {
   const profile = await getProfile();
   if (!profile) redirect("/signin");

@@ -5,6 +5,8 @@ import { Screen } from "@/components/shell/screen";
 import { HouseMark } from "@/components/ui/house-mark";
 import { APP_NAME, TAGLINE } from "@/lib/config";
 
+export const metadata = { title: "Sign in" };
+
 export default async function SignInPage({
   searchParams,
 }: {
