@@ -50,6 +50,26 @@ entitlements table; nothing else in the app knows the provider.
 
 Fee floor: nothing on the tariff under ~£3, or fixed fees eat the payment.
 
+### Live Stripe objects
+
+Created via the Stripe MCP (live mode, account `acct_1U2ZUZRvKayBe2Nz`,
+"Pub Golf"). Prices are **multi-currency** — one price per product with
+`currency_options`, so Checkout presents the buyer's own currency — and
+**tax-inclusive**: the sticker is the price. Code resolves prices by
+`lookup_key`, never by hardcoded id.
+
+| Product | lookup_key | GBP | USD | CAD |
+| --- | --- | --- | --- | --- |
+| The green fee (`prod_V2ewNtObRI3fq7`) | `green_fee` | £4 | $5 | C$7 |
+| The honesty box (`prod_V2ewOnbYvJY3Ul`) | `honesty_box` | min £3 · preset £5 | min $4 · preset $7 | min C$5 · preset C$9 |
+
+The honesty box is a customer-chooses-amount price
+(`custom_unit_amount`), so it works from Checkout or a Payment Link
+without the app dictating the tip. The season ticket is deliberately not
+created yet — phase three earns it first. For local dev, mirror both
+products in a sandbox under the same lookup keys so the code never
+branches on environment.
+
 ## The covenant (product rules, public)
 
 1. **Joining is free forever.** Guests are the growth loop.
