@@ -61,6 +61,11 @@ is this Next version's middleware convention (see the `home` sibling repo).
   Regenerate icons with `sharp` and **`.ensureAlpha()`** — Next's ICO
   decoder rejects a non-RGBA PNG, and `sips` writes RGB whenever the source
   has no alpha, which fails the build rather than the file.
+  The manifest's `purpose: "maskable"` plate is the one icon that is
+  generated rather than vendored: `node scripts/brand-maskable.mjs` bleeds
+  the plate's own sampled ink to every edge and sets the squircle at 70% so
+  the glass clears Android's 80% safe circle. Android masks icons into the
+  launcher's shape, so without it every size above is letterboxed.
 - The lockups (glass left, name right) are generated, not drawn:
   `node scripts/brand-lockups.mjs` writes `lockup-*` (transparent and
   `-stock`) and `letterhead-*` (tagline beneath) for both grounds into
