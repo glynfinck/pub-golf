@@ -61,9 +61,14 @@ export function PubMapSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
+      {/* The height must ride the same data-[side=bottom] variant the sheet
+          primitive uses for its own h-auto: a plain h-* merges into a
+          different group and loses the specificity contest, the sheet sizes
+          to its content, and twenty result rows push the map, the pill and
+          the close button clean off the top of the screen. */}
       <SheetContent
         side="bottom"
-        className="mx-auto flex h-[92dvh] max-w-md flex-col gap-0 overflow-hidden rounded-t-2xl p-0"
+        className="mx-auto flex max-w-md flex-col gap-0 overflow-hidden rounded-t-2xl p-0 data-[side=bottom]:h-[92dvh]"
       >
         <SheetTitle className="sr-only">Find pubs on the map</SheetTitle>
         <SheetDescription className="sr-only">
@@ -120,6 +125,19 @@ function PubMapBody({
     },
     [],
   );
+
+  // Google reports a refused key (wrong referrer, missing API) through this
+  // one global callback, not through the loader — without it the map area
+  // just sits blank. Caught, the sheet says what happened and the list
+  // keeps working.
+  useEffect(() => {
+    const w = window as Window & { gm_authFailure?: () => void };
+    const prior = w.gm_authFailure;
+    w.gm_authFailure = () => setMapsFailed(true);
+    return () => {
+      w.gm_authFailure = prior;
+    };
+  }, []);
 
   const holePins = holes
     .map((hole, index) => ({ hole, number: index + 1 }))
