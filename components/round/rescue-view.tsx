@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Screen } from "@/components/shell/screen";
 import { Button } from "@/components/ui/button";
 import { PendingLabel } from "@/components/ui/pending-label";
-import { Putt } from "@/components/ui/putt";
+import { PuttGreen } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
 import { requestSeatRescue } from "@/lib/actions/rounds";
 import { createClient } from "@/lib/supabase/client";
@@ -182,7 +182,9 @@ export function RescueView({
 
       {knocked !== null ? (
         <>
-          <div className="rounded-xl border border-border bg-card px-4 py-5 text-center">
+          {/* The panel stands on the full green: the putt at panel width,
+              flag at the right margin — the wait's own dot-leader row. */}
+          <div className="rounded-xl border border-border bg-card px-4 pt-5 pb-2.5 text-center">
             <div className="eyebrow" style={{ textIndent: "0.2em" }}>
               Held at the door
             </div>
@@ -193,9 +195,7 @@ export function RescueView({
               The caddy or the host waves you back in from their phone. Hang
               tight — this screen follows on its own.
             </p>
-            <div className="mt-3 text-fairway">
-              <Putt />
-            </div>
+            <PuttGreen className="mt-4 text-fairway" />
           </div>
           <Button
             variant="secondary"

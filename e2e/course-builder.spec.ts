@@ -18,12 +18,20 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expectSettled(page, "masthead-back", (back) =>
     expect(back).toHaveAttribute("href", "/courses"),
   );
-  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+  // Same controlled-form race full-house documents: a fill landing before
+  // hydration is silently wiped, so prove the page live through the Add
+  // button (it enables only when React sees text) before typing the name.
+  const pubField = page.getByLabel(/add a pub by name/i);
+  const addPub = page.getByRole("button", { name: /add the named pub/i });
+  await expect(async () => {
+    await pubField.fill("The Test Tavern");
+    await expect(addPub).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
 
-  await page.getByLabel(/add a pub by name/i).fill("The Test Tavern");
-  await page.getByRole("button", { name: /add the named pub/i }).click();
-  await page.getByLabel(/add a pub by name/i).fill("The Other Arms");
-  await page.getByRole("button", { name: /add the named pub/i }).click();
+  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+  await addPub.click();
+  await pubField.fill("The Other Arms");
+  await addPub.click();
 
   // Dress hole 1: par up, a proper drink, a water hazard with a note.
   await page.getByRole("button", { name: /raise par on hole 1/i }).click();
