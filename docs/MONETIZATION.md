@@ -38,15 +38,18 @@ Google Pay, card data never touches the app, PCI stays at the
 self-assessment tier. Setup: Checkout Sessions from a server action;
 fulfilment on the `checkout.session.completed` webhook (never the success
 redirect), verified against the raw body and idempotent on event id;
-Stripe Tax on from day one; the domain registered for Apple Pay;
-`stripe listen` forwarding webhooks to the local stack in dev.
+`stripe listen` forwarding webhooks to the local stack in dev. Hosted
+checkout needs no Apple Pay domain registration — that is only for
+payment elements embedded on our own pages.
 
-Known trade-off, noted honestly: Stripe computes tax but the merchant
-registers and remits it, and cross-border digital sales can in principle
-carry VAT/GST duties from the first sale (UK/EU rules for overseas
-sellers). If that ever grows teeth, merchants of record (Lemon Squeezy,
-Paddle, Polar) are the escape hatch — the swap hides entirely behind the
-entitlements table; nothing else in the app knows the provider.
+Tax resolved itself: the account has **Managed Payments** enabled —
+Stripe's merchant-of-record product — so Stripe is the seller of record
+and registers and remits VAT/GST itself (`automatic_tax.liability:
+stripe` on every checkout). The requirement it imposes: every product
+carries an eligible digital-goods tax code; both are set to
+`txcd_10103000` (SaaS, personal use). Managed Payments can also issue
+refunds within 60 days to head off chargebacks, which pairs with the
+small-print policy. No separate Stripe Tax setup is needed.
 
 Fee floor: nothing on the tariff under ~£3, or fixed fees eat the payment.
 
@@ -65,7 +68,11 @@ Created via the Stripe MCP (live mode, account `acct_1U2ZUZRvKayBe2Nz`,
 
 The honesty box is a customer-chooses-amount price
 (`custom_unit_amount`), so it works from Checkout or a Payment Link
-without the app dictating the tip. The season ticket is deliberately not
+without the app dictating the tip — and it has a live Payment Link,
+phase one's entire payment surface (tips grant nothing, so no webhook or
+entitlements are needed to ship it):
+`https://buy.stripe.com/9B628teB70SXf3rdVQ2Ji00`
+(`plink_1U2aUpRvKayBe2NzttVJk5uj`). The season ticket is deliberately not
 created yet — phase three earns it first. For local dev, mirror both
 products in a sandbox under the same lookup keys so the code never
 branches on environment.
