@@ -1,11 +1,11 @@
 name: Stripe sandbox smoke
 
-# The one workflow that talks to real Stripe (test mode only — both the
-# seeder and the suite refuse a live key). Deliberately not part of the
-# required `verify` gate: third-party network is flake, and the gate fails
-# flakes. Run it by hand after Stripe-side changes, and weekly to catch
-# drift between the sandbox, the live account's expectations, and
-# lib/tariff.ts.
+# Talks to real Stripe, test mode only — both the seeder and the suite
+# refuse a live key. The same tier also runs inside the `verify` gate on
+# every PR (a deliberate call: four test-mode API calls were judged worth
+# having in the gate); this workflow remains for the weekly drift check
+# between the sandbox, the live account's expectations, and lib/tariff.ts,
+# and for seeding a fresh sandbox by hand without opening a PR.
 #
 # Needs one repository secret: STRIPE_SANDBOX_SECRET_KEY, a sandbox
 # secret key (sk_test_...). Absent, the run comes up green with everything

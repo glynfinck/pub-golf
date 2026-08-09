@@ -106,10 +106,13 @@ sandbox idempotently, and the smoke suite verifies the account against
 `lib/tariff.ts` (the seeder can't import TS, so this cross-check is what
 catches drift) and opens, then expires, a real checkout session — the
 API-shape failures the offline spec can't see, like the Managed Payments
-tax-code rejection the live account once handed us. It runs from
-`.github/workflows/stripe-sandbox.yml` (manual dispatch + Monday
-mornings), needs the `STRIPE_SANDBOX_SECRET_KEY` repo secret, and comes
-up green-but-skipped until that secret exists.
+tax-code rejection the live account once handed us. By decision it runs
+**inside the `verify` gate** on every PR (seed + smoke, before the stack
+comes up, off the `STRIPE_SANDBOX_SECRET_KEY` repo secret;
+green-with-skips when the secret is absent, as on forks) — the one
+accepted third-party dependency in the gate, four test-mode API calls.
+`.github/workflows/stripe-sandbox.yml` remains for the Monday drift
+check and for seeding a fresh sandbox by hand.
 
 Not built on purpose: any green-fee purchase UI. Nothing premium exists
 to unlock yet, and the covenant says money only ever buys something real

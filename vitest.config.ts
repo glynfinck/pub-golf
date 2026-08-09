@@ -59,9 +59,9 @@ export default defineConfig({
           environment: "node",
           include: ["tests/sandbox/**/*.test.ts"],
           // The one tier that talks to real Stripe (test mode only — the
-          // suite refuses a live key). Never part of the PR gate: it runs
-          // from its own dispatch/weekly workflow, and skips entirely when
-          // STRIPE_SECRET_KEY is absent.
+          // suite refuses a live key). Runs in the PR gate off the sandbox
+          // secret, and from the dispatch/weekly workflow for drift checks;
+          // skips entirely when STRIPE_SECRET_KEY is absent.
           testTimeout: 30_000,
           retry: 0,
         },
