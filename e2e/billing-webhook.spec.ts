@@ -19,12 +19,9 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
-// API-only: the engine matrix exists for rendering, and this spec never
-// opens a page.
-test.skip(
-  ({ browserName }) => browserName !== "chromium",
-  "API-only — one engine is plenty",
-);
+// API-only: the spec never opens a page, so it runs on one project only —
+// the other two ignore it in playwright.config.ts (not a runtime skip,
+// which would still run afterAll in a worker whose beforeAll never ran).
 // Without billing env the route answers 503 by design; a dummy pair in
 // .env.local (see .env.example) turns the loop on.
 test.skip(
@@ -119,6 +116,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  // Nothing to tear down when the file was skipped before beforeAll ran.
+  if (!hostId) return;
   // Rounds cascade their entitlements; the user cascades the profile.
   const db = admin();
   await db.from("rounds").delete().in("id", [paidRound, quietRound]);

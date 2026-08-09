@@ -47,8 +47,20 @@ export default defineConfig({
   // laptop at the table (Gecko). Projects run in sequence under workers: 1.
   projects: [
     { name: "android-chrome", use: { ...devices["Pixel 7"] } },
-    { name: "iphone-safari", use: { ...devices["iPhone 15"] } },
-    { name: "desktop-firefox", use: { ...devices["Desktop Firefox"] } },
+    // The billing webhook spec never opens a page, so the matrix owes it
+    // nothing — and it must be ignored here rather than runtime-skipped:
+    // a skip leaves the file's afterAll running in a worker whose
+    // beforeAll never ran, which crashes teardown against the last test.
+    {
+      name: "iphone-safari",
+      use: { ...devices["iPhone 15"] },
+      testIgnore: /billing-webhook/,
+    },
+    {
+      name: "desktop-firefox",
+      use: { ...devices["Desktop Firefox"] },
+      testIgnore: /billing-webhook/,
+    },
   ],
   webServer: {
     // CI has already run `next build` by the time this suite starts, so it
