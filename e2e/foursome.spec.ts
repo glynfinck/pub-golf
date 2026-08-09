@@ -66,22 +66,42 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
   const host = await hostContext.newPage();
 
   await host.goto("/courses/new");
+  // The builder is a controlled form and WebKit hydrates it slowest: a name
+  // filled before React is listening survives in the DOM, never reaches
+  // state, and the save button waits out the whole budget on an emptiness
+  // nobody can see. Same cure as full-house's plot — the Add button answers
+  // back (it enables only when live React sees text in its field), so fill
+  // and listen as one retried block, then type onto a proven page.
+  const pubField = host.getByLabel(/add a pub by name/i);
+  const addPub = host.getByRole("button", { name: /add the named pub/i });
+  await expect(async () => {
+    await pubField.fill("The First Leg");
+    await expect(addPub).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+
   await host.getByLabel(/course name/i).fill(`Foursome Crawl ${stamp}`);
-  await host.getByLabel(/add a pub by name/i).fill("The First Leg");
-  await host.getByRole("button", { name: /add the named pub/i }).click();
-  await host.getByLabel(/add a pub by name/i).fill("The Last Orders");
-  await host.getByRole("button", { name: /add the named pub/i }).click();
+  await addPub.click();
+  await pubField.fill("The Last Orders");
+  await addPub.click();
   await host.getByRole("button", { name: /save the course · 2 holes/i }).click();
   await host.waitForURL(/\/courses$/);
 
   await host.goto("/new");
+  // Same controlled-form rule as the builder: pick the course first and
+  // let the create button's label answer — it only names the course once
+  // live React has registered the selection — then fill the round name on
+  // a page that has proven itself hydrated.
+  const createRound = host.getByRole("button", {
+    name: /create round · 2 holes on foursome crawl/i,
+  });
+  await expect(async () => {
+    await host
+      .getByRole("button", { name: new RegExp(`Foursome Crawl ${stamp}`) })
+      .click();
+    await expect(createRound).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
   await host.getByLabel(/round name/i).fill(`Foursome Open ${stamp}`);
-  await host
-    .getByRole("button", { name: new RegExp(`Foursome Crawl ${stamp}`) })
-    .click();
-  await host
-    .getByRole("button", { name: /create round · 2 holes on foursome crawl/i })
-    .click();
+  await createRound.click();
   await host.waitForURL(/\/round\/[A-Z2-9]{6}$/);
   const code = host.url().split("/").pop()!;
 
