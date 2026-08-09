@@ -122,7 +122,9 @@ export type Database = {
       }
       entitlements: {
         Row: {
+          amount_total: number | null
           created_at: string
+          currency: string | null
           id: string
           kind: string
           round_id: string | null
@@ -131,7 +133,9 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          amount_total?: number | null
           created_at?: string
+          currency?: string | null
           id?: string
           kind: string
           round_id?: string | null
@@ -140,7 +144,9 @@ export type Database = {
           user_id: string
         }
         Update: {
+          amount_total?: number | null
           created_at?: string
+          currency?: string | null
           id?: string
           kind?: string
           round_id?: string | null

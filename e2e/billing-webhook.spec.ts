@@ -46,6 +46,8 @@ function signedEvent(input: {
         id: input.sessionId,
         object: "checkout.session",
         payment_status: input.paymentStatus ?? "paid",
+        amount_total: 400,
+        currency: "gbp",
         metadata: input.metadata,
       },
     },
@@ -89,7 +91,7 @@ async function seedRound(hostId: string): Promise<string> {
 async function greenFeeRows(roundId: string) {
   const { data, error } = await admin()
     .from("entitlements")
-    .select("id, stripe_event_id, user_id")
+    .select("id, stripe_event_id, user_id, amount_total, currency")
     .eq("round_id", roundId)
     .eq("kind", "green_fee");
   if (error) throw error;
@@ -195,6 +197,9 @@ test("fulfils a paid green fee exactly once, however often Stripe redelivers", a
   const rows = await greenFeeRows(paidRound);
   expect(rows).toHaveLength(1);
   expect(rows[0].user_id).toBe(hostId);
+  // The paid amount rides along, so purchase history reads from Postgres.
+  expect(rows[0].amount_total).toBe(400);
+  expect(rows[0].currency).toBe("gbp");
 });
 
 test("writes nothing for a tip or an unpaid session", async ({ request }) => {

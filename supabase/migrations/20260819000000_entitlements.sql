@@ -28,6 +28,11 @@ create table public.entitlements (
   -- The webhook event that wrote the row; unique is the retry guard.
   stripe_event_id text not null unique,
   stripe_session_id text,
+  -- What was actually paid, captured at fulfilment time so purchase
+  -- history never needs Stripe in the request path. Smallest units, and
+  -- nullable: a granted (unpaid) entitlement stays legal.
+  amount_total integer,
+  currency text,
   created_at timestamptz not null default now()
 );
 

@@ -72,6 +72,9 @@ export async function POST(request: Request) {
     kind,
     stripe_event_id: event.id,
     stripe_session_id: session.id,
+    // Captured now so purchase history never needs Stripe at read time.
+    amount_total: session.amount_total,
+    currency: session.currency,
   });
   // 23505 is the schema doing idempotency's work: already fulfilled.
   if (error && error.code !== "23505") {
