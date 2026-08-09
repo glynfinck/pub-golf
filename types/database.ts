@@ -34,6 +34,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      bug_reports: {
+        Row: {
+          area: string
+          body: string
+          context: Json
+          created_at: string
+          id: string
+          issue_number: number | null
+          issue_url: string | null
+          reporter: string
+          round_code: string | null
+        }
+        Insert: {
+          area?: string
+          body: string
+          context?: Json
+          created_at?: string
+          id?: string
+          issue_number?: number | null
+          issue_url?: string | null
+          reporter?: string
+          round_code?: string | null
+        }
+        Update: {
+          area?: string
+          body?: string
+          context?: Json
+          created_at?: string
+          id?: string
+          issue_number?: number | null
+          issue_url?: string | null
+          reporter?: string
+          round_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bug_reports_reporter_fkey"
+            columns: ["reporter"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       course_holes: {
         Row: {
           course_id: string
@@ -587,6 +631,7 @@ export type Database = {
     }
     Functions: {
       approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
+      bug_report_daily_cap: { Args: never; Returns: number }
       dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
       get_round_card: {

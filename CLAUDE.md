@@ -93,6 +93,17 @@ is this Next version's middleware convention (see the `home` sibling repo).
   score) — a 0 never scores as a free under-par hole. The in-progress hole
   only counts once swigs > 0. This still holds after a mulligan:
   resetting a hole never buys a free one.
+- The report-a-bug sheet files a GitHub issue on a **public** repository, so
+  `lib/bug-report.ts` is the only thing that decides what may leave and is
+  pure for exactly that reason. The load-bearing rule: **a round code never
+  reaches the issue** — it is the join key, so a code on a public issue is an
+  open door onto a live round. It is stripped from the route, from the
+  player's own words, and from the title; the real code stays on the private
+  `bug_reports` row and the issue carries only that row's id (no name, no uid,
+  no email). Free text is printed inside a fence, which is what makes an
+  `@everyone` inert. Both doors — the Profile screen and the round's rules
+  sheet — go through `ReportBugSheet`; the parent owns both sheets so the
+  rules close as the report opens rather than stacking.
 - `rounds.ruleset` is read through `readRuleset` in `lib/ruleset.ts` and
   nowhere else — never re-cast the jsonb inline. It fills in defaults, so a
   round created before a rule existed reads as that rule being off.
@@ -181,7 +192,18 @@ never saw it because the guard exempts them. `penalties.strokes` is
 schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
 retraction follows `called_by`, not whose card it sits on. All raise
 `42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
-is the adversarial suite. Regenerate types after schema changes:
+is the adversarial suite. `bug_reports` is the report screen's table and is
+reporter-scoped in every direction — no official's view, because a report is
+between the player and the club secretary. It carries three rules worth
+knowing: the daily allowance is a trigger (`bug_report_daily_cap()`, mirrored
+in `lib/bug-report.ts` and proved equal by a test) taking an advisory lock on
+the reporter rather than `for update` on their profile row, since FOR UPDATE
+would conflict with the FK's KEY SHARE lock and put reports in the way of
+somebody joining a round; the issue is stamped back by the reporter's own
+session, so the write is fenced by a **column grant** on
+`(issue_number, issue_url)` and a USING clause of `issue_number is null` that
+makes it one-way; and `anon` is granted nothing at all, so a signed-out
+request gets the gate rather than a policy's empty list. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Two hosted environments, both deployed by the platforms rather than from this
