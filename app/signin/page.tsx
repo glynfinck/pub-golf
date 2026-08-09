@@ -13,11 +13,8 @@ export default async function SignInPage({
   const { error, next } = await searchParams;
   const target = next?.startsWith("/") && !next.startsWith("//") ? next : "/";
 
-  // gap-8 between groups against gap-2 inside them: the wordmark lockup, the
-  // sign-in action and the guest escape hatch each have to read as one thing,
-  // not as a stack of evenly spaced lines.
   return (
-    <Screen className="justify-center gap-8">
+    <Screen className="justify-center gap-5">
       <div className="text-center">
         {/* No ring around it any more: the mark carries its own plate, and a
             squircle inside a circle is two frames arguing. */}
@@ -30,7 +27,7 @@ export default async function SignInPage({
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <p className="text-center text-xs text-muted-foreground">
           Sign in to keep a card and start rounds. It takes one tap.
         </p>

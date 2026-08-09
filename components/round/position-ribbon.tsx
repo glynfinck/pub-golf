@@ -112,18 +112,16 @@ export function PositionRibbon({ standings }: { standings: StandingRow[] }) {
         )}
       </button>
 
-      {/* The rows own every edge of the card, so the row you are on fills its
-          slot completely — no card padding peeking above or below it as a
-          stray strip. overflow-hidden on the card clips the top and bottom
-          rows to the rounded corners. */}
+      {/* One gutter everywhere: the card pads the same 6px that separates
+          the rows, so the shaded "you" row floats evenly whatever its rank.
+          The gap is the divider — hairlines on top would be saying it twice. */}
       {expanded ? (
-        <Card className="gap-0 py-0" data-testid="standings">
-          {standings.map((row, index) => (
+        <Card className="gap-1.5 px-1.5 py-1.5" data-testid="standings">
+          {standings.map((row) => (
             <div
               key={row.playerId}
               className={cn(
-                "flex min-h-11 items-center justify-between px-5",
-                index > 0 && !row.isYou && "border-t border-border",
+                "flex min-h-11 items-center justify-between gap-2 rounded-lg px-2.5",
                 row.isYou && "bg-secondary",
               )}
             >
