@@ -13,9 +13,22 @@ export const MAPS_BROWSER_KEY =
  * Markers rendering over Google's stock styling, with colorScheme still
  * following the app theme.
  */
+let reportedMapIds = false;
+
 export function mapIdForTheme(resolvedTheme: string | undefined): string {
   const cream = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_CREAM;
   const midnight = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID_MIDNIGHT;
+  // Say once, in the console, which styles this build actually carries —
+  // "why is the map stock?" bisects instantly between a build missing its
+  // env vars and a Google-side style that never published.
+  if (!reportedMapIds && typeof window !== "undefined") {
+    reportedMapIds = true;
+    console.info(
+      cream || midnight
+        ? `pub-golf map styles: cream=${cream ?? "(unset)"} midnight=${midnight ?? "(unset)"}`
+        : "pub-golf map styles: no map IDs in this build — stock Google styling",
+    );
+  }
   return (
     (resolvedTheme === "dark" ? (midnight ?? cream) : (cream ?? midnight)) ??
     "DEMO_MAP_ID"
