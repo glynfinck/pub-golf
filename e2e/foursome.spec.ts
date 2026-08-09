@@ -7,6 +7,7 @@ import {
 } from "@playwright/test";
 
 import { signInAs } from "./auth";
+import { drink } from "./drink";
 import { clickSettled, gotoSettled } from "./nav";
 
 /**
@@ -37,16 +38,6 @@ async function joinAsGuest(
   await page.getByRole("button", { name: /join the round/i }).click();
   await page.waitForURL(new RegExp(`/round/${code}`));
   return { context, page };
-}
-
-/** Tap +1 SWIG `count` times on one phone. */
-async function drink(page: Page, count: number) {
-  for (let sip = 0; sip < count; sip += 1) {
-    await page.getByTestId("swig-plus").click();
-  }
-  if (count > 0) {
-    await expect(page.getByTestId("swig-count")).toHaveText(String(count));
-  }
 }
 
 test("a foursome: stampede join, four thumbs on one hole, ties and the substitute", async ({
