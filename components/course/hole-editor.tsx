@@ -20,6 +20,9 @@ export interface DraftHole {
   hazard_note: string | null;
   /** Local rules: offered on this hole's penalty sheet and nowhere else. */
   penalties: RulesetPenalty[];
+  /** The stored walk leg — the fallback when there are no coordinates to
+   * re-measure (curated copies, pubs added by name). Null on a new hole. */
+  walk_minutes_to_next: number | null;
 }
 
 const HAZARDS = [

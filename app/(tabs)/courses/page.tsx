@@ -1,13 +1,17 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
-import { DeleteCourseButton } from "@/components/course/delete-course-button";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
+import { CURATED_COURSES, coursePar } from "@/lib/course-templates";
 import { getMyCourses } from "@/lib/data/courses";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "The course book" };
+
+const courseRow =
+  "flex min-h-13 items-center gap-2 hover:bg-secondary/40 -mx-4 px-4";
 
 export default async function CoursesPage() {
   const courses = await getMyCourses();
@@ -20,12 +24,10 @@ export default async function CoursesPage() {
       {courses.length > 0 ? (
         <Card className="gap-0 px-4 py-1">
           {courses.map((course, index) => (
-            <div
+            <Link
               key={course.id}
-              className={cn(
-                "flex min-h-13 items-center gap-2",
-                index > 0 && "border-t border-border",
-              )}
+              href={`/courses/${course.id}`}
+              className={cn(courseRow, index > 0 && "border-t border-border")}
             >
               <span className="tabular flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-marker font-serif text-sm text-marker">
                 {course.hole_count}
@@ -36,14 +38,18 @@ export default async function CoursesPage() {
                   {course.hole_count} holes · par {course.par}
                 </span>
               </span>
-              <DeleteCourseButton courseId={course.id} name={course.name} />
-            </div>
+              <ChevronRight
+                size={16}
+                aria-hidden
+                className="shrink-0 text-muted-foreground"
+              />
+            </Link>
           ))}
         </Card>
       ) : (
         <Card className="gap-0 px-4 text-sm text-muted-foreground">
-          Nothing in the book yet. Plot a course — search the pubs, set the
-          pars, pour the drinks.
+          Nothing of your own in the book yet. Plot a course — or copy a
+          curated card below and tweak it.
         </Card>
       )}
 
@@ -51,9 +57,39 @@ export default async function CoursesPage() {
         Plot a new course
       </Link>
 
+      <section>
+        <h3 className="eyebrow mb-2">Curated · the house cards</h3>
+        <Card className="gap-0 px-4 py-1">
+          {CURATED_COURSES.map((course, index) => (
+            <Link
+              key={course.slug}
+              href={`/courses/curated/${course.slug}`}
+              className={cn(courseRow, index > 0 && "border-t border-border")}
+            >
+              <span className="tabular flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-fairway font-serif text-sm text-fairway">
+                {course.holes.length}
+              </span>
+              <span className="min-w-0 flex-1">
+                <b className="block truncate text-sm">{course.name}</b>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  {course.holes.length} holes · par {coursePar(course.holes)} ·
+                  read-only until copied
+                </span>
+              </span>
+              <ChevronRight
+                size={16}
+                aria-hidden
+                className="shrink-0 text-muted-foreground"
+              />
+            </Link>
+          ))}
+        </Card>
+      </section>
+
       <p className="text-center text-[11px] text-muted-foreground">
-        Courses are reusable — every round takes its own snapshot. Pubs come
-        from Google; you bring the par and the drinks.
+        Courses are reusable — every round takes its own snapshot. Tap one to
+        edit, copy or tear it out; pubs come from Google, you bring the par
+        and the drinks.
       </p>
     </Screen>
   );

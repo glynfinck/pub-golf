@@ -9,10 +9,10 @@ import { getMyRounds, getProfile } from "@/lib/data/rounds";
 import { cn } from "@/lib/utils";
 
 export default async function ClubhousePage() {
-  const profile = await getProfile();
+  // One wait, not two — the pause on a tab switch is these round trips.
+  const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
   if (!profile) redirect("/signin");
 
-  const rounds = await getMyRounds();
   const active = rounds.find((round) => round.status !== "finished");
   const past = rounds.filter((round) => round.status === "finished");
 

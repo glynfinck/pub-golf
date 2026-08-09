@@ -7,10 +7,9 @@ import { getMyRounds, getProfile } from "@/lib/data/rounds";
 export const metadata = { title: "Rounds" };
 
 export default async function RoundsPage() {
-  const profile = await getProfile();
+  // One wait, not two — the pause on a tab switch is these round trips.
+  const [profile, rounds] = await Promise.all([getProfile(), getMyRounds()]);
   if (!profile) redirect("/signin");
-
-  const rounds = await getMyRounds();
 
   return (
     <Screen withTabBar>
