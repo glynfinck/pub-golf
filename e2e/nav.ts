@@ -54,9 +54,10 @@ export async function clickSettled(page: Page, testId: string) {
  *
  * Every round screen refreshes itself whenever realtime lands a change, and
  * a hard navigation that collides with one is reported engine by engine:
- * Chromium shrugs, WebKit throws "interrupted by another navigation",
- * Firefox NS_BINDING_ABORTED. A person in that collision simply arrives on
- * one of the two destinations — so retry the way a thumb would, and only
+ * Chromium shrugs, WebKit throws "interrupted by another navigation" — or
+ * "Frame load interrupted", its other spelling for the same collision —
+ * and Firefox NS_BINDING_ABORTED. A person in that collision simply arrives
+ * on one of the two destinations — so retry the way a thumb would, and only
  * surface errors that are not the collision.
  */
 export async function gotoSettled(page: Page, url: string): Promise<void> {
@@ -66,7 +67,7 @@ export async function gotoSettled(page: Page, url: string): Promise<void> {
       return;
     } catch (error) {
       const collision =
-        /interrupted by another navigation|NS_BINDING_ABORTED|frame was detached/i.test(
+        /interrupted by another navigation|Frame load interrupted|NS_BINDING_ABORTED|frame was detached/i.test(
           String(error),
         );
       if (!collision || attempt >= 2) throw error;
