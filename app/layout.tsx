@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { ThemeColor } from "@/components/theme-color";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { APP_NAME, SITE_URL, TAGLINE } from "@/lib/config";
+import { APP_NAME, GROUND, SITE_URL, TAGLINE } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -49,10 +50,12 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f1edde" },
-    { media: "(prefers-color-scheme: dark)", color: "#101b13" },
-  ],
+  // One value, not a prefers-color-scheme pair. The app does not follow the
+  // system — cream lives on `:root` and Midnight is opt-in — so a media query
+  // here painted Midnight chrome above a cream page for every system-dark
+  // visitor. Cream is the server-rendered truth for anyone who has not opted
+  // in; `<ThemeColor />` corrects it for anyone who has.
+  themeColor: GROUND.light,
 };
 
 export default function RootLayout({
@@ -67,6 +70,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <ThemeColor />
           {children}
           <Toaster position="top-center" richColors />
         </ThemeProvider>
