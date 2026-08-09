@@ -416,7 +416,15 @@ function PubMapBody({
           <Map
             key={dark ? "midnight" : "cream"}
             mapId={mapIdForTheme(resolvedTheme)}
-            colorScheme={dark ? ColorScheme.DARK : ColorScheme.LIGHT}
+            // A cloud style declares its own light/dark variant; passing
+            // colorScheme beside a styled map ID invites Google to resolve
+            // the argument in its own favour. Only the unstyled fallback
+            // needs the scheme to follow the app theme.
+            {...(MAP_STYLE_IDS.cream || MAP_STYLE_IDS.midnight
+              ? {}
+              : {
+                  colorScheme: dark ? ColorScheme.DARK : ColorScheme.LIGHT,
+                })}
             {...("bounds" in frame
               ? { defaultBounds: { ...frame.bounds, padding: 64 } }
               : { defaultCenter: frame.center, defaultZoom: frame.zoom })}
