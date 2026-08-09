@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 
+import { dayPassExpiry } from "@/lib/billing";
 import type { Database } from "@/types/database";
 
 /**
@@ -9,8 +10,8 @@ import type { Database } from "@/types/database";
  * payment, and Stripe retries delivery until it hears 200.
  *
  * Idempotency is the schema's, not this handler's: stripe_event_id is
- * unique and a round holds one green fee, so a redelivered or racing event
- * lands on 23505 and is answered 200 all the same.
+ * unique, so a redelivered or racing event lands on 23505 and is answered
+ * 200 all the same.
  */
 export async function POST(request: Request) {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -54,12 +55,21 @@ export async function POST(request: Request) {
   }
 
   const kind = session.metadata?.kind;
-  const roundId = session.metadata?.round_id;
   const userId = session.metadata?.user_id;
   // The honesty box completes checkouts too; only a green fee writes a row.
-  if (kind !== "green_fee" || !roundId || !userId) {
+  if (kind !== "green_fee" || !userId) {
     return Response.json({ received: true });
   }
+
+  // Dated from the event rather than from this handler: Stripe retries until
+  // it hears 200, and a pass must not grow by however long delivery took.
+  // Falls back to now for an event with no timestamp — a pass that starts
+  // late is a small overpayment by the house; `new Date(NaN)` would be a 500
+  // and a payment taken with nothing granted.
+  const paidAtMs =
+    typeof event.created === "number" && Number.isFinite(event.created)
+      ? event.created * 1000
+      : Date.now();
 
   const admin = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
@@ -68,13 +78,17 @@ export async function POST(request: Request) {
   );
   const { error } = await admin.from("entitlements").insert({
     user_id: userId,
-    round_id: roundId,
+    // A day pass belongs to its buyer, not to a round — it predates every
+    // round it will cover. What a round keeps is the members' flag stamped
+    // into its own ruleset at tee-off, which outlives this row.
+    round_id: null,
     kind,
     stripe_event_id: event.id,
     stripe_session_id: session.id,
     // Captured now so purchase history never needs Stripe at read time.
     amount_total: session.amount_total,
     currency: session.currency,
+    expires_at: dayPassExpiry(paidAtMs),
   });
   // 23505 is the schema doing idempotency's work: already fulfilled.
   if (error && error.code !== "23505") {

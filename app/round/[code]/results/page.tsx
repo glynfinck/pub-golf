@@ -10,6 +10,7 @@ import { RescueKnock } from "@/components/round/rescue-knock";
 import { ReopenRound, ResultsLive } from "@/components/round/results-live";
 import { RoundBar } from "@/components/round/round-bar";
 import { SameAgain } from "@/components/round/same-again";
+import { ShareRecap } from "@/components/round/share-recap";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
@@ -175,6 +176,8 @@ export default async function ResultsPage({
         standings={standings}
         superlatives={superlatives}
       />
+
+      <ShareRecap code={round.code} name={round.name} />
 
       {/* After the recap, never before it: the ask follows the delivered
           round, and the shareable card stays free and first. */}

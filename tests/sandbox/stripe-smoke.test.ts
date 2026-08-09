@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { describe, expect, it } from "vitest";
 
-import { greenFeeSessionParams } from "@/lib/billing";
+import { dayPassSessionParams } from "@/lib/billing";
 import { TARIFF } from "@/lib/tariff";
 
 /**
@@ -90,10 +90,8 @@ describe.skipIf(!key)("stripe sandbox", () => {
   it("a real checkout session opens for the green fee, then is folded away", async () => {
     const price = await priceByLookup(TARIFF.greenFee.lookupKey);
     const session = await stripe.checkout.sessions.create(
-      greenFeeSessionParams({
+      dayPassSessionParams({
         priceId: price.id,
-        roundId: randomUUID(),
-        roundCode: "SMOKE1",
         userId: randomUUID(),
         origin: "https://example.com",
       }),

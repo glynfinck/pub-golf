@@ -391,12 +391,14 @@ export type Database = {
           code: string
           created_at: string
           current_hole: number
+          finished_at: string | null
           game_type: string
           hole_deadline_at: string | null
           hole_phase: string
           host: string
           id: string
           name: string
+          recap_shares: number
           ruleset: Json
           status: string
           tee_off_at: string | null
@@ -406,12 +408,14 @@ export type Database = {
           code?: string
           created_at?: string
           current_hole?: number
+          finished_at?: string | null
           game_type?: string
           hole_deadline_at?: string | null
           hole_phase?: string
           host: string
           id?: string
           name: string
+          recap_shares?: number
           ruleset?: Json
           status?: string
           tee_off_at?: string | null
@@ -421,12 +425,14 @@ export type Database = {
           code?: string
           created_at?: string
           current_hole?: number
+          finished_at?: string | null
           game_type?: string
           hole_deadline_at?: string | null
           hole_phase?: string
           host?: string
           id?: string
           name?: string
+          recap_shares?: number
           ruleset?: Json
           status?: string
           tee_off_at?: string | null
@@ -619,6 +625,17 @@ export type Database = {
           seat_id: string
         }[]
       }
+      holds_day_pass: { Args: { who: string }; Returns: boolean }
+      house_funnel: {
+        Args: { since?: string; until?: string }
+        Returns: {
+          green_fees: number
+          recaps_shared: number
+          rounds_created: number
+          rounds_finished: number
+          rounds_joined: number
+        }[]
+      }
       is_round_creator: { Args: { round: string }; Returns: boolean }
       is_round_member: { Args: { round: string }; Returns: boolean }
       is_round_official: { Args: { round: string }; Returns: boolean }
@@ -626,6 +643,8 @@ export type Database = {
         Args: { join_code: string; player_name: string }
         Returns: string
       }
+      record_recap_share: { Args: { join_code: string }; Returns: number }
+      ruleset_members: { Args: { rules: Json }; Returns: boolean }
       request_seat_rescue: {
         Args: { join_code: string; seat: string }
         Returns: undefined

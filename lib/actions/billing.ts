@@ -4,21 +4,26 @@ import Stripe from "stripe";
 
 import {
   billingEnabled,
+  dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
-  greenFeeSessionParams,
 } from "@/lib/billing";
 import { SITE_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Start a green-fee checkout for a round and hand back the Stripe-hosted
- * URL. Officials only — the host pays, never the table. Fulfilment happens
- * on the webhook (app/api/billing/webhook), never here: this action's only
- * job is to open the till.
+ * Open the till for one green fee and hand back the Stripe-hosted URL.
+ *
+ * The fee is a day pass on the buyer, not a line on a round, so this takes
+ * no round and needs none to exist: it is offered from the new-round form,
+ * where the host is deciding what kind of round this is and there is nothing
+ * created yet. Fulfilment happens on the webhook
+ * (app/api/billing/webhook), never here — this action's only job is to open
+ * the till.
  */
-export async function startGreenFeeCheckout(
-  code: string,
-): Promise<{ url?: string; error?: string }> {
+export async function startGreenFeeCheckout(): Promise<{
+  url?: string;
+  error?: string;
+}> {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!billingEnabled(secretKey)) {
     return { error: "The till isn't plugged in yet." };
@@ -29,29 +34,25 @@ export async function startGreenFeeCheckout(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to add the green fee." };
-
-  const { data: round } = await supabase
-    .from("rounds")
-    .select("id, code, round_players!inner(role, profile_id)")
-    .eq("code", code.toUpperCase())
-    .eq("round_players.profile_id", user.id)
-    .maybeSingle();
-  if (!round) return { error: "That round isn't on your card." };
-  const seat = round.round_players[0];
-  if (!seat || !["host", "caddy"].includes(seat.role)) {
-    return { error: "Only the round's officials can add the green fee." };
+  // Guests never cross the payment boundary — the covenant's first rule, and
+  // an anonymous seat cannot host a round for the pass to cover anyway.
+  if (user.is_anonymous) {
+    return { error: "Hosting a round takes a Google sign-in." };
   }
 
-  // Already on the card? A second checkout is refund admin, not revenue.
-  // (The schema holds the real line — one green fee per round — this check
-  // just spares an honest host the trip to Stripe and back.)
-  const { data: existing } = await supabase
+  // Already inside a window? A second pass on the same day buys nothing but
+  // refund admin. The schema cannot say this — "no overlapping live pass" is
+  // not a constraint — so it is said here, kindly, and the small print
+  // refunds anyone who gets past it.
+  const { data: live } = await supabase
     .from("entitlements")
     .select("id")
-    .eq("round_id", round.id)
+    .eq("user_id", user.id)
     .eq("kind", "green_fee")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(1)
     .maybeSingle();
-  if (existing) return { error: "The green fee is already on this round." };
+  if (live) return { error: "Your green fee is already paid — it runs all day." };
 
   try {
     const stripe = new Stripe(secretKey as string);
@@ -63,10 +64,8 @@ export async function startGreenFeeCheckout(
     if (!price) return { error: "The green fee isn't on the tariff yet." };
 
     const session = await stripe.checkout.sessions.create(
-      greenFeeSessionParams({
+      dayPassSessionParams({
         priceId: price.id,
-        roundId: round.id,
-        roundCode: round.code,
         userId: user.id,
         origin: SITE_URL,
       }),

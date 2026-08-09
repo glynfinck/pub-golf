@@ -10,6 +10,7 @@ import {
   estimatedFinishMs,
   formatClock,
   formatDuration,
+  formatTimeLeft,
   greeting,
   isUrgent,
   remainingSeconds,
@@ -145,6 +146,26 @@ describe("the 19th-hole estimate", () => {
   it("lands the finish that many minutes past the tee", () => {
     const NOON = Date.UTC(2026, 0, 1, 12, 0, 0);
     expect(estimatedFinishMs(NOON, 90)).toBe(NOON + 90 * 60_000);
+  });
+});
+
+describe("formatTimeLeft", () => {
+  it("has no figure before the first client tick", () => {
+    // The pass renders "Covered" on its own until the clock has ticked —
+    // never a flash of "24h left" baked into the server's HTML.
+    expect(formatTimeLeft(null)).toBeNull();
+  });
+
+  it("is coarse on purpose — a day pass is not a shot clock", () => {
+    expect(formatTimeLeft(16 * 3_600_000)).toBe("16h left");
+    expect(formatTimeLeft(3_600_000 + 59 * 60_000)).toBe("1h left");
+    expect(formatTimeLeft(48 * 60_000)).toBe("48m left");
+  });
+
+  it("says minutes rather than counting the last one down", () => {
+    expect(formatTimeLeft(59_000)).toBe("minutes left");
+    expect(formatTimeLeft(0)).toBe("minutes left");
+    expect(formatTimeLeft(-5_000)).toBe("minutes left");
   });
 });
 

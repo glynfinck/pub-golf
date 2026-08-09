@@ -114,6 +114,22 @@ export function formatDuration(totalMinutes: number): string {
 }
 
 /**
+ * "16h left", "48m left", "minutes left" — how long something already bought
+ * has to run. Coarse on purpose: a day pass is not a shot clock, and a
+ * seconds-accurate figure would read as pressure rather than as a fact.
+ *
+ * Null before the first client tick, like every other countdown here, so the
+ * caller renders the fact without the figure rather than a flash of "24h".
+ */
+export function formatTimeLeft(remainingMs: number | null): string | null {
+  if (remainingMs === null) return null;
+  const minutes = Math.floor(Math.max(0, remainingMs) / 60_000);
+  if (minutes < 1) return "minutes left";
+  if (minutes < 60) return `${minutes}m left`;
+  return `${Math.floor(minutes / 60)}h left`;
+}
+
+/**
  * "7:00 PM" from minutes since midnight, wrapping past it — a finish that
  * runs long reads as "12:40 AM", which is its own warning.
  */

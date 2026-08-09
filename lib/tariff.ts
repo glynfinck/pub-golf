@@ -28,3 +28,21 @@ export const TARIFF = {
     },
   },
 } as const;
+
+/**
+ * A sticker, from smallest units. Round numbers print round — "£4", never
+ * "£4.00", because the covenant's one honest tariff is written the way a
+ * bar board is.
+ */
+export function sticker(pence: number): string {
+  return pence % 100 === 0
+    ? `£${pence / 100}`
+    : `£${(pence / 100).toFixed(2)}`;
+}
+
+/**
+ * What the copy quotes. Not what everyone pays: the price object carries
+ * every currency, so Checkout presents the buyer their own — this is the
+ * house's own board, and the surfaces that show it say so.
+ */
+export const GREEN_FEE_PRICE = sticker(TARIFF.greenFee.amounts.gbp);

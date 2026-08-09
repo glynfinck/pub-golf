@@ -10,6 +10,8 @@
  * off rather than as `undefined`.
  */
 
+import type { Json } from "@/types/database";
+
 /** Deliberately a type alias, not an interface: only aliases get an implicit
  * index signature, and these go straight into a jsonb column typed `Json`. */
 export type RulesetPenalty = {
@@ -38,6 +40,13 @@ export interface RoundRuleset {
   /** The advertised first tee (ISO), printed on the lobby and the invite.
    * Advisory only — the host still tees off when the group is stood there. */
   scheduledTeeOff: string | null;
+  /**
+   * Whether a green fee was covering this round when it teed off — the one
+   * key stamped after creation rather than at it, and never unstamped. False
+   * for every round created before the tariff existed, which is exactly what
+   * a free round should read as.
+   */
+  members: boolean;
 }
 
 const FORMATS = ["stroke", "stableford", "match", "scramble"] as const;
@@ -53,6 +62,7 @@ export const RULESET_DEFAULTS: RoundRuleset = {
   mulliganStrokes: 1,
   minutesPerPub: 20,
   scheduledTeeOff: null,
+  members: false,
 };
 
 function isFormat(value: unknown): value is RoundRuleset["format"] {
@@ -135,5 +145,25 @@ export function readRuleset(json: unknown): RoundRuleset {
       typeof raw.scheduledTeeOff === "string" && raw.scheduledTeeOff !== ""
         ? raw.scheduledTeeOff
         : null,
+    // Only a real boolean counts, matching the `ruleset_members` guard in
+    // Postgres exactly: a string "true" in the column is not the flag on
+    // either side of the wire.
+    members: raw.members === true,
   };
+}
+
+/**
+ * The one edit a ruleset snapshot ever takes: the members' flag, at tee-off.
+ *
+ * Everything else in the column is carried across byte for byte rather than
+ * re-serialised from `readRuleset` — the snapshot is history, so it is added
+ * to and never normalised. A round created before a key existed must still
+ * read as not having it afterwards.
+ */
+export function stampMembers(ruleset: unknown): Json {
+  const raw =
+    ruleset && typeof ruleset === "object" && !Array.isArray(ruleset)
+      ? (ruleset as { [key: string]: Json })
+      : {};
+  return { ...raw, members: true };
 }
