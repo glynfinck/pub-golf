@@ -115,6 +115,39 @@ Both Google keys are optional. Without the browser key the builder is
 list-only and nothing Google reaches the page; without the server key it
 degrades to add-by-name, which still works.
 
+## Reporting a bug
+
+Every screen has a door onto the report sheet: one on the Profile screen
+beside the build stamp, and one at the foot of a round's rules sheet — the
+sheet a player already opens when the app is not doing what they expected.
+A report filed from inside a round arrives knowing the hole, the phase and
+the build, so nobody has to remember any of it.
+
+A report becomes an issue on this repository's **public** tracker, and the
+sheet says so before the thumb reaches Send. What never leaves is anything
+that identifies the reporter: no name, no id, and above all no round code —
+a code is the join key, so a code on a public issue is an open door onto a
+live round. The code stays on the private `bug_reports` row, the issue
+carries that row's id, and `lib/bug-report.ts` is where the redaction is
+written and unit-tested.
+
+The row is written before GitHub is called, which is what makes five
+reports a day a number Postgres enforces rather than a number a serverless
+function hopes for, and what keeps a report when GitHub is unreachable.
+Staging carries the token too, so the GitHub half is exercised before it
+reaches players. Those issues are real but never anonymous about it: any
+deployment Vercel does not call `production` files under a `[preview]`
+title with "Not production — safe to close or delete" as the first line of
+the body, so `is:issue "[preview]"` sweeps a testing session up in one go.
+
+Without `GITHUB_ISSUE_TOKEN` the feature still takes reports — they simply
+stay on the table until somebody reads them:
+
+```sql
+select id, area, body, round_code, created_at
+  from bug_reports where issue_number is null order by created_at desc;
+```
+
 ## Stack
 
 - **Next.js 16** (App Router, Turbopack, React 19) on **Vercel**.
@@ -142,6 +175,7 @@ degrades to add-by-name, which still works.
 | `components/course/` | The builder: place search, hole editor, map sheet. |
 | `lib/actions/` | Server actions. Every one of them ends up at PostgREST on the caller's session. |
 | `lib/scoring.ts` | Standings, substitutions, handicaps, placings. Pure. |
+| `lib/bug-report.ts` | What a bug report may say once it leaves for a public tracker. Pure, and the redaction is the point. |
 | `lib/ruleset.ts` | The one door onto `rounds.ruleset`. Never re-cast the jsonb inline. |
 | `lib/og.tsx` | Open Graph cards, rendered by Satori on vendored fonts. |
 | `supabase/migrations/` | Schema, RLS policies, triggers, SECURITY DEFINER functions. |

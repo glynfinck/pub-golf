@@ -14,6 +14,7 @@ import { penaltyOptions } from "@/lib/penalty-options";
 import { PositionRibbon } from "@/components/round/position-ribbon";
 import { RescueKnock } from "@/components/round/rescue-knock";
 import { RoundBar } from "@/components/round/round-bar";
+import { ReportBugSheet } from "@/components/support/report-bug-sheet";
 import { TimerRing } from "@/components/round/timer-ring";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
   const [penaltySheetOpen, setPenaltySheetOpen] = useState(false);
   const [mulliganOpen, setMulliganOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const hole = holes.find((h) => h.number === round.current_hole) ?? holes[0];
   const isOfficial = me != null && ["host", "caddy"].includes(me.role);
@@ -524,6 +526,21 @@ export function PlayView({ bundle }: { bundle: RoundBundle }) {
         round={round}
         holes={holes}
         hole={round.current_hole}
+        onReportBug={() => {
+          setRulesOpen(false);
+          setReportOpen(true);
+        }}
+      />
+
+      {/* The rule chips open their own copy of the rules sheet (the
+          masthead's help mark opens RoundBar's), so the report door behind
+          it needs its own sheet to hand over to. */}
+      <ReportBugSheet
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        roundCode={round.code}
+        hole={round.current_hole}
+        phase={round.hole_phase}
       />
 
       <MulliganSheet

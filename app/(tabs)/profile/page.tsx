@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { ProfileForm } from "@/components/profile-form";
+import { ReportBugLink } from "@/components/support/report-bug-link";
 import { BUILD_REF } from "@/lib/config";
 import { signInPath } from "@/lib/auth-paths";
 import { getProfile } from "@/lib/data/rounds";
@@ -26,6 +27,10 @@ export default async function ProfilePage() {
       {/* The second door onto the house papers — the first is the sign-in
           screen, which a returning player never sees again. */}
       <footer className="mt-auto flex flex-col items-center gap-1.5 pt-4 text-[11px] text-muted-foreground">
+        {/* Above the papers, because it is the only line here anybody ever
+            goes looking for — and next to the build stamp, which is the
+            first thing the report will want to know. */}
+        <ReportBugLink />
         <div className="flex items-center gap-3">
           <Link href="/legal/privacy" className="font-bold text-fairway">
             Privacy

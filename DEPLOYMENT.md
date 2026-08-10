@@ -366,6 +366,7 @@ Production:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | that project's publishable key (`sb_publishable_…`) |
 | `NEXT_PUBLIC_SITE_URL` | `https://pub-golf.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
+| `GITHUB_ISSUE_TOKEN` | Server-only. Fine-grained PAT, **Issues: read and write on `glynfinck/pub-golf` alone**, nothing else — the app can only ever create an issue with it. Unset means reports are still taken and simply stay on the `bug_reports` table |
 
 Preview — set for the **whole Preview environment**, not scoped to the
 `preview` branch. Branch-scoped values do take precedence, but a silent
@@ -381,6 +382,7 @@ throwaway database are a feature.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the **branch's** publishable key |
 | `NEXT_PUBLIC_SITE_URL` | `https://pub-golf-preview.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | same key as production |
+| `GITHUB_ISSUE_TOKEN` | Same token as production, so the GitHub half can actually be exercised on staging. Safe because it is not the same *issue*: `VERCEL_ENV` is `preview` there, so `stageTag` titles it `[preview] …` and opens the body with "Not production — safe to close or delete". Search `is:issue "[preview]"` to sweep them up |
 
 `NEXT_PUBLIC_SITE_URL` is the quiet one: `lib/config.ts` **defaults it to
 `https://pub-golf.glyn.dev`**, so leaving it unset on preview does not fail —
