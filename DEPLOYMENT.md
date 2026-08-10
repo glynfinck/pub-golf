@@ -331,22 +331,35 @@ Three things it touches beyond itself:
    anonymous session is the only thing holding their card — so a live round
    would empty into `/round/CODE/rescue` mid-play.
 
-   The fix is to keep the old name explicitly. Every client takes
-   `cookieOptions: { name: "sb-quncylgcwfiqsjugnvtv-auth-token" }`, and
-   `@supabase/ssr` maps that straight onto `storageKey`. There are **three**
-   to change, not two — `lib/supabase/client.ts`, `lib/supabase/server.ts`
-   and `lib/supabase/proxy.ts`, which is its own `createServerClient` and the
-   one easiest to forget, since missing it means the middleware refreshes a
-   cookie nothing else reads.
+   **The pin is already in the code**, so this is now one variable rather
+   than a patch. `lib/supabase/cookie.ts` exports `cookieOptions`, read by
+   all three factories — `client.ts`, `server.ts` and `proxy.ts`, the last
+   being its own `createServerClient` and the one that would otherwise
+   refresh a cookie nothing else reads. It is driven by
+   `NEXT_PUBLIC_SUPABASE_COOKIE_NAME`, and unset it passes nothing at all, so
+   today's behaviour is byte-identical.
 
-   Set `cookieOptions.name` rather than `auth.storageKey`: `@supabase/ssr`
+   Set it in **Vercel Production only**, to the name the current origin
+   already derives:
+
+   ```
+   NEXT_PUBLIC_SUPABASE_COOKIE_NAME=sb-quncylgcwfiqsjugnvtv-auth-token
+   ```
+
+   Local and preview stay empty — each derives its own correct name from its
+   own URL, and production's name would rename *their* cookies instead.
+
+   Deploy that **before** the origin changes, not with it. `NEXT_PUBLIC_*` is
+   inlined at build time, so the variable does nothing until the next
+   production deploy carries it — which is the whole point of doing it as a
+   separate step. Without the pin, do the switch when nothing is live on the
+   board.
+
+   (Why `cookieOptions.name` and never `auth.storageKey`: `@supabase/ssr`
    spreads those two in opposite orders in its browser and server factories,
    so `auth.storageKey` wins on the server while `cookieOptions.name` wins in
    the browser. Configure the wrong one and the halves of the app disagree
-   about which cookie holds the session.
-
-   Ship that pin **before** the origin changes, not with it. Without the pin,
-   do the switch when nothing is live on the board.
+   about which cookie holds the session.)
 
 ### 4. Vercel project
 

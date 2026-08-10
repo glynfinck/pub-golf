@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { cookieOptions } from "@/lib/supabase/cookie";
+
 /**
  * Refreshes the auth session on every matched request and keeps the cookies
  * in sync between the request and response. Authoritative access control
@@ -13,6 +15,9 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // The third factory, and the one easiest to forget: missing it here
+      // means the middleware refreshes a cookie nothing else reads.
+      cookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
