@@ -132,8 +132,8 @@ export const REDACTED_CODE = "••••••";
  * Take the round code out of anything bound for GitHub.
  *
  * Two passes, because a code reaches the outside world two ways: in the route
- * the player was on (`/round/GLYN29/play`), and typed into the report itself
- * ("nobody could join GLYN29"). The first is a shape and is always redacted;
+ * the player was on (`/round/TAVERN/play`), and typed into the report itself
+ * ("nobody could join TAVERN"). The first is a shape and is always redacted;
  * the second needs the code we know about, matched case-insensitively because
  * a player types it as they remember it.
  */
