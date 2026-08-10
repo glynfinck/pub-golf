@@ -47,7 +47,7 @@ describe("a stampede of twenty on one join code", () => {
   let round: SeededRound;
 
   beforeEach(async () => {
-    host = await signedInUser("Glyn");
+    host = await signedInUser("Wren");
     round = await seedRound({ host, status: "lobby", holes: 18 });
   });
 

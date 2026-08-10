@@ -94,7 +94,7 @@ export function NewRoundForm({
   draft?: NewRoundDraft | null;
 }) {
   const { run, pending, busy } = useAction();
-  const [name, setName] = useState(draft?.name ?? "The Glyn Invitational XXX");
+  const [name, setName] = useState(draft?.name ?? "The Invitational XXX");
   const [holes, setHoles] = useState(draft?.holes ?? 9);
   const [courseId, setCourseId] = useState<string | null>(
     draft?.courseId ?? null,

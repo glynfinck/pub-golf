@@ -27,7 +27,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Host signs in and creates the round ----
   const hostContext = await browser.newContext();
-  await signInAs(hostContext, { email: hostEmail, name: "Glyn" });
+  await signInAs(hostContext, { email: hostEmail, name: "Wren" });
   const host = await hostContext.newPage();
   await host.goto("/");
 
@@ -115,7 +115,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // Standings live behind the position ribbon — one tap expands the card.
   await guest.getByTestId("position-ribbon").click();
   await expect(
-    guest.getByTestId("standings").getByText("Glyn"),
+    guest.getByTestId("standings").getByText("Wren"),
   ).toBeVisible();
 
   // ---- The masthead: rules one tap away, the way out beside them ----
@@ -144,22 +144,22 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Marker's card: the caddy corrects the host's score on hole 1 ----
   await gotoSettled(guest, `/round/${roundCode}/card`);
   await guest
-    .getByRole("button", { name: /more swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /more swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("swig-count")).toHaveText("4");
 
   // The caddy calls a penalty on the host from the player sheet, then
   // thinks better of it. Both directions are attributed.
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
-  await guest.getByRole("button", { name: /call spill \+1 on Glyn/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
+  await guest.getByRole("button", { name: /call spill \+1 on Wren/i }).click();
   await expect(
-    guest.getByRole("button", { name: /retract spill \+1 from Glyn/i }),
+    guest.getByRole("button", { name: /retract spill \+1 from Wren/i }),
   ).toBeEnabled();
   await guest
-    .getByRole("button", { name: /retract spill \+1 from Glyn/i })
+    .getByRole("button", { name: /retract spill \+1 from Wren/i })
     .click();
   await expect(
-    guest.getByRole("button", { name: /retract spill \+1 from Glyn/i }),
+    guest.getByRole("button", { name: /retract spill \+1 from Wren/i }),
   ).toBeDisabled();
   await guest.keyboard.press("Escape");
   await gotoSettled(guest, `/round/${roundCode}/play`);
@@ -203,23 +203,23 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // The Invitational's third hole carries one; the first carries none. Roam
   // reviews both without moving the round off hole 2.
   await gotoSettled(guest, `/round/${roundCode}/card?hole=3`);
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
   await expect(
     guest.getByRole("button", {
-      name: /call drinking before the pass is complete \+2 on Glyn/i,
+      name: /call drinking before the pass is complete \+2 on Wren/i,
     }),
   ).toBeVisible();
   await guest.keyboard.press("Escape");
 
   await gotoSettled(guest, `/round/${roundCode}/card?hole=1`);
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
   await expect(
     guest.getByRole("button", {
-      name: /call drinking before the pass is complete \+2 on Glyn/i,
+      name: /call drinking before the pass is complete \+2 on Wren/i,
     }),
   ).toBeHidden();
   await expect(
-    guest.getByRole("button", { name: /call spill \+1 on Glyn/i }),
+    guest.getByRole("button", { name: /call spill \+1 on Wren/i }),
   ).toBeVisible();
   await guest.keyboard.press("Escape");
 
@@ -228,7 +228,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expectSettled(guest, "roaming-banner");
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
-    .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /fewer swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
@@ -241,7 +241,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // Restore the host's corrected score before playing out.
   await gotoSettled(guest, `/round/${roundCode}/card`);
   await guest
-    .getByRole("button", { name: /more swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /more swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("swig-count")).toHaveText("4");
   await gotoSettled(guest, `/round/${roundCode}/play`);

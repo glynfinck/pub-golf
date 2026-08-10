@@ -41,13 +41,13 @@ describe("handle_new_user", () => {
   });
 
   it("falls back to Google's full_name", async () => {
-    expect(await profileNameFor({ full_name: "Glyn Finck" })).toBe(
-      "Glyn Finck",
+    expect(await profileNameFor({ full_name: "Wren Fielding" })).toBe(
+      "Wren Fielding",
     );
   });
 
   it("falls back to Google's name", async () => {
-    expect(await profileNameFor({ name: "Glyn" })).toBe("Glyn");
+    expect(await profileNameFor({ name: "Wren" })).toBe("Wren");
   });
 
   it("falls back to the local part of the email", async () => {

@@ -32,17 +32,17 @@ describe("computeLeague", () => {
   it("adds a player's cards up across rounds", () => {
     const table = computeLeague([
       round("A", AUG_1, [
-        { profileId: "glyn", name: "Glyn", netToPar: 2 },
+        { profileId: "wren", name: "Wren", netToPar: 2 },
         { profileId: "sam", name: "Sam", netToPar: 6 },
       ]),
       round("B", AUG_8, [
-        { profileId: "glyn", name: "Glyn", netToPar: -2 },
+        { profileId: "wren", name: "Wren", netToPar: -2 },
         { profileId: "sam", name: "Sam", netToPar: 4 },
       ]),
     ]);
 
-    const glyn = table.find((row) => row.profileId === "glyn");
-    expect(glyn).toMatchObject({
+    const wren = table.find((row) => row.profileId === "wren");
+    expect(wren).toMatchObject({
       rounds: 2,
       wins: 2,
       totalToPar: 0,
@@ -60,18 +60,18 @@ describe("computeLeague", () => {
   });
 
   it("ranks on the average, so turning up is never a penalty", () => {
-    // Sam played twice at +4 a round; Glyn played once, better. Ranked on
-    // the total, Glyn's single +5 would beat Sam's +8 — which would mean
+    // Sam played twice at +4 a round; Wren played once, better. Ranked on
+    // the total, Wren's single +5 would beat Sam's +8 — which would mean
     // the way to win a league is to stop entering it.
     const table = computeLeague([
       round("A", AUG_1, [
-        { profileId: "glyn", name: "Glyn", netToPar: 5 },
+        { profileId: "wren", name: "Wren", netToPar: 5 },
         { profileId: "sam", name: "Sam", netToPar: 4 },
       ]),
       round("B", AUG_8, [{ profileId: "sam", name: "Sam", netToPar: 4 }]),
     ]);
 
-    expect(table.map((row) => row.profileId)).toEqual(["sam", "glyn"]);
+    expect(table.map((row) => row.profileId)).toEqual(["sam", "wren"]);
     expect(table[0].totalToPar).toBe(8);
     expect(table[1].totalToPar).toBe(5);
   });
@@ -79,13 +79,13 @@ describe("computeLeague", () => {
   it("splits a level average on rounds played, then on wins", () => {
     const table = computeLeague([
       round("A", AUG_1, [
-        { profileId: "glyn", name: "Glyn", netToPar: 3 },
+        { profileId: "wren", name: "Wren", netToPar: 3 },
         { profileId: "sam", name: "Sam", netToPar: 3 },
       ]),
-      round("B", AUG_8, [{ profileId: "glyn", name: "Glyn", netToPar: 3 }]),
+      round("B", AUG_8, [{ profileId: "wren", name: "Wren", netToPar: 3 }]),
     ]);
 
-    expect(table.map((row) => row.profileId)).toEqual(["glyn", "sam"]);
+    expect(table.map((row) => row.profileId)).toEqual(["wren", "sam"]);
     // Level averages share the placing all the same — golf prints a tie.
     expect(table.map((row) => row.rank)).toEqual([1, 1]);
   });
@@ -93,7 +93,7 @@ describe("computeLeague", () => {
   it("counts every player who shared the win", () => {
     const table = computeLeague([
       round("A", AUG_1, [
-        { profileId: "glyn", name: "Glyn", netToPar: 1 },
+        { profileId: "wren", name: "Wren", netToPar: 1 },
         { profileId: "sam", name: "Sam", netToPar: 1 },
       ]),
     ]);
@@ -112,10 +112,10 @@ describe("computeLeague", () => {
 
   it("is not disturbed by the order the rounds arrive in", () => {
     const first = round("A", AUG_1, [
-      { profileId: "glyn", name: "Glyn", netToPar: 2 },
+      { profileId: "wren", name: "Wren", netToPar: 2 },
     ]);
     const second = round("B", AUG_8, [
-      { profileId: "glyn", name: "Glyn", netToPar: -4 },
+      { profileId: "wren", name: "Wren", netToPar: -4 },
     ]);
     expect(computeLeague([first, second])).toEqual(
       computeLeague([second, first]),

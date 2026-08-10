@@ -41,7 +41,7 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `builder-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   // ---- Plot a two-pub course by name (works with or without a key) ----
@@ -150,7 +150,7 @@ test("edit the running order without tearing up the card", async ({ page }) => {
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `reorder-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   await page.goto("/courses/new");
@@ -247,7 +247,7 @@ test("pub search returns real venues when a Places key is configured", async ({
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `search-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   // Probe the route first: without a key the route degrades and this

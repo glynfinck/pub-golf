@@ -25,7 +25,7 @@ describe("get_round_card", () => {
 
   beforeEach(async () => {
     [host, player] = await Promise.all([
-      signedInUser("Glyn"),
+      signedInUser("Wren"),
       anonymousGuest("Jamie"),
     ]);
     round = await seedRound({
@@ -94,7 +94,7 @@ describe("get_round_card", () => {
       "status",
     ]);
     expect(JSON.stringify(card)).not.toContain("Jamie");
-    expect(JSON.stringify(card)).not.toContain("Glyn");
+    expect(JSON.stringify(card)).not.toContain("Wren");
   });
 
   it("returns nothing for a code that does not exist, rather than erroring", async () => {

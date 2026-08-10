@@ -99,7 +99,7 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     // ---- The host plots two pubs: short enough to play to the 19th ----
     await signInAs(hostContext, {
       email: `fullhouse-${stamp}@e2e.local`,
-      name: "Glyn",
+      name: "Wren",
     });
     const host = await hostContext.newPage();
 
@@ -281,7 +281,7 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     // No `exact` here: a final-standings row sets rank and name in one line
     // of type, so no element's text is exactly the bare name — substring
     // match, the same way `foursome` reads this table.
-    for (const name of ["Glyn", "Ana", "Bram", "Rue", "Tam"]) {
+    for (const name of ["Wren", "Ana", "Bram", "Rue", "Tam"]) {
       await expect(
         host.getByTestId("final-standings").getByText(name),
       ).toBeVisible();
