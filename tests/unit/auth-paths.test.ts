@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SIGN_IN, safeNext, signInPath } from "@/lib/auth-paths";
+import { SIGN_IN, safeNext, signInPath, signInReason } from "@/lib/auth-paths";
 
 describe("safeNext", () => {
   it("keeps a same-site path", () => {
@@ -45,5 +45,35 @@ describe("signInPath", () => {
   it("drops a destination that would leave the site", () => {
     expect(signInPath("//evil.example")).toBe(SIGN_IN);
     expect(signInPath("https://evil.example")).toBe(SIGN_IN);
+  });
+});
+
+describe("signInReason", () => {
+  it("names what the door is shut on", () => {
+    expect(signInReason("/rounds")).toMatch(/rounds you've played/);
+    expect(signInReason("/courses")).toMatch(/courses you've built/);
+    expect(signInReason("/profile")).toMatch(/profile/);
+    expect(signInReason("/league")).toMatch(/league/);
+  });
+
+  it("reads a deep link inside a section as that section", () => {
+    expect(signInReason("/courses/new")).toBe(signInReason("/courses"));
+    expect(signInReason("/courses?sort=new")).toBe(signInReason("/courses"));
+  });
+
+  it("falls back to the rule with nowhere in particular to return to", () => {
+    const rule = signInReason("/");
+    expect(rule).toMatch(/Hosting a round/);
+    expect(signInReason()).toBe(rule);
+    expect(signInReason(null)).toBe(rule);
+    // A path with no section of its own is not worth inventing a reason for.
+    expect(signInReason("/small-print")).toBe(rule);
+  });
+
+  it("never reasons about a destination that leaves the site", () => {
+    // The path is discarded before it is matched, so a crafted `next` cannot
+    // put its own words on the screen by looking like a section.
+    expect(signInReason("//evil.example/rounds")).toBe(signInReason("/"));
+    expect(signInReason("https://evil.example/league")).toBe(signInReason("/"));
   });
 });

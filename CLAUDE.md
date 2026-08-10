@@ -72,7 +72,8 @@ is this Next version's middleware convention (see the `home` sibling repo).
   `public/brand/`, compositing the trimmed mark masters with the vendored
   EB Garamond via Satori — the same renderer as `lib/og.tsx`, so the
   letterforms match the OG cards. The wordmark is the sign-in masthead's
-  voice verbatim (serif, uppercase, `tracking-[0.08em]`, foreground ink);
+  voice verbatim (`app/signin/page.tsx` — serif, uppercase,
+  `tracking-[0.08em]`, foreground ink, at whatever size that screen sets);
   change the voice there and these regenerate to follow, not the reverse.
 - `lib/mark.ts` is now only the pennant geometry the `Putt` busy animation
   putts at — it stopped being the logo when the artwork arrived, and there
@@ -229,6 +230,14 @@ Never reintroduce an emailed code: Supabase's built-in sender refuses any
 address outside the org team, so an email flow means Resend and a verified
 domain before it works for a single real player. `handle_new_user` reads
 `display_name`, then Google's `full_name`/`name`, before falling back.
+
+Two doors, and the division of labour between them is load-bearing: `/` sells
+(`components/landing.tsx` answers a signed-out visitor there, because Google's
+brand verification grades that URL and wants the name, the purpose and the
+privacy link on it), and `/signin` opens — mark, heading, the one line
+`signInReason` derives from `next`, the button. Copy explaining what the app
+*is* belongs on the landing page only; for one release it sat on both and the
+two URLs read as the same page twice.
 
 Walking state machine: `advanceHole` → phase `walking` (current_hole =
 the upcoming hole, drink timer down); `teeUpHole` → phase `live` (timer

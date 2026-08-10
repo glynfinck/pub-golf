@@ -18,8 +18,11 @@ import sharp from "sharp";
  *   letterhead-dark.png     felt  + the tagline in italic beneath
  *
  * The wordmark is the sign-in masthead's voice verbatim — serif, uppercase,
- * tracked 0.08em, foreground ink — because that screen is the app's own
- * lockup and two voices for one name is a brand with a stutter. Type is
+ * tracked 0.08em, foreground ink (`app/signin/page.tsx`, which prints it small
+ * now; the scale is that screen's business and the spelling is the brand's) —
+ * because two voices for one name is a brand with a stutter, and the landing
+ * page's `<h1>` cannot be the source: it is deliberately *not* in caps, so
+ * that Google's identity check reads the app's name as it is configured. Type is
  * drawn by Satori (the same renderer as lib/og.tsx) from the vendored
  * EB Garamond, so the letterforms here are the letterforms every OG card
  * already prints; sharp then trims and flattens, `.ensureAlpha()` included,

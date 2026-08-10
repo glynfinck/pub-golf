@@ -44,3 +44,30 @@ export function signInPath(next?: string | null): string {
   if (target === "/") return SIGN_IN;
   return `${SIGN_IN}?next=${encodeURIComponent(target)}`;
 }
+
+/**
+ * The line under the sign-in screen's heading, naming what the door is shut
+ * on.
+ *
+ * `next` is the one thing that URL knows and the landing page does not, so it
+ * is what the screen says out loud. Somebody bounced here from the course
+ * book wants to hear about their courses; they have already read the pitch,
+ * and printing it again is what made `/signin` read as a second home page.
+ *
+ * Prefixes, deliberately: `/courses/new` and `/courses?sort=new` are both the
+ * course book. An unrecognised path — a stale bookmark, mostly — falls back
+ * to the plain rule rather than inventing a reason for it, which is also what
+ * the visitor who tapped "Start a round" should read.
+ */
+export function signInReason(next?: string | null): string {
+  const target = safeNext(next);
+  if (target.startsWith("/rounds"))
+    return "Signing in brings back the rounds you've played.";
+  if (target.startsWith("/courses"))
+    return "Signing in brings back the courses you've built.";
+  if (target.startsWith("/profile"))
+    return "Your profile is kept with your Google account.";
+  if (target.startsWith("/league"))
+    return "The members' league is for signed-in players.";
+  return "Hosting a round takes a Google account — it keeps the courses you build and the cards you play.";
+}

@@ -56,9 +56,11 @@ const SCHEMA = {
  *     than "what is this app called".
  *   * Privacy and Terms in the footer, on the page itself.
  *
- * `/signin` deliberately does NOT render this. It stays the lean one-tap
- * screen for people who already know what they came for; this is the only
- * page that has to sell anything.
+ * `/signin` deliberately does NOT render this, or anything like it: it is the
+ * lean door for people who already know what they came for, and this is the
+ * only page that has to sell anything. It carried a small copy of the pitch
+ * for one release, which is exactly how the two URLs came to read as one page
+ * printed twice. Anything explaining the product belongs here, not there.
  */
 export function Landing() {
   return (
@@ -86,10 +88,9 @@ export function Landing() {
           which points at the rendered form being what was compared.
 
           The voice itself has not moved. It lives on the sign-in masthead
-          (`components/auth/front-door.tsx`), which is what
-          `scripts/brand-lockups.mjs` reads to generate the lockups, so caps
-          are still the mark's register everywhere it is the mark rather than
-          a claim about the app's name.
+          (`app/signin/page.tsx`), which is what `scripts/brand-lockups.mjs`
+          reads to generate the lockups, so caps are still the mark's register
+          everywhere it is the mark rather than a claim about the app's name.
         */}
         <h1 className="font-serif text-4xl tracking-[0.08em]">{APP_NAME}</h1>
         <p className="mt-1 font-serif text-sm italic text-muted-foreground">

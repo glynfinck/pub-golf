@@ -340,7 +340,7 @@ without the legal URLs from step 3.
    privacy link were nowhere a reviewer could see them. `/` answers signed
    out now, the tabs layout hides the tab bar without a session, and
    `/signin` keeps the `next` deep link and the error line
-   (`components/auth/front-door.tsx` is that lean screen).
+   (`app/signin/page.tsx` is that lean screen).
 6. ✅ **The landing page.** The second pass failed the front door too — "does
    not explain the purpose of your app", and the app name "does not match the
    app name on your home page". A page arguing entirely with one Google
@@ -348,7 +348,13 @@ without the legal URLs from step 3.
    `/` renders for a signed-out visitor: `APP_NAME` as the `<h1>`, what the
    app is in plain words, how a round works, Privacy/Terms in the footer, and
    a schema.org `WebApplication` block restating the name and purpose for a
-   machine. `/signin` deliberately keeps the lean screen.
+   machine. `/signin` deliberately keeps the lean screen — and was afterwards
+   cut back to actually being one: it had kept a small copy of the pitch (full
+   mark, tagline, a paragraph of explanation, the age notice, three legal
+   links) around the button it was supposed to be about, so the two URLs read
+   as the same page twice. It now says only what this URL knows — the reason
+   derived from `next`, the callback's error line — and links up to `/` for the
+   explaining.
 7. ⏳ **Domain ownership** — the third finding, and the only one the repo
    cannot close. Search Console, from the account that owns the Cloud
    project; DEPLOYMENT.md § 2 has both routes (DNS TXT on `glyn.dev`, or the
