@@ -24,7 +24,7 @@ six-character code and a name — no account, no email, nothing to install.
 The card is shared and live: swigs, penalties, mulligans and the hole
 timer land on every phone in the round as they happen.
 
-The default card is the Glyn Invitational — nine pubs, par 36, London
+The default card is the Invitational — nine pubs, par 36, London
 Fields up to Finsbury Park — but a round is anything from 1 to 18 holes,
 on that template, that template reversed, or a course you built yourself.
 
@@ -66,8 +66,8 @@ and net, superlatives, and a recap panel drawn on cream stock whatever
 theme the app is in — it exists to be screenshotted into the group chat.
 Round links carry Open Graph cards rendered server-side (nameless and
 scoreless, because a crawler has no session), and the host can save the
-course they just played or start the rematch — "the Glyn Invitational
-XXX" hosts XXXI.
+course they just played or start the rematch — "the Invitational XXX"
+hosts XXXI.
 
 **Lose your seat, get it back.** A guest's identity is one cookie jar, and
 in-app browsers drop it. A seatless visitor on a round route lands on

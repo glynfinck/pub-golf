@@ -24,8 +24,8 @@ export default function PrivacyPage() {
 
       <Section heading="Who this is">
         <p>
-          {APP_NAME} is a personal project, not a company. It is run by Glyn
-          Finck, who is the data controller for anything below, and who can be
+          {APP_NAME} is a personal project, not a company. It is run by one
+          person, who is the data controller for anything below, and who can be
           reached at <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
         </p>
       </Section>

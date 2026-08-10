@@ -20,25 +20,25 @@ describe("billingEnabled", () => {
 
 describe("honestyBoxHref", () => {
   it("is nothing without the link — the phase-one flag", () => {
-    expect(honestyBoxHref(undefined, "GLYN29")).toBeNull();
-    expect(honestyBoxHref("", "GLYN29")).toBeNull();
+    expect(honestyBoxHref(undefined, "TAVERN")).toBeNull();
+    expect(honestyBoxHref("", "TAVERN")).toBeNull();
   });
 
   it("carries the round code as client_reference_id", () => {
-    expect(honestyBoxHref("https://buy.stripe.com/abc", "GLYN29")).toBe(
-      "https://buy.stripe.com/abc?client_reference_id=GLYN29",
+    expect(honestyBoxHref("https://buy.stripe.com/abc", "TAVERN")).toBe(
+      "https://buy.stripe.com/abc?client_reference_id=TAVERN",
     );
   });
 
   it("joins with & when the link already has a query", () => {
     expect(
-      honestyBoxHref("https://buy.stripe.com/abc?locale=en", "GLYN29"),
-    ).toBe("https://buy.stripe.com/abc?locale=en&client_reference_id=GLYN29");
+      honestyBoxHref("https://buy.stripe.com/abc?locale=en", "TAVERN"),
+    ).toBe("https://buy.stripe.com/abc?locale=en&client_reference_id=TAVERN");
   });
 
   it("strips anything Stripe would refuse in a reference", () => {
-    expect(honestyBoxHref("https://buy.stripe.com/abc", "GL YN/29")).toBe(
-      "https://buy.stripe.com/abc?client_reference_id=GLYN29",
+    expect(honestyBoxHref("https://buy.stripe.com/abc", "TA VERN/")).toBe(
+      "https://buy.stripe.com/abc?client_reference_id=TAVERN",
     );
   });
 });
@@ -47,7 +47,7 @@ describe("dayPassSessionParams", () => {
   const params = dayPassSessionParams({
     priceId: "price_123",
     userId: "user-uuid",
-    origin: "https://pub-golf.glyn.dev",
+    origin: "https://pub-golf.example.com",
   });
 
   it("is a one-off payment for exactly one green fee", () => {
@@ -66,8 +66,8 @@ describe("dayPassSessionParams", () => {
   });
 
   it("comes back to the table the host was setting, either way", () => {
-    expect(params.success_url).toBe("https://pub-golf.glyn.dev/new?fee=paid");
-    expect(params.cancel_url).toBe("https://pub-golf.glyn.dev/new");
+    expect(params.success_url).toBe("https://pub-golf.example.com/new?fee=paid");
+    expect(params.cancel_url).toBe("https://pub-golf.example.com/new");
   });
 });
 

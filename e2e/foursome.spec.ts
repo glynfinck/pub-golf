@@ -55,7 +55,7 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
     // ---- The host plots a two-pub course: short enough to play to the 19th ----
     await signInAs(hostContext, {
       email: `foursome-${stamp}@e2e.local`,
-      name: "Glyn",
+      name: "Wren",
     });
     const host = await hostContext.newPage();
 
@@ -146,7 +146,7 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
     // ---- Hole 1 (par 4): four thumbs at once. Cleo drinks nothing ----
     await Promise.all([drink(host, 2), drink(ana, 2), drink(bram, 3)]);
 
-    // The tie is live on the ribbon: Glyn and Ana level at the top.
+    // The tie is live on the ribbon: Wren and Ana level at the top.
     await expect(host.getByTestId("position-ribbon")).toContainText(
       "1st on the card",
     );
@@ -201,7 +201,7 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
     );
 
     // ---- The 19th hole, four ways ----
-    // Glyn 3 takes it; Ana and Bram tie on 4; Cleo's blank hole scored the
+    // Wren 3 takes it; Ana and Bram tie on 4; Cleo's blank hole scored the
     // par-4 substitute, so one real swig still finishes last on 5 — silence
     // never buys a cheap round.
     //
@@ -212,8 +212,8 @@ test("a foursome: stampede join, four thumbs on one hole, ties and the substitut
     // each took a substitute for a hole they had drunk (2+2 read as 6, 3+1
     // as 5) and the forfeit moved to the wrong player. Only the host escaped
     // it, being an official and exempt from the guard.
-    await expect(host.getByTestId("winner")).toContainText("Glyn");
-    for (const name of ["Glyn", "Ana", "Bram", "Cleo"]) {
+    await expect(host.getByTestId("winner")).toContainText("Wren");
+    for (const name of ["Wren", "Ana", "Bram", "Cleo"]) {
       await expect(
         host.getByTestId("final-standings").getByText(name),
       ).toBeVisible();
@@ -236,7 +236,7 @@ test("a latecomer joins a round already under way and lands on the live hole", a
   const hostContext = await browser.newContext();
   await signInAs(hostContext, {
     email: `late-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
   const host = await hostContext.newPage();
   await host.goto("/new");
@@ -265,7 +265,7 @@ test("a latecomer joins a round already under way and lands on the live hole", a
   // before the join are on the standings.
   await lena.page.getByTestId("position-ribbon").click();
   await expect(
-    lena.page.getByTestId("standings").getByText("Glyn"),
+    lena.page.getByTestId("standings").getByText("Wren"),
   ).toBeVisible();
 
   // Presence counts the new phone: three seats, three on the hole.

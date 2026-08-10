@@ -106,7 +106,7 @@ function JoinForm() {
             autoCapitalize="characters"
             autoComplete="off"
             spellCheck={false}
-            placeholder="GLYN29"
+            placeholder="TAVERN"
             className="tabular text-center font-mono text-2xl font-bold tracking-[0.4em]"
           />
         </div>

@@ -1,7 +1,7 @@
 /**
  * Course templates seed a new round's holes until the map-based course
  * builder (Google Places) lands. The flagship template is the printed
- * Glyn Invitational card.
+ * Invitational card.
  */
 
 import type { RulesetPenalty } from "@/lib/ruleset";
