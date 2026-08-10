@@ -210,9 +210,11 @@ remediation text under each one says what is actually being checked.
    signed-out visitor: `APP_NAME` as the `<h1>` spelled exactly as the consent
    screen spells it, what the app is in the first paragraph in words a
    stranger already knows, how a round works, and Privacy/Terms in the footer.
-   `/signin` deliberately does *not* render it — it stays the lean one-tap
-   screen (`components/auth/front-door.tsx`) for people who know what they
-   came for.
+   `/signin` deliberately does *not* render it — it is the lean one-tap screen
+   (`app/signin/page.tsx`) for people who know what they came for, and since
+   the redesign it carries no copy explaining the product at all: the mark, a
+   heading, the one line it derives from `next`, the button, and a link up to
+   this page for anyone who does want the explanation.
 3. **Domain ownership** — see below. This one is not a page-copy problem, and
    no amount of rewriting the home page will clear it.
 4. **Both content findings survived a page that plainly answered them**, which

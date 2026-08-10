@@ -5,6 +5,7 @@ import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Card } from "@/components/ui/card";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
 import { HouseMark } from "@/components/ui/house-mark";
+import { signInPath } from "@/lib/auth-paths";
 import { getLeagueRounds } from "@/lib/data/league";
 import { getSessionUser } from "@/lib/data/rounds";
 import { computeLeague } from "@/lib/league";
@@ -32,7 +33,9 @@ function shortDate(iso: string): string {
  */
 export default async function LeaguePage() {
   const user = await getSessionUser();
-  if (!user) redirect("/signin");
+  // Carry the destination: a shared league link should land back on the table
+  // after signing in, and it is what the sign-in screen names as the reason.
+  if (!user) redirect(signInPath("/league"));
 
   const rounds = await getLeagueRounds();
   const table = computeLeague(rounds);
