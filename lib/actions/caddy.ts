@@ -21,9 +21,17 @@ import {
  * Keeping the boundary here rather than deleting it means every client import
  * is unchanged and the "which of these is an action?" question has one
  * answer: the ones in this file.
+ *
+ * **Async functions and nothing else.** Not even a re-exported type. This
+ * file briefly carried `export type { CaddyResult }` as a convenience, and it
+ * compiled, typechecked and built without complaint — then threw
+ * `ReferenceError: CaddyResult is not defined` at module evaluation the first
+ * time a real server rendered it, taking `/courses/new` and every saved course
+ * with it. Turbopack's `"use server"` transform rewrites this module's export
+ * list and emitted a runtime reference to a name TypeScript had already
+ * erased. The constraint is documented and it is not a style preference:
+ * anyone wanting the type imports it from `@/lib/caddy/run`, where it lives.
  */
-
-export type { CaddyResult };
 
 /** Plan a course from a brief: gather the patch, then ask once. */
 export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
