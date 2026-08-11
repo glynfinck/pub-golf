@@ -394,16 +394,32 @@ its Open Graph images.
 The caddy's credential is the one variable with a **do-nothing** option.
 `lib/caddy/credentials.ts` tries three doors in order: `AI_GATEWAY_API_KEY`
 (Vercel's AI Gateway, an explicit choice, so it wins), then
-`VERCEL_OIDC_TOKEN` — which Vercel already puts on every deployment and
-rotates itself — then `ANTHROPIC_API_KEY` straight to Anthropic. So a Vercel
-deploy has a working caddy with **nothing set**, and setting the gateway key
-buys spend limits and a usage log rather than capability: both doors carry
-`output_config` and `cache_control`, which are respectively the rule against
-inventing a pub and the entire cost model. Set none of the three on a
-non-Vercel host and the caddy's group is simply not on the drafting table —
-absence, not an apology, exactly as an absent maps key removes the map.
-The token is read **per request, never at module load**: an OIDC token
-rotates, and one captured at cold start goes stale under the deploy.
+`VERCEL_OIDC_TOKEN`, then `ANTHROPIC_API_KEY` straight to Anthropic. Setting
+the gateway key buys spend limits and a usage log rather than capability:
+both doors carry `output_config` and `cache_control`, which are respectively
+the rule against inventing a pub and the entire cost model. Set none of the
+three and the caddy's group is simply not on the drafting table — absence,
+not an apology, exactly as an absent maps key removes the map. The token is
+read **per request, never at module load**: an OIDC token rotates, and one
+captured at cold start goes stale under the deploy.
+
+**The OIDC door is not free of setup, despite appearances.** Vercel's system
+variable reference lists `VERCEL_OIDC_TOKEN` as present *when OIDC Federation
+is enabled*, which is off until somebody turns on Secure Backend Access in
+Project Settings, and documents it as a build-time variable. So treat it as
+the convenience it is and not as the plan: **`AI_GATEWAY_API_KEY` is the door
+to actually configure**, on Preview as well as Production. Create one at
+Vercel → AI Gateway → API keys.
+
+Preview needs one more thing before the caddy appears at all, and it is not a
+key: **a green fee to hold.** The group renders for a signed-in host when
+there is a model credential *and* either the till is open
+(`STRIPE_SECRET_KEY`) or that host already holds a live day pass. Staging
+usually has no Stripe key, so the quickest way to see the caddy on a preview
+deploy is to insert an `entitlements` row for your own user on the branch
+project — `kind` `green_fee`, `round_id` null, `expires_at` in the future —
+which is exactly what a purchase would have written. No payment provider
+required, and it exercises the same `hasPass` path a real buyer takes.
 
 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` plus `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`
 power the course builder's map sheet — the one map ID holds the cream
