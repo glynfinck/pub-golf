@@ -265,6 +265,99 @@ function along(node: RouteNode, axis: { x: number; y: number }, origin: RouteNod
 }
 
 /**
+ * The best forward walk there is, chosen whole.
+ *
+ * `snakeWalk` below cannot reverse along the axis, and that was not enough: it
+ * still picked each step greedily, so it took the locally cheapest pub in
+ * front of it and wandered sideways doing it. Monotone along the axis and
+ * zigzagging across it looks, on a map, exactly like looping back.
+ *
+ * The ordering is what makes the whole route cheap to optimise properly.
+ * Sorted by position along the direction of travel, a no-backtracking walk is
+ * an *increasing subsequence*, and the cheapest one of a given length is a
+ * dynamic program rather than a search:
+ *
+ *   best[k][j] = min over i before j of best[k-1][i] + step(i, j)
+ *
+ * At forty candidates and nine holes that is about fourteen thousand
+ * additions — nothing — and unlike every heuristic here it is **exact**. There
+ * is no better forward route; this is it. The sideways wandering goes away
+ * because the program pays for lateral distance across the whole walk instead
+ * of one step at a time.
+ *
+ * `drift` still tunes it, now as a discount on progress inside the step cost:
+ * at 0 this is the shortest forward walk, and turning it up buys ground.
+ */
+function bestForwardWalk(
+  table: Map<string, Map<string, number>>,
+  nodes: RouteNode[],
+  byId: Map<string, RouteNode>,
+  holes: number,
+  startId: string | null,
+  finishId: string | null,
+  drift: number,
+): string[] | null {
+  const origin = (startId ? byId.get(startId) : null) ?? nodes[0];
+  if (!origin) return null;
+  const axis = principalAxis(nodes, origin, finishId ? byId.get(finishId) : null);
+
+  const order = nodes
+    .map((node) => ({ node, t: along(node, axis, origin) }))
+    .sort((a, b) => a.t - b.t);
+  const n = order.length;
+  if (n < holes) return null;
+
+  const startAt = startId ? order.findIndex((e) => e.node.id === startId) : -1;
+  const finishAt = finishId ? order.findIndex((e) => e.node.id === finishId) : -1;
+  // A pinned tee that is not at the end of the line it was asked to travel
+  // cannot be honoured by a forward-only walk. Rather than quietly bending the
+  // rule, this hands back nothing and another seed answers.
+  if (startId && startAt === -1) return null;
+  if (finishId && (finishAt === -1 || finishAt <= startAt)) return null;
+
+  const step = (i: number, j: number) =>
+    gap(table, order[i].node.id, order[j].node.id) - drift * (order[j].t - order[i].t);
+
+  // best[k][j] — the cheapest k-stop walk ending at j. `from` remembers the
+  // step that got there so the route can be read back out.
+  const INF = Number.POSITIVE_INFINITY;
+  const best: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(INF));
+  const from: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(-1));
+
+  for (let j = 0; j < n; j += 1) {
+    // Where a walk may begin: the pinned tee, or anywhere if none was named.
+    if (startAt === -1 || j === startAt) best[1][j] = 0;
+  }
+  for (let k = 2; k <= holes; k += 1) {
+    for (let j = 0; j < n; j += 1) {
+      if (finishAt !== -1 && j > finishAt) continue;
+      for (let i = 0; i < j; i += 1) {
+        if (best[k - 1][i] === INF) continue;
+        const cost = best[k - 1][i] + step(i, j);
+        if (cost < best[k][j]) {
+          best[k][j] = cost;
+          from[k][j] = i;
+        }
+      }
+    }
+  }
+
+  let end = finishAt;
+  if (end === -1) {
+    end = 0;
+    for (let j = 1; j < n; j += 1) if (best[holes][j] < best[holes][end]) end = j;
+  }
+  if (best[holes][end] === INF) return null;
+
+  const stops: string[] = [];
+  for (let k = holes, j = end; k >= 1 && j >= 0; k -= 1) {
+    stops.unshift(order[j].node.id);
+    j = from[k][j];
+  }
+  return stops.length === holes ? stops : null;
+}
+
+/**
  * A walk that cannot double back.
  *
  * The scoring terms could reject a back-and-forth route but never build a
@@ -695,6 +788,12 @@ export function buildRouteGraph(
     // somewhere has to be *built*, and no amount of penalising a wandering one
     // puts a jaunt in the pool that was never constructed.
     for (const drift of SNAKE_DRIFTS) {
+      // Exact, so it supersedes the greedy snake wherever it can answer at
+      // all. The greedy one is kept behind it: the exact walk needs a pinned
+      // tee to sit at the end of the line it travels, and refuses rather than
+      // bending that, so a patch with awkward pins still gets a route.
+      const exact = bestForwardWalk(table, nodes, byId, holes, origin, finishId, drift);
+      if (exact) snakes.push(exact);
       const seed = snakeWalk(table, nodes, byId, holes, origin, finishId, drift);
       if (seed) snakes.push(seed);
     }

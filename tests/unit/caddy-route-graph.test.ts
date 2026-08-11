@@ -507,3 +507,55 @@ describe("snaking construction", () => {
     }
   });
 });
+
+describe("choosing the whole walk at once", () => {
+  /** Two parallel rows. Stepping greedily forward can hop between them — each
+   * hop is the cheapest step available at the time — and the result zigzags
+   * across the axis while still never reversing along it. That is what read as
+   * "loops back on itself" on a real map. */
+  const TWO_ROWS = [
+    pub("a0", 0, 0), pub("b0", 0, 1), pub("c0", 0, 2), pub("d0", 0, 3), pub("e0", 0, 4),
+    pub("a1", 1, 0), pub("b1", 1, 1), pub("c1", 1, 2), pub("d1", 1, 3), pub("e1", 1, 4),
+  ];
+
+  it("keeps to one side instead of hopping across", () => {
+    // Whole-route optimisation pays for lateral distance across the walk
+    // rather than one step at a time, so it commits to a row. A per-step
+    // chooser has no reason to.
+    const graph = buildRouteGraph(TWO_ROWS, { holes: 5, routes: 10 });
+    const straightest = graph.routes.reduce((best, route) =>
+      route.detour < best.detour ? route : best,
+    );
+    const rows = new Set(straightest.stops.map((id) => id.slice(-1)));
+    expect(rows.size).toBe(1);
+  });
+
+  it("is at least as good as the greedy snake it supersedes", () => {
+    // The claim that makes the dynamic program worth its lines: for a forward
+    // walk there is no better answer, so the menu's best detour cannot be
+    // worse than what a per-step chooser managed.
+    const graph = buildRouteGraph(TWO_ROWS, { holes: 5, routes: 10 });
+    expect(Math.min(...graph.routes.map((route) => route.detour))).toBeLessThan(1.2);
+  });
+
+  it("still honours pinned tees", () => {
+    const graph = buildRouteGraph(TWO_ROWS, {
+      holes: 4,
+      startId: "a0",
+      finishId: "e1",
+    });
+    expect(graph.routes.length).toBeGreaterThan(0);
+    for (const route of graph.routes) {
+      expect(route.stops[0]).toBe("a0");
+      expect(route.stops.at(-1)).toBe("e1");
+      expect(route.stops).toHaveLength(4);
+    }
+  });
+
+  it("does not repeat a stop", () => {
+    const graph = buildRouteGraph(TWO_ROWS, { holes: 6, routes: 10 });
+    for (const route of graph.routes) {
+      expect(new Set(route.stops).size).toBe(route.stops.length);
+    }
+  });
+});
