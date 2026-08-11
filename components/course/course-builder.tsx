@@ -632,13 +632,15 @@ export function CourseBuilder({
         </div>
       ) : null}
 
-      {/* Already in the book, and said so plainly. A caddy-planned course
-          files itself the moment it lands, so the button below is a way out
-          of the drafting table rather than the thing that saves the work —
-          and a host who closes the tab has lost nothing. */}
-      {filed ? (
+      {/* A caddy-planned course files itself the moment it lands, so it is
+          already the host's and a closed tab loses nothing. Said only where it
+          is true: a course opened *from* the book does not need telling it is
+          in there, and neither of them auto-saves the hand edits made after —
+          which is why this says what it says rather than "saved when you
+          leave", the first wording and a promise the table does not keep. */}
+      {savedId ? (
         <p className="text-center text-[11px] text-muted-foreground">
-          In your book already — every edit here is saved when you leave.
+          Already in your book. Changes here go in when you save.
         </p>
       ) : null}
 
