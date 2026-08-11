@@ -31,6 +31,8 @@ import {
   type VibeId,
 } from "@/lib/caddy/brief";
 import { askTheCaddy, collectCaddyCard } from "@/lib/actions/caddy";
+import { startCaddyTopupCheckout } from "@/lib/actions/billing";
+import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
@@ -267,6 +269,28 @@ export function CaddyGroup({
   }
 
   /**
+   * More caddy, bought from the one screen that is allowed to offer it.
+   *
+   * Straight out to Stripe: fulfilment is the webhook's, never the client's,
+   * so nothing here grants anything and a host who closes the tab mid-payment
+   * has bought nothing. On the way back the drafting table reloads and the
+   * allowance is read fresh from the ledger.
+   */
+  const [toppingUp, setToppingUp] = useState(false);
+  async function topUp(lookupKey: string) {
+    setToppingUp(true);
+    const result = await startCaddyTopupCheckout(lookupKey);
+    if (result.url) {
+      window.location.href = result.url;
+      return;
+    }
+    setToppingUp(false);
+    // The sheet is already open and already saying something; replacing its
+    // line is the least startling place for a till that would not answer.
+    if (result.error) setSpent(result.error);
+  }
+
+  /**
    * The sheet a spent fee gets instead of an error.
    *
    * Rendered beside every face the group can wear rather than replacing one,
@@ -304,6 +328,37 @@ export function CaddyGroup({
           <p className="text-center text-[10px] text-muted-foreground">
             Changing them is free, and so is plotting one by hand.
           </p>
+          {/* The one place more caddy is ever offered.
+              `docs/CADDY-TOPUPS.md` argues the rule this obeys: the covenant
+              forbids money *interrupting*, not money *answering*. This appears
+              only because the host asked for a course and could not have one,
+              it appears once, and the free ways on are named above it rather
+              than below. No count, no clock, no second ask. */}
+          <div className="mt-3 border-t border-border/60 pt-3">
+            <p className="text-center text-[10px] text-muted-foreground">
+              Or have the caddy plan more.
+            </p>
+            <div className="mt-2 flex gap-2">
+              {CADDY_TOPUP_OFFERS.map((offer) => (
+                <Button
+                  key={offer.lookupKey}
+                  type="button"
+                  variant="outline"
+                  className="h-auto flex-1 flex-col gap-0.5 py-2"
+                  disabled={toppingUp}
+                  onClick={() => topUp(offer.lookupKey)}
+                >
+                  <span className="font-serif text-base">{offer.price}</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">
+                    {offer.rounds}
+                  </span>
+                </Button>
+              ))}
+            </div>
+            <p className="mt-2 text-center text-[10px] text-muted-foreground">
+              Yours to keep — these don&apos;t run out with the day.
+            </p>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

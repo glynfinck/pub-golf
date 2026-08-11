@@ -1,3 +1,5 @@
+import { sticker, TARIFF } from "@/lib/tariff";
+
 /**
  * What a green fee buys, counted.
  *
@@ -65,3 +67,28 @@ export function coursesLeftNote(left: number): string {
   if (left <= 0) return "No courses left on this fee";
   return left === 1 ? "One course left on this fee" : `${left} courses left on this fee`;
 }
+
+/**
+ * What the spent sheet offers, and the only place more caddy is named.
+ *
+ * Two rungs and no third: demand is lopsided — most hosts need none, some need
+ * one — and a third turns one honest tariff into a pricing page. Prices are
+ * derived from `TARIFF` rather than written here, so the board and the button
+ * cannot disagree; `docs/CADDY-TOPUPS.md` carries the arithmetic behind them
+ * and the rule that neither may sell a round below what the fee implies.
+ *
+ * The rounds are described, never counted down. A host reads "3 rounds"
+ * because that is what they are buying, not because anything is running out.
+ */
+export const CADDY_TOPUP_OFFERS = [
+  {
+    lookupKey: TARIFF.caddyTopupOne.lookupKey,
+    price: sticker(TARIFF.caddyTopupOne.amounts.gbp),
+    rounds: "1 round",
+  },
+  {
+    lookupKey: TARIFF.caddyTopupThree.lookupKey,
+    price: sticker(TARIFF.caddyTopupThree.amounts.gbp),
+    rounds: "3 rounds",
+  },
+] as const;

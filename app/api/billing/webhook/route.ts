@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 
-import { dayPassExpiry } from "@/lib/billing";
+import { CADDY_TOPUP_LOOKUP_KEYS, dayPassExpiry } from "@/lib/billing";
 import type { Database } from "@/types/database";
 
 /**
@@ -56,8 +56,11 @@ export async function POST(request: Request) {
 
   const kind = session.metadata?.kind;
   const userId = session.metadata?.user_id;
-  // The honesty box completes checkouts too; only a green fee writes a row.
-  if (kind !== "green_fee" || !userId) {
+  // The honesty box completes checkouts too, and grants nothing — a tip is a
+  // tip. Everything else that writes a row is named here, so a checkout this
+  // build has never heard of is ignored rather than fulfilled as something.
+  const grants: string[] = ["green_fee", ...CADDY_TOPUP_LOOKUP_KEYS];
+  if (!kind || !grants.includes(kind) || !userId) {
     return Response.json({ received: true });
   }
 
@@ -88,7 +91,12 @@ export async function POST(request: Request) {
     // Captured now so purchase history never needs Stripe at read time.
     amount_total: session.amount_total,
     currency: session.currency,
-    expires_at: dayPassExpiry(paidAtMs),
+    // The fee is a day and expires like one. A top-up does not: cost is
+    // incurred when a round is redeemed, so an unredeemed one costs nothing to
+    // hold, and expiring it would earn breakage and nothing else. A null
+    // expiry is what `caddy_balance` and `caddy_next_grant` both read as live,
+    // and `grant_caddy_package` mints the grants off the back of this row.
+    expires_at: kind === "green_fee" ? dayPassExpiry(paidAtMs) : null,
   });
   // 23505 is the schema doing idempotency's work: already fulfilled.
   if (error && error.code !== "23505") {

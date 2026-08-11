@@ -4,6 +4,7 @@ import Stripe from "stripe";
 
 import {
   billingEnabled,
+  CADDY_TOPUP_LOOKUP_KEYS,
   dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
 } from "@/lib/billing";
@@ -70,6 +71,65 @@ export async function startGreenFeeCheckout(): Promise<{
         origin: SITE_URL,
       }),
     );
+    if (!session.url) {
+      return { error: "Stripe didn't offer a checkout. Give it another go." };
+    }
+    return { url: session.url };
+  } catch {
+    return { error: "The till didn't answer. Give it another go." };
+  }
+}
+
+/**
+ * Open the till for more caddy.
+ *
+ * Deliberately unlike the green fee above in two ways. There is no
+ * already-have-one guard, because a top-up is a quantity rather than a state:
+ * buying a second is buying more, not buying the same thing twice. And nothing
+ * it grants expires — the webhook writes a null `expires_at`, because the cost
+ * of a round is incurred when it is redeemed and an unredeemed one costs
+ * nothing to hold.
+ *
+ * The lookup key is also the entitlement kind and the reason on the ledger
+ * row, so one string carries the purchase from here to the grant. It is
+ * checked against the code's own list rather than trusted, so a crafted call
+ * cannot mint a kind the webhook would then fulfil.
+ */
+export async function startCaddyTopupCheckout(
+  lookupKey: string,
+): Promise<{ url?: string; error?: string }> {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (!billingEnabled(secretKey)) {
+    return { error: "The till isn't plugged in yet." };
+  }
+  if (!(CADDY_TOPUP_LOOKUP_KEYS as readonly string[]).includes(lookupKey)) {
+    return { error: "That isn't on the tariff." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to add more caddy." };
+  if (user.is_anonymous) {
+    return { error: "Hosting a round takes a Google sign-in." };
+  }
+
+  try {
+    const stripe = new Stripe(secretKey as string);
+    const prices = await stripe.prices.list({ lookup_keys: [lookupKey], limit: 1 });
+    const price = prices.data[0];
+    if (!price) return { error: "That isn't on the tariff yet." };
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [{ price: price.id, quantity: 1 }],
+      client_reference_id: user.id,
+      // Back to the drafting table, which is where they were standing.
+      success_url: `${SITE_URL}/courses/new?caddy=topped-up`,
+      cancel_url: `${SITE_URL}/courses/new`,
+      metadata: { kind: lookupKey, user_id: user.id },
+    });
     if (!session.url) {
       return { error: "Stripe didn't offer a checkout. Give it another go." };
     }
