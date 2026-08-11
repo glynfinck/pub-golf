@@ -29,6 +29,7 @@ import { dispatchTool } from "@/lib/caddy/session";
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
+  TURN_TIMEOUT_MS,
   MAX_TOOL_TURNS,
   outOfLoopTime,
   type CaddyBoard,
@@ -486,15 +487,21 @@ export async function askCaddyLooped(
       // until it finished, then a paragraph all at once. The narration is the
       // reason any of this streams — dropping it inside the loop dropped it
       // from the *only* turn long enough to need it.
-      const turnStream = call.client.messages.stream({
-        model: call.model,
-        max_tokens: MAX_TOKENS,
-        system: CADDY_SYSTEM_TOOLS,
-        thinking: THINKING_SHOWN,
-        output_config: { effort: EFFORT },
-        tools: CADDY_TOOLS,
-        messages,
-      });
+      const turnStream = call.client.messages.stream(
+        {
+          model: call.model,
+          max_tokens: MAX_TOKENS,
+          system: CADDY_SYSTEM_TOOLS,
+          thinking: THINKING_SHOWN,
+          output_config: { effort: EFFORT },
+          tools: CADDY_TOOLS,
+          messages,
+        },
+        // The bound that was missing. Without it a single turn could outlive
+        // the whole function: the loop's own clock is only consulted *between*
+        // turns, which is exactly when a turn is not the thing going wrong.
+        { timeout: TURN_TIMEOUT_MS },
+      );
       turnStream.on("streamEvent", (event) => {
         if (
           event.type === "content_block_delta" &&
@@ -503,7 +510,20 @@ export async function askCaddyLooped(
           narrate({ thinking: event.delta.thinking });
         }
       });
-      const response = await turnStream.finalMessage();
+      // A turn that overruns is not a failed plan. Everything drafted so far
+      // is on the board, and the loop hands that over exactly as it does when
+      // it runs out of clock — which is the whole reason the board is built up
+      // across turns rather than written at the end.
+      let response: Anthropic.Message;
+      try {
+        response = await turnStream.finalMessage();
+      } catch (error) {
+        console.warn(
+          `[caddy] turn ${turn} overran ${TURN_TIMEOUT_MS}ms with ${board.holes.length} holes`,
+          error,
+        );
+        break;
+      }
       usage = addUsage(usage, readUsage(response.usage));
 
       // Nothing more to do: the caddy has stopped reaching for tools, which is

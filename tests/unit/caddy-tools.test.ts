@@ -15,6 +15,7 @@ import {
   TOOL_SEARCH,
   TOOL_SET,
   TURN_HEADROOM_MS,
+  TURN_TIMEOUT_MS,
   applyDraftTool,
   boardBlock,
   isDraftTool,
@@ -457,5 +458,40 @@ describe("the loop's own clock", () => {
     // the mechanism, and it has to come in under it with room for the reply.
     const ROUTE_MAX_MS = 300_000;
     expect(CADDY_LOOP_MS + TURN_HEADROOM_MS).toBeLessThan(ROUTE_MAX_MS);
+  });
+});
+
+describe("the loop fits inside the function that runs it", () => {
+  /** `app/api/caddy/plan/route.ts`. Duplicated deliberately: Next reads that
+   * export at build time and nothing can import it back out, so the number is
+   * restated here and this test is what keeps the two honest. */
+  const MAX_DURATION_MS = 300_000;
+
+  it("cannot start a turn that outlives the platform's ceiling", () => {
+    // The bug this encodes, which cost a real plan and left no trace of it:
+    // `outOfLoopTime` is consulted *between* turns while a single turn was
+    // unbounded, so the loop could look at the clock, decide it had room, and
+    // start a turn that ran past the ceiling. The function was killed mid-call
+    // — before the loop exited, before the fallback board, before the ledger
+    // row was written. The money was spent and nothing recorded it.
+    //
+    // The worst case is now the loop's own budget plus one full turn, and that
+    // has to leave room for the fallback and the ledger write afterwards.
+    const worstCase = CADDY_LOOP_MS + TURN_TIMEOUT_MS;
+    expect(worstCase).toBeLessThan(MAX_DURATION_MS);
+    // A minute of headroom for parsing, the fallback route and the write. Not
+    // a round number chosen for comfort: everything after the loop has to
+    // happen inside it, and a killed function is the one outcome with no
+    // evidence at all.
+    expect(MAX_DURATION_MS - worstCase).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it("still refuses a new turn once the budget is gone", () => {
+    // Unchanged behaviour, restated because the constant moved underneath it.
+    expect(outOfLoopTime(1, CADDY_LOOP_MS)).toBe(true);
+    expect(outOfLoopTime(1, 0)).toBe(false);
+    // The first turn always runs: a loop that refuses before it has drafted
+    // anything is the empty-board failure this whole area exists to stop.
+    expect(outOfLoopTime(0, CADDY_LOOP_MS * 2)).toBe(false);
   });
 });

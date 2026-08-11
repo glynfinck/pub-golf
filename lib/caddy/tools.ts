@@ -66,7 +66,31 @@ export const MAX_TOOL_TURNS = 12;
  * seconds left is how you get killed mid-flight and lose the card *and* the
  * accounting. Better to stop one turn early holding a finished card.
  */
-export const CADDY_LOOP_MS = 210_000;
+/**
+ * The wall clock the loop lives inside.
+ *
+ * Lowered from 210s, and the reason is the bug it caused rather than a taste
+ * for smaller numbers. `outOfLoopTime` is checked *between* turns while a
+ * single turn is unbounded, so the loop could look at the clock at 200s,
+ * decide it had room, and start a turn that ran past the platform's 300s
+ * ceiling. The function was killed mid-call — before the loop could exit,
+ * before the fallback board, before the turn row was written. The money was
+ * spent and nothing recorded that it had been.
+ *
+ * With `TURN_TIMEOUT_MS` bounding each call, the worst case is now this plus
+ * one turn, which has to fit inside `maxDuration` with room for the fallback
+ * and the ledger write after it.
+ */
+export const CADDY_LOOP_MS = 150_000;
+
+/**
+ * The longest any single model call may run.
+ *
+ * The missing bound. A turn with 16k of `max_tokens` can run for minutes, and
+ * nothing stopped it — the loop's clock only ever spoke between turns, which
+ * is precisely when a turn is not the problem.
+ */
+export const TURN_TIMEOUT_MS = 90_000;
 export const TURN_HEADROOM_MS = 45_000;
 
 /**
