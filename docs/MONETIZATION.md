@@ -181,6 +181,75 @@ no numerator here on purpose: the honesty box is a Payment Link, so
 Stripe's own dashboard is where tips are counted, against
 `rounds_finished` as the denominator.
 
+## The caddy's quotas — the design, and the mistake it corrects
+
+**Quotas count actions. Cost caps bound one action. They are not the same
+mechanism and they must never be confused, because they fail differently.**
+
+- A **quota refuses**. "You've used your three re-designs." That is a product
+  fact, it belongs on screen, and it deserves a warm line and a door to what
+  the host already has.
+- A **cost cap truncates**. It never says no — it stops the loop and hands over
+  the card built so far. Silent, invisible, an engineering detail.
+
+Every symptom the caddy produced in its first day of real use came from one
+confusion: **the daily budget refused.** It is a cost cap wearing a quota's
+clothes. That single mistake produced a "Covered" badge on a fee with nothing
+left, a wall a paying host met with no warning, and a fee that sells three
+courses delivering one — because the money ran out before the count did, and
+the money was allowed to say no.
+
+### The shape
+
+| Layer | Unit | Fails by | Seen? |
+|---|---|---|---|
+| Re-designs | actions | refusing | yes — an abstract bar |
+| Tweaks | actions, generously | refusing | no, unless approached |
+| Per-action cost | tokens and seconds | truncating | never |
+| Anti-script | turns per day | refusing | never, by a human |
+
+**Two quotas, not one, because the costs differ by an order of magnitude.** A
+re-design is a fresh Places gather, a forty-pub dossier cache write and a
+tool loop; a tweak is a cached prefix and one short call. Sharing one
+allowance meant two expensive plans ate the entire tweaking budget — so the
+thing `lib/caddy/fair-use.ts` promises most loudly, *ask as often as you
+like*, was being consumed by the thing next to it. Splitting them is not extra
+machinery, it is the fix.
+
+**Counting actions is only safe because each action is capped.** Cap the
+action, then count the actions, and pounds never appear in the product at all.
+The daily budget stops existing as a rule and becomes an arithmetic
+consequence of the quotas times their caps.
+
+**The two are not equally visible.** Re-designs are chunky, bought, and the
+only number that helps at the point of sale. Tweaks are the membership
+promise, and a meter on them converts membership back into credits — the
+argument `fair-use.ts` already makes at length. Tweaks keep a backstop that no
+real host should ever see; if one does, that is a bug report, not a tariff.
+
+**The bar names no unit.** A fill that moves as the fee is consumed, three
+qualitative states, no digits and no reset timer. The covenant's ban on
+countdown clocks is about manufactured urgency, and a number ticking toward
+zero on something already bought is exactly that.
+
+**The promise is a floor, not a ceiling.** "A green fee plans you at least
+three courses." A floor can be kept and then beaten — a host whose courses came
+cheap gets another as generosity. A ceiling is a thing to defend.
+
+### Sequencing
+
+1. **The split** — quota kinds on `caddy_credits`, the daily budget demoted
+   from refusal to truncation, fair use pushed down to anti-script only, the
+   usage UI redone. Complete and shippable on its own; the green fee grants the
+   package and nothing new is sold.
+2. **The wallet** — what a host holds, on their profile. Reads the same ledger.
+3. **Top-ups** — new Stripe SKUs, checkout paths, webhook fulfilment for new
+   entitlement kinds. Deliberately last: it is the most external surface and
+   the least useful until somebody has actually run out, and by then
+   `caddy_credits` says *which* quota they exhausted. Pricing a top-up from
+   that beats pricing it from a guess. The entitlement model already supports
+   several live fees, so this needs no rework of what comes before it.
+
 ## The covenant (product rules, public)
 
 1. **Joining is free forever.** Guests are the growth loop.
