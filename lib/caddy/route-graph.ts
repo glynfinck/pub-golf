@@ -121,6 +121,18 @@ const DEFAULT_ROUTES = 10;
  */
 const DIVERSITY_FLOOR = 0.3;
 
+/**
+ * How hard the snake insists on getting somewhere, in kilometres of detour it
+ * will accept per kilometre of progress.
+ *
+ * Three of them, so the menu carries a tight cluster *and* a walk across the
+ * neighbourhood and the model can pick which the brief wants. Near zero is
+ * ordinary nearest-neighbour and will bunch; the top of the range strings the
+ * night out along the high street. This is the dial to turn when routes come
+ * back too tight or too strung out.
+ */
+const SNAKE_DRIFTS = [0.2, 0.7, 1.4];
+
 /** Chains give themselves away by repeating their name, which is all the
  * "kind of place" this needs. Punctuation and the branch suffix go, so
  * "BrewDog Shoreditch" and "Brewdog — Camden" read as one kind. */
@@ -202,6 +214,126 @@ function walk(table: Map<string, Map<string, number>>, stops: string[]): number 
   let km = 0;
   for (let i = 1; i < stops.length; i += 1) km += gap(table, stops[i - 1], stops[i]);
   return km;
+}
+
+/**
+ * The direction the night travels.
+ *
+ * Pinned tees give it outright. Otherwise it is the patch's own long axis —
+ * the direction its pubs are most spread out along, which for a real
+ * neighbourhood is the high street rather than a compass point.
+ *
+ * Computed on a local flat projection: a degree of longitude is only about
+ * six-tenths of a degree of latitude at London's latitude, and an axis found
+ * in raw degrees would lean wrongly east-west.
+ */
+export function principalAxis(
+  nodes: RouteNode[],
+  from?: RouteNode | null,
+  to?: RouteNode | null,
+): { x: number; y: number } {
+  const scale = Math.cos((nodes[0]?.lat ?? 51.5) * (Math.PI / 180));
+  const norm = (x: number, y: number) => {
+    const len = Math.hypot(x, y);
+    return len < 1e-9 ? { x: 1, y: 0 } : { x: x / len, y: y / len };
+  };
+  if (from && to) return norm((to.lng - from.lng) * scale, to.lat - from.lat);
+
+  const meanLat = nodes.reduce((a, n) => a + n.lat, 0) / nodes.length;
+  const meanLng = nodes.reduce((a, n) => a + n.lng, 0) / nodes.length;
+  let cxx = 0;
+  let cyy = 0;
+  let cxy = 0;
+  for (const node of nodes) {
+    const dx = (node.lng - meanLng) * scale;
+    const dy = node.lat - meanLat;
+    cxx += dx * dx;
+    cyy += dy * dy;
+    cxy += dx * dy;
+  }
+  // The principal eigenvector of a 2x2 symmetric matrix, in closed form.
+  const theta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  return norm(Math.cos(theta), Math.sin(theta));
+}
+
+/** How far along the direction of travel a pub sits, in kilometres. */
+function along(node: RouteNode, axis: { x: number; y: number }, origin: RouteNode): number {
+  const scale = Math.cos(origin.lat * (Math.PI / 180));
+  const dx = (node.lng - origin.lng) * scale * 111.32;
+  const dy = (node.lat - origin.lat) * 111.32;
+  return dx * axis.x + dy * axis.y;
+}
+
+/**
+ * A walk that cannot double back.
+ *
+ * The scoring terms could reject a back-and-forth route but never build a
+ * better one, so the pool they chose from was full of routes that wandered —
+ * greedy takes the nearest pub, paints itself into a corner, and crosses its
+ * own path getting out. Filtering that pool gives the least-bad backtrack.
+ *
+ * This constructs the property instead of hoping for it. Every pub is
+ * projected onto the direction of travel, and a step may only ever go
+ * *forward* along it. Doubling back is not penalised; it is unrepresentable.
+ *
+ * `drift` is the tuning dial, in kilometres of detour the walk will accept per
+ * kilometre of progress. At 0 this is ordinary nearest-neighbour and will
+ * cluster tightly. Turn it up and the night insists on getting somewhere,
+ * stringing out along the high street rather than circling one corner.
+ */
+function snakeWalk(
+  table: Map<string, Map<string, number>>,
+  nodes: RouteNode[],
+  byId: Map<string, RouteNode>,
+  holes: number,
+  startId: string,
+  finishId: string | null,
+  drift: number,
+): string[] | null {
+  const origin = byId.get(startId);
+  if (!origin) return null;
+  const axis = principalAxis(
+    nodes,
+    origin,
+    finishId ? byId.get(finishId) : null,
+  );
+  const at = new Map(nodes.map((node) => [node.id, along(node, axis, origin)]));
+
+  const used = new Set<string>([startId]);
+  if (finishId) used.add(finishId);
+  const stops = [startId];
+  const wanted = finishId ? holes - 1 : holes;
+  // A pinned finish caps how far forward the walk may reach, so the last leg
+  // does not have to come all the way back.
+  const ceiling = finishId ? (at.get(finishId) ?? Infinity) : Infinity;
+
+  while (stops.length < wanted) {
+    const here = stops[stops.length - 1];
+    const hereAt = at.get(here) ?? 0;
+    let best: string | null = null;
+    let bestCost = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+      if (used.has(node.id)) continue;
+      const there = at.get(node.id) ?? 0;
+      // Forward only. This is the whole mechanism: a pub behind the walk is
+      // not expensive, it is not a candidate.
+      if (there <= hereAt) continue;
+      if (there > ceiling) continue;
+      const cost = gap(table, here, node.id) - drift * (there - hereAt);
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = node.id;
+      }
+    }
+    // Nothing ahead. Rather than turning round, the walk stops short and the
+    // caller drops this seed — a shorter honest jaunt is another seed's job.
+    if (!best) break;
+    used.add(best);
+    stops.push(best);
+  }
+
+  if (finishId) stops.push(finishId);
+  return stops.length === holes ? stops : null;
 }
 
 /**
@@ -546,11 +678,25 @@ export function buildRouteGraph(
   // With no pinned tee, try several origins so the seeds genuinely differ.
   const origins = startId ? [startId] : pool.slice(0, 6);
   const seeds: string[][] = [];
+  // Kept apart from the greedy seeds, and not improved. `swapIn` and 2-opt
+  // optimise for distance alone, so run over a snake they pull it straight
+  // back into the cluster it was built to escape — the improvement undoes the
+  // construction. A snake is already the route it means to be.
+  const snakes: string[][] = [];
   for (const origin of origins) {
-    // `null` is the plain greedy run; the rest force a different second stop.
+    // Greedy: the short, clustered answer. Kept because for a genuinely dense
+    // patch it is the right one, and because 2-opt over it is a good baseline.
     for (const skip of [null, ...neighbours[origin].slice(0, 3).map((n) => n.id)]) {
       const seed = greedy(table, pool, holes, origin, finishId, skip);
       if (seed) seeds.push(seed);
+    }
+    // Snaking: routes that cannot double back, at three tightnesses. This is
+    // what the scoring terms could only ever ask for — a route that gets
+    // somewhere has to be *built*, and no amount of penalising a wandering one
+    // puts a jaunt in the pool that was never constructed.
+    for (const drift of SNAKE_DRIFTS) {
+      const seed = snakeWalk(table, nodes, byId, holes, origin, finishId, drift);
+      if (seed) snakes.push(seed);
     }
   }
 
@@ -562,7 +708,7 @@ export function buildRouteGraph(
   });
 
   const target = request.targetKm ?? null;
-  const described = improved.map((stops) => describe(table, byId, stops, ""));
+  const described = [...improved, ...snakes].map((stops) => describe(table, byId, stops, ""));
 
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they

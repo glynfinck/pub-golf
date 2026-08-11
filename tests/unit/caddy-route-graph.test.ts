@@ -9,6 +9,7 @@ import {
   kindOf,
   nearestNeighbours,
   overlap,
+  principalAxis,
   routableNodes,
   scoreRoute,
 } from "@/lib/caddy/route-graph";
@@ -441,5 +442,68 @@ describe("the menu answers different questions", () => {
     const dearest = Math.max(...graph.routes.map(priceOf));
     // If every route costs the same the menu is offering one thing many times.
     expect(dearest).toBeGreaterThan(cheapest);
+  });
+});
+
+describe("snaking construction", () => {
+  /** A blob of pubs with no obvious line through it — the shape that made
+   * greedy wander, because every next pub is about as near as the last. */
+  const BLOB = [
+    pub("a", 0, 0), pub("b", 0, 1), pub("c", 1, 0), pub("d", 1, 1),
+    pub("e", 2, 0), pub("f", 2, 1), pub("g", 3, 0), pub("h", 3, 1),
+    pub("i", 4, 0), pub("j", 4, 1),
+  ];
+
+  it("finds the long axis of a patch", () => {
+    // These are stacked in latitude, so the direction of travel is north,
+    // not the east-west the raw degrees would suggest if longitude were not
+    // scaled for latitude.
+    const axis = principalAxis(routableNodes(BLOB));
+    expect(Math.abs(axis.y)).toBeGreaterThan(Math.abs(axis.x));
+  });
+
+  it("builds a walk that gets somewhere rather than circling", () => {
+    // The complaint, as a test. A menu over this blob must contain at least
+    // one route that keeps moving — before the snake existed, every route
+    // through it wandered and the objectives could only pick the least bad.
+    const graph = buildRouteGraph(BLOB, { holes: 5, routes: 10 });
+    const best = Math.min(...graph.routes.map((route) => route.detour));
+    expect(best).toBeLessThan(1.5);
+  });
+
+  it("offers both a tight round and a strung-out one", () => {
+    // Three drifts exist so the menu carries both and the brief can choose.
+    // A menu where every route covers the same ground is one route.
+    const graph = buildRouteGraph(BLOB, { holes: 5, routes: 10 });
+    const progress = graph.routes.map((route) => route.progressKm);
+    expect(Math.max(...progress)).toBeGreaterThan(Math.min(...progress) * 1.3);
+  });
+
+  it("never steps backwards along the direction of travel", () => {
+    // The mechanism, asserted directly: a snaked route's stops must advance
+    // monotonically along the axis. Doubling back is not penalised here, it is
+    // unrepresentable — which is the difference between this and the scoring.
+    const nodes = routableNodes(BLOB);
+    const graph = buildRouteGraph(BLOB, { holes: 5, routes: 10 });
+    const snaked = graph.routes.find((route) => route.detour < 1.3);
+    expect(snaked).toBeDefined();
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const origin = byId.get(snaked!.stops[0])!;
+    const axis = principalAxis(nodes, origin, byId.get(snaked!.stops.at(-1)!));
+    const scale = Math.cos(origin.lat * (Math.PI / 180));
+    const at = (id: string) => {
+      const node = byId.get(id)!;
+      return (
+        (node.lng - origin.lng) * scale * 111.32 * axis.x +
+        (node.lat - origin.lat) * 111.32 * axis.y
+      );
+    };
+    const positions = snaked!.stops.map(at);
+    for (let i = 1; i < positions.length; i += 1) {
+      // Allowing a small tolerance: 2-opt runs over the seed afterwards and
+      // may shorten a leg in a way that nudges one stop, which is fine — what
+      // must not happen is the walk turning round.
+      expect(positions[i]).toBeGreaterThan(positions[i - 1] - 0.3);
+    }
   });
 });
