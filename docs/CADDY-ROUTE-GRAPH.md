@@ -162,3 +162,61 @@ Nothing meaningful. Ten routes at N≈40 is still milliseconds — the work is i
 the distance matrix, which is computed once and shared across every objective.
 The block grows, but it sits above the cache breakpoint, so it is paid for once
 per session and read free thereafter.
+
+## Decided: what the algorithm does, and what the model does
+
+The question that settled this was "greedy or graph algorithm?", and it is a
+false choice worth writing down as one, because the framing hides the lever.
+
+**Greedy nearest-neighbour *is* a graph algorithm — a weak one used alone.**
+The real distinction is construction versus improvement. Greedy builds a valid
+route fast and lands 15–25% off optimal; it also paints itself into corners and
+has to backtrack, **which is exactly the "tight and back and forthy" route a
+real host got.** That is greedy's signature failure, not bad luck. Exact
+methods are out at forty candidates choose nine.
+
+So: greedy is the seed, 2-opt and swap-in are the fix, and neither replaces the
+other. That is what `route-graph.ts` already does. What it was missing was any
+term that could *see* backtracking, which is why `detour` — walk divided by
+straight-line progress — now scores it.
+
+### The division of labour
+
+**The model shines at tuning, not at planning.** This is the whole diagnosis of
+the evening: every failure was a language model doing search work that
+arithmetic does in microseconds. Judging whether a pub suits a brief is
+judgement; finding a short walk is not.
+
+So the algorithm hands over a finished menu, and the model picks and adjusts.
+
+### Rejected: the serial shortlist
+
+The tempting version is a cycle — take a route, tweak it, keep or reject,
+fetch the next, and on through the shortlist. It models how a person would do
+it, and it is the wrong shape here for one reason: **it is turns, and turns are
+what has been failing.** Nine stops decided one per turn is nine turns; a
+shortlist worked serially is worse.
+
+It is also unnecessary. Ten routes in the prompt at once can be reasoned about
+in a single turn, which is strictly better than cycling — nothing needs to be
+remembered across turns if everything is in front of the model at once. One
+pass, not a loop.
+
+### Accepted: corridor queries
+
+Per-node neighbours answer "what is near hole 4". The better question is "what
+is near *this walk*" — distance to the polyline rather than to a node — which
+is what answers "a cocktail bar within 300m of the route" when a brief asks for
+something the chosen stops cannot give. Cheap: a filter over the candidates
+against the path, no new data.
+
+This supersedes the k-nearest lists for adjustment, though those stay for the
+cheap common case of swapping one stop.
+
+### Accepted: keep and revert
+
+The one tool-loop feature genuinely worth having. Tweaking is destructive
+today, so a model has to be conservative with a card that is already decent.
+Snapshotting the board, trying a variation, and reverting if it scores worse
+is bounded, cheap, and exactly what a loop is for — unlike search, which is
+what it was being used for.
