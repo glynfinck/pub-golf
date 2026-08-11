@@ -54,3 +54,22 @@ describe("the top-up offers and the tariff agree", () => {
     }
   });
 });
+
+describe("the button counts what the purchase grants", () => {
+  it("reads its round count off CADDY_TOPUPS rather than a literal", () => {
+    // Both numbers were hand-written when this shipped, which is the shape of
+    // every copy bug on this branch: a number in two places is right until one
+    // of them moves. Changing the grant must move the label with it.
+    for (const offer of CADDY_TOPUP_OFFERS) {
+      const granted = CADDY_TOPUPS[offer.lookupKey].redesign;
+      expect(offer.rounds).toContain(String(granted));
+    }
+  });
+
+  it("says round, not rounds, for a single one", () => {
+    const single = CADDY_TOPUP_OFFERS.find(
+      (offer) => CADDY_TOPUPS[offer.lookupKey].redesign === 1,
+    );
+    expect(single?.rounds).toBe("1 round");
+  });
+});

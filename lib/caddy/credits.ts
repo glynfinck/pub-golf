@@ -1,3 +1,4 @@
+import { CADDY_TOPUPS } from "@/lib/billing";
 import { sticker, TARIFF } from "@/lib/tariff";
 
 /**
@@ -81,14 +82,17 @@ export function coursesLeftNote(left: number): string {
  * because that is what they are buying, not because anything is running out.
  */
 export const CADDY_TOPUP_OFFERS = [
-  {
-    lookupKey: TARIFF.caddyTopupOne.lookupKey,
-    price: sticker(TARIFF.caddyTopupOne.amounts.gbp),
-    rounds: "1 round",
-  },
-  {
-    lookupKey: TARIFF.caddyTopupThree.lookupKey,
-    price: sticker(TARIFF.caddyTopupThree.amounts.gbp),
-    rounds: "3 rounds",
-  },
-] as const;
+  TARIFF.caddyTopupOne,
+  TARIFF.caddyTopupThree,
+].map((sku) => {
+  const rounds = CADDY_TOPUPS[sku.lookupKey].redesign;
+  return {
+    lookupKey: sku.lookupKey,
+    price: sticker(sku.amounts.gbp),
+    // Counted from what the purchase actually grants rather than typed here.
+    // Both numbers were written by hand a moment ago, which is precisely how
+    // the refusal came to promise one course from a fee that grants four: a
+    // number in two places stays right only until one of them moves.
+    rounds: rounds === 1 ? "1 round" : `${rounds} rounds`,
+  };
+});
