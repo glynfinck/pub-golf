@@ -1,6 +1,5 @@
 import "server-only";
 
-import { boundsAround } from "@/lib/geo";
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
 import { PLACES_FIELD_MASK } from "@/lib/pub-search";
 
@@ -254,7 +253,3 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   return gathered;
 }
 
-/** The viewport a patch fills, for the map's opening camera. */
-export function patchBounds(centre: { lat: number; lng: number }) {
-  return boundsAround(centre, PATCH_RADIUS_M);
-}

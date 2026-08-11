@@ -26,9 +26,9 @@ import { neutralise } from "@/lib/bug-report";
 export const MAX_CANDIDATES = 40;
 
 /** Review snippets are colour, not evidence — a sentence each, no more. */
-export const REVIEW_SNIPPET_MAX = 160;
-export const REVIEWS_PER_PUB = 2;
-export const EDITORIAL_MAX = 200;
+const REVIEW_SNIPPET_MAX = 160;
+const REVIEWS_PER_PUB = 2;
+const EDITORIAL_MAX = 200;
 
 /**
  * The facts, exactly as Places (New) names them.
@@ -188,12 +188,3 @@ export function dossierBlock(candidates: CandidateDossier[]): string {
   ].join("\n");
 }
 
-/** Coordinates, for the walk. Null where a pub has none — a hole with no
- * coordinates simply prints no walking time, which is `estimateWalkMinutes`'s
- * own contract. */
-export function coordsOf(candidate: CandidateDossier): {
-  lat: number | null;
-  lng: number | null;
-} {
-  return { lat: candidate.lat, lng: candidate.lng };
-}

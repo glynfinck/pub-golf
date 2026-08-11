@@ -1,7 +1,6 @@
 import type { DraftHole } from "@/components/course/hole-editor";
 import { readHolePenalties } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
-import type { Tables } from "@/types/supabase-helpers";
 
 export interface MyCourse {
   id: string;
@@ -109,26 +108,4 @@ export async function getCourseForEdit(
       walk_minutes_to_next: hole.walk_minutes_to_next,
     })),
   };
-}
-
-/** A course with its holes in order (RLS: owner only). */
-export async function getCourseWithHoles(courseId: string): Promise<{
-  course: Tables<"courses">;
-  holes: Tables<"course_holes">[];
-} | null> {
-  const supabase = await createClient();
-  const { data: course } = await supabase
-    .from("courses")
-    .select("*")
-    .eq("id", courseId)
-    .maybeSingle();
-  if (!course) return null;
-
-  const { data: holes } = await supabase
-    .from("course_holes")
-    .select("*")
-    .eq("course_id", courseId)
-    .order("number");
-
-  return { course, holes: holes ?? [] };
 }

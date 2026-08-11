@@ -15,6 +15,7 @@ import {
   type CaddyTurnRecord,
 } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
+import { CADDY_CREDITS_SPENT } from "@/lib/caddy/credits";
 import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
   buildCandidates,
@@ -93,8 +94,17 @@ const NEEDS_FEE = "The caddy comes with the green fee.";
  * things that are still theirs. */
 const PASS_RAN_OUT =
   "Your green fee's day is over. Every course it planned is still yours to change, and plotting one by hand is free as always.";
-const SPENT_FEE =
-  "Your course is already in the book — the caddy plans one to a fee. Change it as much as you like, or tear it out and the caddy will plan you another.";
+/**
+ * There used to be two of these — this one, and `CADDY_CREDITS_SPENT` beside
+ * the number it talks about. Only this one was ever rendered, so when a fee
+ * went from planning one course to planning four, this text went on saying
+ * "the caddy plans one to a fee" and nobody noticed: the copy that had been
+ * kept correct was the copy nothing displayed.
+ *
+ * So the refusal now comes from the module that owns the allowance. A sentence
+ * that quotes a number belongs next to the number.
+ */
+const SPENT_FEE = CADDY_CREDITS_SPENT;
 const THIN_PATCH =
   "Not enough pubs in that patch for the round you asked for. Widen the patch, or drop a few holes.";
 // One line for both ceilings. A host who meets the turn cap and a host who

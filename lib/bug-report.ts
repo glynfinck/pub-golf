@@ -46,7 +46,7 @@ export const BUG_AREAS = [
 
 export type BugArea = (typeof BUG_AREAS)[number]["id"];
 
-export function areaLabel(area: BugArea): string {
+function areaLabel(area: BugArea): string {
   return BUG_AREAS.find((entry) => entry.id === area)?.label ?? "Something else";
 }
 
