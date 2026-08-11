@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Sparkle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { PendingLabel } from "@/components/ui/pending-label";
@@ -45,6 +46,7 @@ export function CaddyGroup({
   onCourse,
   onPatch,
   onPicked,
+  allowance,
   onSession,
   className,
 }: {
@@ -59,6 +61,9 @@ export function CaddyGroup({
   /** Pubs as the caddy names them, in its own order rather than the walking
    * order, which is not decided until the card is complete. */
   onPicked?: (ids: string[]) => void;
+  /** Whether this fee still has a course to give. Absent means yes — a
+   * database that has not caught up says yes, exactly as the pipeline does. */
+  allowance?: { canPlan: boolean; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
   className?: string;
@@ -317,6 +322,37 @@ export function CaddyGroup({
         >
           <Sparkle aria-hidden /> Plan the round
         </Button>
+      </div>
+    );
+  }
+
+  // ——— The fee has its course. Not a wall and not a price: a door to the
+  // thing they already own, and the two free ways on. The drafting table below
+  // is untouched — the manual builder never cost anything and still does not,
+  // which is the sentence this panel exists to make sure nobody misses.
+  if (allowance && !allowance.canPlan && !sessionId) {
+    return (
+      <div
+        className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
+        data-testid="caddy-spent"
+      >
+        <span className="eyebrow text-fairway">The caddy</span>
+        <p className="text-xs text-muted-foreground">
+          Your course is in the book — the caddy plans one to a green fee.
+          Change it as much as you like; tear it out and the caddy will plan
+          you another.
+        </p>
+        {allowance.courseId ? (
+          <Link
+            href={`/courses/${allowance.courseId}`}
+            className={cn(buttonVariants({ variant: "outline", size: "compact" }), "h-10 w-full")}
+          >
+            Open your course
+          </Link>
+        ) : null}
+        <p className="text-[10px] text-muted-foreground">
+          Plotting one by hand below is free, as always.
+        </p>
       </div>
     );
   }

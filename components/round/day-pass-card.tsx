@@ -26,9 +26,15 @@ export function DayPassCard({ pass }: { pass: DayPass }) {
           className="tabular font-mono text-xs text-muted-foreground"
         />
       </div>
+      {/* What it actually buys, which is not what this said yesterday.
+          "As many courses as you like" was written before a fee bought one,
+          and a pass card promising more than the pipeline gives is worse than
+          no card at all — it is the app telling you something it will then
+          refuse. */}
       <p className="mt-1.5 text-xs text-muted-foreground">
-        The caddy is on duty until then — have it plan as many courses as you
-        like, and they are yours to keep afterwards. A new day takes a new fee.
+        Your course is the caddy&apos;s to plan, and yours to keep — change it
+        whenever, or tear it out and it will plan another. A new day takes a
+        new fee.
       </p>
       <Link
         href="/courses/new"

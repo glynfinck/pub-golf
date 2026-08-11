@@ -36,7 +36,7 @@ import {
   replacePub,
   type DraftHole,
 } from "@/lib/course-draft";
-import type { ResumedCaddy } from "@/lib/data/caddy";
+import type { CaddyAllowance, ResumedCaddy } from "@/lib/data/caddy";
 import { closeCaddySession, rememberCaddyCourse } from "@/lib/actions/caddy";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -107,6 +107,7 @@ export function CourseBuilder({
   caddy = false,
   hasPass = false,
   resumed = null,
+  allowance,
 }: {
   course?: CourseBuilderCourse;
   /** A caddy conversation this host walked away from, found again by the
@@ -114,6 +115,9 @@ export function CourseBuilder({
    * and — the part that matters — knows which course it already filed, so the
    * next card writes over that one instead of minting a second. */
   resumed?: ResumedCaddy | null;
+  /** Whether the host's fee still has a course to give, and where the last one
+   * went. The caddy shows one of two faces depending on it. */
+  allowance?: CaddyAllowance;
   /** The caddy is on duty: a key, billing on, and a signed-in host. False and
    * the group never renders — the maps-key pattern, so an unconfigured deploy
    * shows the builder exactly as it has always been. */
@@ -481,6 +485,7 @@ export function CourseBuilder({
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
+          allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
           onPicked={(ids) =>
             setPatch((current) =>

@@ -103,3 +103,58 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
     courseId: session.course_id ?? null,
   };
 }
+
+
+/**
+ * What the host's fee still has to give, and where the last one went.
+ *
+ * Shown rather than hidden, which is the opposite of how the *other* two
+ * ceilings are treated and deliberately so. Fair use and the budget are
+ * backstops nobody should ever meet, and `lib/caddy/fair-use.ts` argues at
+ * length that putting a counter on screen turns membership into credits. The
+ * course allowance is not that: it is the thing the host bought. One course is
+ * not a restriction on the caddy, it *is* the caddy, and a host who cannot see
+ * whether theirs is spent finds out by being refused — which is the one way of
+ * learning it that feels like a wall.
+ *
+ * No number either way. "1 of 1 remaining" is the credits framing wearing a
+ * different hat; what a host actually needs to know is which of two states
+ * they are in, and where their course went if it is the second.
+ */
+export interface CaddyAllowance {
+  /** There is a fee with a course still to plan. */
+  canPlan: boolean;
+  /** The course a spent fee is holding, so the screen can point at it rather
+   * than describe it. Null when nothing is spent, and null on a database that
+   * has not caught up. */
+  courseId: string | null;
+}
+
+export async function caddyAllowance(): Promise<CaddyAllowance> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { canPlan: false, courseId: null };
+
+  const { data: unspent, error } = await supabase.rpc("caddy_unspent_fee", {
+    who: user.id,
+  });
+  // The allowance does not exist on this database yet. Say yes, exactly as
+  // `liveFee` does in the same window — the two must agree, or the screen
+  // offers a plan the pipeline then refuses.
+  if (error) return { canPlan: true, courseId: null };
+  if (unspent) return { canPlan: true, courseId: null };
+
+  // Spent. Find what it is holding, so the answer can be a door rather than a
+  // sentence. Read on the caller's own session: RLS makes "theirs" the only
+  // thing this can see.
+  const { data: filed } = await supabase
+    .from("caddy_sessions")
+    .select("course_id")
+    .not("course_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return { canPlan: false, courseId: filed?.course_id ?? null };
+}
