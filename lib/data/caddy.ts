@@ -109,18 +109,16 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
 /**
  * What the host's fee still has to give, and where the last one went.
  *
- * Shown rather than hidden, which is the opposite of how the *other* two
- * ceilings are treated and deliberately so. Fair use and the budget are
+ * Shown rather than hidden, which is the opposite of how the other ceilings
+ * are treated and deliberately so. Fair use and the runaway breaker are
  * backstops nobody should ever meet, and `lib/caddy/fair-use.ts` argues at
  * length that putting a counter on screen turns membership into credits. The
- * course allowance is not that: it is the thing the host bought. One course is
- * not a restriction on the caddy, it *is* the caddy, and a host who cannot see
- * whether theirs is spent finds out by being refused — which is the one way of
- * learning it that feels like a wall.
+ * re-design quota is not that: it is the thing the host bought, and one who
+ * cannot see whether theirs is spent finds out by being refused — the single
+ * way of learning it that feels like a wall.
  *
- * No number either way. "1 of 1 remaining" is the credits framing wearing a
- * different hat; what a host actually needs to know is which of two states
- * they are in, and where their course went if it is the second.
+ * Only the re-designs. Tweaks have a quota too and it stays invisible: a meter
+ * on "ask as often as you like" is the same mistake seen from the other side.
  */
 export interface CaddyAllowance {
   /** There is a fee with a course still to plan. */
@@ -149,9 +147,6 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
     who: user.id,
     quota: "redesign",
   });
-  // The allowance does not exist on this database yet. Say yes, exactly as
-  // `liveFee` does in the same window — the two must agree, or the screen
-  // offers a plan the pipeline then refuses.
   // The ledger is not on this database yet. Say yes, exactly as `liveFee` does
   // in the same window — the two must agree, or the screen offers a plan the
   // pipeline then refuses.
