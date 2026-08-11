@@ -38,7 +38,11 @@ export type CaddyQuota = (typeof CADDY_QUOTAS)[number];
  * so a fussy host does — which is why one is shown and the other is not.
  */
 export const CADDY_GRANT_SIZE: Record<CaddyQuota, number> = {
-  redesign: 3,
+  // Four, so the fee is a discount rather than merely a bundle: £12 over four
+  // is £3 a round, where the smallest top-up is £4. See docs/CADDY-TOPUPS.md —
+  // the bundle has to be the best rate anyone can get, or it is the option to
+  // avoid.
+  redesign: 4,
   tweak: 60,
 };
 

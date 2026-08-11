@@ -52,25 +52,68 @@ a 2p action feel scarce, which is the failure the two-quota design exists to
 avoid: a meter on "ask as often as you like" turns membership back into
 credits. Tweaks arrive with rounds, or they do not arrive.
 
-| Pack | Grants | Price | Per round | Cost to serve | Margin after Stripe |
-|---|---|---|---|---|---|
-| Another round | 1 re-design + 10 tweaks | £2 | £2.00 | 47p | 65% |
-| A few more | 4 re-designs + 40 tweaks | £6 | £1.50 | £1.88 | 64% |
-| The full card | 10 re-designs + 100 tweaks | £12 | £1.20 | £4.70 | 58% |
+**The floor is the green fee's own rate.** £12 buys **four** re-designs, so a
+round inside the fee costs £3, and no top-up may ever sell one for less. Volume
+walks a host *down* to £3 and stops level with it.
 
-Stripe takes roughly 1.5% + 20p on a UK card, which is why there is no £1 rung:
-a fixed 20p is a fifth of a pound, and a pack that loses 20% at the door is a
-pack priced for Stripe rather than for the host.
+The fee grants four rather than three for exactly this reason: at three it was
+£4 a round and merely a bundle, level with the smallest top-up. At four it is a
+discount — you are always better off having bought the fee. Get that backwards
+and the bundle becomes the mug's option: buy the cheapest fee, top up in bulk,
+and the thing meant to be the deal is the thing to avoid.
 
-### The open question
+**Granted expires. Bought does not.** This is the rule the earlier drafts got
+wrong, and it needs stating before the prices.
 
-At the top rung, £12 of top-up buys ten rounds where £12 of green fee buys
-three. Bulk beating the bundle is ordinary retail, but it does mean the fee
-stops being the best *caddy* value and becomes the best *night* value — it is
-the round, the league and the recap as well.
+The trap it avoids: if a top-up expired with the pass it was bought against,
+an eight-round pack bought at nine in the evening would be gone by one in the
+morning. Nobody should buy that, and anyone who did would be right to feel had.
+A discount that only pays off if you spend it in four hours is not a discount —
+which is why big packs stopped making sense the moment expiry was applied to
+them evenly.
 
-If the fee should always win per-round, the top rung is **6 rounds at £12**,
-not 10. That is a positioning call, not an arithmetic one.
+It is also not what comparable products do, and the convergence is striking.
+Midjourney's subscription fast-hours reset monthly; *purchased* fast-hours roll
+over. Tinder's subscription Super Likes refresh and lapse; bought packs sit in
+the account indefinitely. OpenAI prepaid credits run a year. Vercel's own AI
+Gateway credits, per the purchase flow, run a year. The one category that sold
+a fast-expiring paid balance — cashless festival wristbands — took a public
+kicking for it and now refunds the remainder.
+
+The reason specific to *this* product is the one that settles it: **cost is
+incurred entirely at redemption.** An unredeemed round costs nothing to hold on
+somebody's account. Expiring a purchased top-up therefore earns breakage
+revenue and nothing else, and breakage is precisely what makes a brand feel
+mean. It would also sit badly beside the covenant's *what's free stays free, no
+clawbacks* — what is paid for should stay paid for at least as firmly.
+
+So:
+
+- **The fee's grant expires with the pass.** The fee is sold as a day, it is a
+  day, and that is honest. Unchanged.
+- **Top-up grants do not.** They carry to the next night. A year is the
+  outer bound if one is ever wanted, matching the norm above and keeping the
+  ledger's accounting finite; nothing needs it sooner.
+
+Spend order already handles the mix correctly and needs no change:
+`caddy_next_grant` takes the grant nearest expiry first, so tonight's fee burns
+before a durable top-up does. A host who buys a pack and then buys a fee gets
+the fee's rounds first, which is what they would choose themselves.
+
+Because packs persist, volume is worth pricing again:
+
+| Top-up | Grants | Price | Per round | vs the fee's £3 | Cost | Margin |
+|---|---|---|---|---|---|---|
+| Another round | 1 re-design + 10 tweaks | £4 | £4.00 | +33% | 47p | 82% |
+| A few more | 3 re-designs + 30 tweaks | £11 | £3.67 | +22% | £1.41 | 84% |
+| The full card | 8 re-designs + 80 tweaks | £24 | £3.00 | level | £3.76 | 82% |
+
+Never below the fee's £3, so the bundle stays the best rate anyone can get.
+Stripe's fixed 20p is why the floor is £4 and why there is no £1 rung.
+
+The fee's own cost to serve rises with the fourth round: 4 × 27p + 60 × 2p =
+**£2.28 of £12**, or 19%. Comfortable, and worth re-checking against the ledger
+rather than against this table once real tweaks have actually been observed.
 
 ## How it lands in the schema
 
@@ -80,11 +123,11 @@ A top-up is an `entitlements` row with a new `kind`; `grant_caddy_package`
 already mints `caddy_grants` on insert, keyed by quota. Two things to settle
 when it is built:
 
-**Expiry.** The green fee's grants expire with the pass, because the fee is a
-day. A top-up bought at 11pm with a 1am expiry is a purchase that evaporates.
-Either top-up grants outlive the pass, or the pass extends — and "what's free
-stays free, no clawbacks" argues that a thing bought outright should not
-vanish on someone else's clock.
+**Expiry.** Settled above and worth repeating here because it is the thing a
+schema makes easy to get wrong: the fee's grants carry the pass's `expires_at`,
+top-up grants carry none. Same table, same shape, one nullable column doing the
+distinguishing — `caddy_balance` already treats a null expiry as live, so this
+needs no new logic, only the discipline not to stamp one.
 
 **Order of spend.** `caddy_next_grant` currently takes the grant nearest
 expiry first, which is right for stacked fees and stays right here: spend the
