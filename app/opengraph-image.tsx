@@ -9,7 +9,8 @@ import {
   ogMeta,
 } from "@/lib/og";
 
-export const alt = `${APP_NAME} — ${FLAGSHIP_GAME}`;
+export const alt =
+  APP_NAME === FLAGSHIP_GAME ? APP_NAME : `${APP_NAME}: ${FLAGSHIP_GAME}`;
 export const size = OG_SIZE;
 export const contentType = OG_CONTENT_TYPE;
 

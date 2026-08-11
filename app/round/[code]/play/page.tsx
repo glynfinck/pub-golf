@@ -3,6 +3,8 @@ import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
 import { PlayView } from "@/components/round/play-view";
 import { WalkingView } from "@/components/round/walking-view";
 
+export const metadata = { title: "On the course" };
+
 export default async function PlayPage({
   params,
 }: {

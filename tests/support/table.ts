@@ -103,7 +103,7 @@ export async function seatTable(
     8,
     (index) =>
       index === 0
-        ? signedInUser("Glyn")
+        ? signedInUser("Wren")
         : anonymousGuest(seatName(index - 1)),
   );
 

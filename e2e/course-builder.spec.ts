@@ -1,13 +1,47 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
 import { expectSettled } from "./nav";
+
+/**
+ * Add a pub through the builder's by-name row.
+ *
+ * Three separate races meet on this one button, and CI found the second of
+ * them on WebKit — a 90-second hang that passed on retry, which
+ * `failOnFlakyTests` correctly calls a failure:
+ *
+ * 1. Hydration. A fill landing before React is live is silently wiped.
+ * 2. The row clears itself. `addManual` calls setManualName(""), so a fill
+ *    landing in the same beat as that re-render is wiped by it too — and the
+ *    button then sits disabled, because it enables on text it never saw. It
+ *    stays *briefly* clickable on the "Added" flash alone, which is why this
+ *    only bites once the flash expires and why it looked like a stall.
+ * 3. The flash changes the button's width, so a click aimed at it mid-swap
+ *    is a click at a moving target.
+ *
+ * So: wait for the button back at rest, then retry the fill until React
+ * itself holds the text — the input is controlled, so its DOM value *is*
+ * React's state, and that is the only honest proof. The click stays outside
+ * the retry, because a click that lands must never repeat.
+ */
+async function addPubByName(page: Page, name: string) {
+  const field = page.getByLabel(/add a pub by name/i);
+  const button = page.getByRole("button", { name: /add the named pub/i });
+
+  await expect(button).toHaveText("Add");
+  await expect(async () => {
+    await field.fill(name);
+    await expect(field).toHaveValue(name, { timeout: 1_000 });
+    await expect(button).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await button.click();
+}
 
 test("build a course by hand, then play a round on it", async ({ page }) => {
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `builder-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   // ---- Plot a two-pub course by name (works with or without a key) ----
@@ -18,20 +52,8 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expectSettled(page, "masthead-back", (back) =>
     expect(back).toHaveAttribute("href", "/courses"),
   );
-  // Same controlled-form race full-house documents: a fill landing before
-  // hydration is silently wiped, so prove the page live through the Add
-  // button (it enables only when React sees text) before typing the name.
-  const pubField = page.getByLabel(/add a pub by name/i);
-  const addPub = page.getByRole("button", { name: /add the named pub/i });
-  await expect(async () => {
-    await pubField.fill("The Test Tavern");
-    await expect(addPub).toBeEnabled({ timeout: 1_000 });
-  }).toPass({ timeout: 30_000 });
-
-  await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
-  await addPub.click();
-  await pubField.fill("The Other Arms");
-  await addPub.click();
+  await addPubByName(page, "The Test Tavern");
+  await addPubByName(page, "The Other Arms");
 
   // Dress hole 1: par up, a proper drink, a water hazard with a note.
   await page.getByRole("button", { name: /raise par on hole 1/i }).click();
@@ -53,7 +75,19 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
     })
     .click();
 
-  await page.getByRole("button", { name: /save the course · 2 holes/i }).click();
+  // The save button answers for the whole form: its label counts the holes
+  // and it enables only once live React also holds a course name. CI has
+  // seen the count reach 2 while the name never made it out of the DOM, so
+  // the name fill and the enablement check retry as one block — the click
+  // stays outside it, because a click that lands must not repeat.
+  const saveCourse = page.getByRole("button", {
+    name: /save the course · 2 holes/i,
+  });
+  await expect(async () => {
+    await page.getByLabel(/course name/i).fill(`Two Pub Crawl ${stamp}`);
+    await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await saveCourse.click();
   await page.waitForURL(/\/courses$/);
   await expect(page.getByText(`Two Pub Crawl ${stamp}`)).toBeVisible();
   await expect(page.getByText("2 holes · par 9")).toBeVisible();
@@ -112,13 +146,108 @@ test("build a course by hand, then play a round on it", async ({ page }) => {
   await expect(sheet.getByText("On this hole", { exact: true })).toBeHidden();
 });
 
+test("edit the running order without tearing up the card", async ({ page }) => {
+  const stamp = Date.now();
+  await signInAs(page.context(), {
+    email: `reorder-${stamp}@e2e.local`,
+    name: "Wren",
+  });
+
+  await page.goto("/courses/new");
+
+  await addPubByName(page, "Alpha Arms");
+  await addPubByName(page, "Beta Bar");
+  await addPubByName(page, "Gamma Tavern");
+
+  const holeNames = page.getByTestId("draft-hole-name");
+  await expect(holeNames).toHaveText(["Alpha Arms", "Beta Bar", "Gamma Tavern"]);
+
+  // Dress hole 1, so the swap below has something to prove it kept.
+  await page.getByRole("button", { name: /raise par on hole 1/i }).click();
+  await page.getByLabel(/^the drink$/i).first().fill("Half of stout");
+
+  // ---- Move: the last hole walks up the order, twice ----
+  await page
+    .getByRole("button", { name: /move gamma tavern to hole 2/i })
+    .click();
+  await expect(holeNames).toHaveText(["Alpha Arms", "Gamma Tavern", "Beta Bar"]);
+
+  // ---- Replace: hole 1 changes pub and keeps its dressing ----
+  await page
+    .getByRole("button", { name: /manage hole 1 · alpha arms/i })
+    .click();
+  await page.getByTestId("change-pub").click();
+  // The picker's own by-name row is a controlled input on a panel that has
+  // only just mounted, so the fill retries until React holds it — same rule
+  // as addPubByName, and the click stays outside the retry for the same one.
+  const pickField = page.getByLabel(/or name the pub yourself/i);
+  await expect(async () => {
+    await pickField.fill("Delta Inn");
+    await expect(pickField).toHaveValue("Delta Inn", { timeout: 1_000 });
+    await expect(
+      page.getByRole("button", { name: /choose the named pub/i }),
+    ).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole("button", { name: /choose the named pub/i }).click();
+
+  await expect(holeNames).toHaveText(["Delta Inn", "Gamma Tavern", "Beta Bar"]);
+  // The pub changed; the par and the drink on that hole did not.
+  await expect(page.getByLabel(/^the drink$/i).first()).toHaveValue(
+    "Half of stout",
+  );
+
+  // ---- Insert: a pub lands between two others, not at the end ----
+  await page
+    .getByRole("button", { name: /insert a pub before hole 2/i })
+    .click();
+  const insertField = page.getByLabel(/or name the pub yourself/i);
+  await expect(async () => {
+    await insertField.fill("Epsilon House");
+    await expect(insertField).toHaveValue("Epsilon House", { timeout: 1_000 });
+    await expect(
+      page.getByRole("button", { name: /insert the named pub/i }),
+    ).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByRole("button", { name: /insert the named pub/i }).click();
+
+  await expect(holeNames).toHaveText([
+    "Delta Inn",
+    "Epsilon House",
+    "Gamma Tavern",
+    "Beta Bar",
+  ]);
+
+  // ---- Remove: through the hole's own menu ----
+  await page.getByRole("button", { name: /manage hole 4 · beta bar/i }).click();
+  await page.getByTestId("remove-hole").click();
+  await expect(holeNames).toHaveText([
+    "Delta Inn",
+    "Epsilon House",
+    "Gamma Tavern",
+  ]);
+
+  // Par 5 on the swapped hole + 4 + 4: the dressing survived every edit
+  // above, which the saved card is the honest proof of.
+  const saveCourse = page.getByRole("button", {
+    name: /save the course · 3 holes/i,
+  });
+  await expect(async () => {
+    await page.getByLabel(/course name/i).fill(`Reordered ${stamp}`);
+    await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await saveCourse.click();
+  await page.waitForURL(/\/courses$/);
+  await expect(page.getByText(`Reordered ${stamp}`)).toBeVisible();
+  await expect(page.getByText("3 holes · par 13")).toBeVisible();
+});
+
 test("pub search returns real venues when a Places key is configured", async ({
   page,
 }) => {
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `search-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   // Probe the route first: without a key the route degrades and this

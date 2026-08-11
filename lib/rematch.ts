@@ -1,7 +1,7 @@
 /**
  * The rematch's name: one step up from the night before.
  *
- * "The Glyn Invitational XXX" hosts XXXI; "Quarterly Cup 2" hosts 3; a name
+ * "The Invitational XXX" hosts XXXI; "Quarterly Cup 2" hosts 3; a name
  * with no number to step gets " II" appended — the second running of the
  * same fixture. Pure string work: the action clamps the result to the
  * rounds.name limit, not this helper.

@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getRoundByCode, getSessionUser } from "@/lib/data/rounds";
 import { MarkersCardView } from "@/components/round/markers-card-view";
 
+export const metadata = { title: "The marker's card" };
+
 export default async function MarkersCardPage({
   params,
   searchParams,

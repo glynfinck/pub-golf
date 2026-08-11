@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CalendarDays, Minus, Plus, X } from "lucide-react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
@@ -20,13 +21,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Masthead } from "@/components/shell/masthead";
+import { MembersOptions } from "@/components/round/members-options";
 import { HouseMark } from "@/components/ui/house-mark";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
 import { useAction } from "@/hooks/use-action";
 import { createRound } from "@/lib/actions/rounds";
 import { templateForHoleCount } from "@/lib/course-templates";
+import type { DayPass } from "@/lib/data/billing";
 import type { MyCourse } from "@/lib/data/courses";
+import {
+  clearParkedDraft,
+  parkDraft,
+  type NewRoundDraft,
+} from "@/lib/new-round-draft";
 import {
   MULLIGAN_STROKES,
   MAX_MULLIGANS,
@@ -72,29 +80,51 @@ function shortDate(date: Date): string {
   });
 }
 
-export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
+export function NewRoundForm({
+  courses,
+  pass,
+  billingOn = false,
+  draft = null,
+}: {
+  courses: MyCourse[];
+  /** The host's live green fee, if one is running. */
+  pass?: DayPass | null;
+  /** No Stripe key, no surface — the maps-key pattern. */
+  billingOn?: boolean;
+  /** A table half set when the host stepped out to pay. */
+  draft?: NewRoundDraft | null;
+}) {
+  const router = useRouter();
   const { run, pending, busy } = useAction();
-  const [name, setName] = useState("The Glyn Invitational XXX");
-  const [holes, setHoles] = useState(9);
-  const [courseId, setCourseId] = useState<string | null>(null);
-  const [reversed, setReversed] = useState(false);
-  const [format, setFormat] =
-    useState<(typeof FORMATS)[number]["id"]>("stroke");
+  const [name, setName] = useState(draft?.name ?? "The Invitational XXX");
+  const [holes, setHoles] = useState(draft?.holes ?? 9);
+  const [courseId, setCourseId] = useState<string | null>(
+    draft?.courseId ?? null,
+  );
+  const [reversed, setReversed] = useState(draft?.reversed ?? false);
+  const [format, setFormat] = useState<(typeof FORMATS)[number]["id"]>(
+    FORMATS.find((option) => option.id === draft?.format)?.id ?? "stroke",
+  );
   const [toggles, setToggles] = useState<Record<string, boolean>>({
     hazards: true,
     timer: true,
     softSub: true,
     // Off by default: most rounds are between people who'd rather not know.
     handicaps: false,
+    ...draft?.toggles,
   });
-  const [minutesPerPub, setMinutesPerPub] = useState(20);
+  const [minutesPerPub, setMinutesPerPub] = useState(draft?.minutesPerPub ?? 20);
   /** null = unscheduled: the host tees off when the group is stood there. */
-  const [teeDate, setTeeDate] = useState<Date | null>(null);
-  const [teeMinutes, setTeeMinutes] = useState(19 * 60);
+  const [teeDate, setTeeDate] = useState<Date | null>(
+    draft?.teeDate ? new Date(draft.teeDate) : null,
+  );
+  const [teeMinutes, setTeeMinutes] = useState(draft?.teeMinutes ?? 19 * 60);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [mulligans, setMulligans] = useState(0);
-  const [rules, setRules] = useState<PenaltyRow[]>(() =>
-    PENALTY_PRESETS.map((preset) => ({ ...preset, on: true, custom: false })),
+  const [mulligans, setMulligans] = useState(draft?.mulligans ?? 0);
+  const [rules, setRules] = useState<PenaltyRow[]>(
+    () =>
+      draft?.rules ??
+      PENALTY_PRESETS.map((preset) => ({ ...preset, on: true, custom: false })),
   );
 
   const selectedCourse = courses.find((course) => course.id === courseId);
@@ -156,7 +186,27 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
     );
   }
 
+  /** Park the table before the trip to Stripe's page, so the host comes back
+   * to the round they were setting rather than to a blank form. */
+  function park() {
+    parkDraft({
+      name,
+      holes,
+      courseId,
+      reversed,
+      format,
+      toggles,
+      minutesPerPub,
+      teeDate: teeDate ? teeDate.toISOString() : null,
+      teeMinutes,
+      mulligans,
+      rules,
+    });
+  }
+
   function submit() {
+    // The table is set; nothing is left to come back to.
+    clearParkedDraft();
     run(async () => {
       // The advertised first tee, assembled only at submit. Advisory: it is
       // printed on the lobby and the invite, and locks nothing.
@@ -277,6 +327,57 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
                 ))}
               </div>
             </div>
+
+            {/* The first tee. An empty book is never a dead end — the
+                Invitational above is a real card and always has been — but a
+                host who wants their own local round has nothing here yet, and
+                a blank scorecard is a better answer than silence. The table is
+                parked on the way out, so they come back to the round they were
+                setting rather than to a blank form. */}
+            {courses.length === 0 ? (
+              <div className="engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow text-fairway">Your own card</span>
+                  <span className="rounded-md border border-border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
+                    Nothing in the book
+                  </span>
+                </div>
+                <div aria-hidden className="flex flex-col">
+                  {[1, 2, 3].map((number) => (
+                    <div
+                      key={number}
+                      className="flex items-baseline gap-2 border-b border-dotted border-border py-1 last:border-b-0"
+                    >
+                      <span className="tabular font-mono text-[11px] text-marker opacity-60">
+                        {number}
+                      </span>
+                      <span className="leader flex-1" />
+                      <span className="font-mono text-[10px] text-muted-foreground opacity-60">
+                        par —
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Play the Invitational above, or make a card on your own local
+                  pubs — it keeps for next time.
+                </p>
+                <Button
+                  variant="outline"
+                  size="compact"
+                  className="h-11 w-full"
+                  onClick={() => {
+                    park();
+                    router.push("/courses/new");
+                  }}
+                >
+                  Plot a course
+                </Button>
+                <p className="text-center text-[10px] text-muted-foreground">
+                  We&apos;ll keep this round set up while you do.
+                </p>
+              </div>
+            ) : null}
 
             {selectedCourse ? (
               <p className="text-xs text-muted-foreground">
@@ -641,6 +742,13 @@ export function NewRoundForm({ courses }: { courses: MyCourse[] }) {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      {/* The covenant's first of two moments money may speak. Below the
+          round's own options, above the one primary action, and gone
+          entirely when the till isn't plugged in. */}
+      {billingOn || pass ? (
+        <MembersOptions pass={pass ?? null} onLeave={park} />
+      ) : null}
 
       <Button
         onClick={submit}

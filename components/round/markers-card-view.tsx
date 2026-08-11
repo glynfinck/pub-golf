@@ -8,6 +8,7 @@ import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { HoleStrip } from "@/components/round/hole-strip";
 import { MarkerPlayerSheet } from "@/components/round/marker-player-sheet";
 import { RescueKnock } from "@/components/round/rescue-knock";
+import { SwapPubButton } from "@/components/round/swap-pub-sheet";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { useLiveRound } from "@/components/round/use-live-round";
 import { RoundBar } from "@/components/round/round-bar";
@@ -128,12 +129,24 @@ export function MarkersCardView({
 
       <RescueKnock code={round.code} players={players} me={me} />
 
-      <div className="text-sm">
-        <span className="font-serif italic">{hole.venue_name}</span>
-        <span className="text-muted-foreground">
-          {" "}
-          · par {hole.par} · {hole.drink}
-        </span>
+      {/* The venue is the one thing on this line that can still change: the
+          pub can turn out to be shut on the night, or have been wrong on the
+          card all along. Par and the drink are the round's own snapshot and
+          are edited nowhere. */}
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <div className="min-w-0">
+          <span className="font-serif italic">{hole.venue_name}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            · par {hole.par} · {hole.drink}
+          </span>
+        </div>
+        <SwapPubButton
+          code={round.code}
+          hole={hole}
+          label="Change pub"
+          className="eyebrow flex min-h-11 shrink-0 items-center text-fairway"
+        />
       </div>
 
       {roaming && round.status !== "finished" ? (

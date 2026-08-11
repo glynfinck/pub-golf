@@ -10,6 +10,8 @@ import {
   estimatedFinishMs,
   formatClock,
   formatDuration,
+  formatTimeLeft,
+  greeting,
   isUrgent,
   remainingSeconds,
   ringFraction,
@@ -147,6 +149,26 @@ describe("the 19th-hole estimate", () => {
   });
 });
 
+describe("formatTimeLeft", () => {
+  it("has no figure before the first client tick", () => {
+    // The pass renders "Covered" on its own until the clock has ticked —
+    // never a flash of "24h left" baked into the server's HTML.
+    expect(formatTimeLeft(null)).toBeNull();
+  });
+
+  it("is coarse on purpose — a day pass is not a shot clock", () => {
+    expect(formatTimeLeft(16 * 3_600_000)).toBe("16h left");
+    expect(formatTimeLeft(3_600_000 + 59 * 60_000)).toBe("1h left");
+    expect(formatTimeLeft(48 * 60_000)).toBe("48m left");
+  });
+
+  it("says minutes rather than counting the last one down", () => {
+    expect(formatTimeLeft(59_000)).toBe("minutes left");
+    expect(formatTimeLeft(0)).toBe("minutes left");
+    expect(formatTimeLeft(-5_000)).toBe("minutes left");
+  });
+});
+
 describe("formatDuration", () => {
   it("reads as hours and minutes, dropping what is zero", () => {
     expect(formatDuration(235)).toBe("3h 55m");
@@ -173,5 +195,34 @@ describe("clockTime12", () => {
 
   it("wraps a finish past midnight — its own warning", () => {
     expect(clockTime12(24 * 60 + 40)).toBe("12:40 AM");
+  });
+});
+
+describe("greeting", () => {
+  it("names the part of the day the clubhouse is actually in", () => {
+    expect(greeting(9)).toBe("Morning");
+    expect(greeting(14)).toBe("Afternoon");
+    expect(greeting(21)).toBe("Evening");
+  });
+
+  it("gives the small hours their own line — the app's best case", () => {
+    expect(greeting(1)).toBe("Still going");
+    expect(greeting(4)).toBe("Still going");
+  });
+
+  it("turns over on the boundaries, not near them", () => {
+    expect(greeting(4)).toBe("Still going");
+    expect(greeting(5)).toBe("Morning");
+    expect(greeting(11)).toBe("Morning");
+    expect(greeting(12)).toBe("Afternoon");
+    expect(greeting(17)).toBe("Afternoon");
+    expect(greeting(18)).toBe("Evening");
+    expect(greeting(23)).toBe("Evening");
+  });
+
+  it("wraps rather than falling off either end", () => {
+    expect(greeting(0)).toBe("Still going");
+    expect(greeting(24)).toBe("Still going");
+    expect(greeting(-1)).toBe("Evening");
   });
 });

@@ -10,7 +10,8 @@ import {
   MAX_HANDICAP,
 } from "@/lib/rules";
 import { rematchName } from "@/lib/rematch";
-import { readRuleset } from "@/lib/ruleset";
+import { legInto, legsAfterSwap, type HoleLeg } from "@/lib/round-holes";
+import { readRuleset, stampMembers } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
 import { deadlineFrom } from "@/lib/time";
 import type { Json } from "@/types/database";
@@ -240,24 +241,57 @@ export async function strikeSeat(
   return {};
 }
 
-/** Host or caddy flips the lobby live and opens hole 1's timer. */
+/**
+ * Host or caddy flips the lobby live and opens hole 1's timer — and, for a
+ * host inside a green fee's window, stamps the round covered.
+ *
+ * Tee-off is the one moment the members' flag is decided, and it is decided
+ * once. A pass that runs out, or is refunded, at hole 4 cannot take the
+ * league off a table that is already playing; a pass bought at hole 4 cannot
+ * add it either. That is the whole point of putting the grant in the ruleset
+ * snapshot rather than reading entitlements at render time.
+ *
+ * The check is a definer function rather than a read of `entitlements`
+ * because the caddy tees rounds off too, and a day pass is visible to its
+ * buyer alone.
+ */
 export async function startRound(code: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { round } = await getOfficiatedRound(supabase, code);
 
   const ruleset = readRuleset(round.ruleset);
-  const { error } = await supabase
+  const teeOff = {
+    status: "live",
+    current_hole: 1,
+    hole_phase: "live",
+    tee_off_at: new Date().toISOString(),
+    hole_deadline_at: holeDeadline(ruleset),
+    walk_deadline_at: null,
+  };
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: round.host,
+  });
+  const stamping = covered === true && !ruleset.members;
+
+  let { error } = await supabase
     .from("rounds")
-    .update({
-      status: "live",
-      current_hole: 1,
-      hole_phase: "live",
-      tee_off_at: new Date().toISOString(),
-      hole_deadline_at: holeDeadline(ruleset),
-      walk_deadline_at: null,
-    })
+    .update(
+      stamping ? { ...teeOff, ruleset: stampMembers(round.ruleset) } : teeOff,
+    )
     .eq("id", round.id);
+
+  // The pass ran out in the moment between asking and writing, and the guard
+  // refused the stamp. Tee the round off anyway: a green fee is allowed to
+  // buy nothing, and is never allowed to stop a group getting started.
+  if (error && stamping) {
+    ({ error } = await supabase
+      .from("rounds")
+      .update(teeOff)
+      .eq("id", round.id));
+  }
   if (error) return { error: error.message };
+
   revalidatePath(`/round/${code}`);
   return {};
 }
@@ -562,6 +596,122 @@ export async function reopenHole(
   redirect(`/round/${code}/play`);
 }
 
+const swapPubSchema = z.object({
+  /** The Places cache row, when the pub came out of a search. Null is a pub
+   * named by hand, which is how a locked door gets answered at 9pm. */
+  venue_id: z.string().uuid().nullable(),
+  venue_name: z.string().trim().min(1).max(120),
+});
+
+export type SwapPubInput = z.infer<typeof swapPubSchema>;
+
+/**
+ * The pub on a hole changes hands mid-round — the shutters are down, the
+ * kitchen has stopped serving, the place turns out to be a members' club.
+ *
+ * Only the venue moves. Par, the drink, the hazard and the hole's local
+ * rules belong to the hole, not to the pub, and every score and penalty
+ * already written keys on the hole *number*, so the card is untouched: the
+ * round carries on with the same standings at a different address.
+ *
+ * Coordinates are read from the venues cache here rather than taken from
+ * the caller — the walk is the round's own measurement, not something a
+ * phone gets to assert.
+ */
+export async function swapHolePub(
+  code: string,
+  holeNumber: number,
+  pub: SwapPubInput,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { round } = await getOfficiatedRound(supabase, code);
+
+  const parsed = swapPubSchema.safeParse(pub);
+  if (!parsed.success) return { error: "That pub needs a name" };
+
+  const { data: holes } = await supabase
+    .from("holes")
+    .select("id, number, walk_minutes_to_next, venue:venues(lat, lng)")
+    .eq("round_id", round.id)
+    .order("number");
+  const target = holes?.find((hole) => hole.number === holeNumber);
+  if (!holes || !target) return { error: "That hole is not on this course" };
+
+  let coords: { lat: number; lng: number } | null = null;
+  if (parsed.data.venue_id) {
+    const { data: venue } = await supabase
+      .from("venues")
+      .select("lat, lng")
+      .eq("id", parsed.data.venue_id)
+      .maybeSingle();
+    if (!venue) return { error: "That pub is not in the book" };
+    coords =
+      venue.lat != null && venue.lng != null
+        ? { lat: venue.lat, lng: venue.lng }
+        : null;
+  }
+
+  const { error } = await supabase
+    .from("holes")
+    .update({
+      venue_id: parsed.data.venue_id,
+      venue_name: parsed.data.venue_name,
+    })
+    .eq("id", target.id);
+  if (error) return { error: error.message };
+
+  // The walk in and the walk out were both measured to a pub that is no
+  // longer there. Re-measure what can be measured; null the rest.
+  const legs = legsAfterSwap(
+    holes.map(
+      (hole): HoleLeg => ({
+        number: hole.number,
+        coords:
+          hole.venue?.lat != null && hole.venue.lng != null
+            ? { lat: hole.venue.lat, lng: hole.venue.lng }
+            : null,
+        walk_minutes_to_next: hole.walk_minutes_to_next,
+      }),
+    ),
+    holeNumber,
+    coords,
+  );
+  for (const leg of legs) {
+    if (
+      leg.walk_minutes_to_next ===
+      holes.find((hole) => hole.number === leg.number)?.walk_minutes_to_next
+    )
+      continue;
+    await supabase
+      .from("holes")
+      .update({ walk_minutes_to_next: leg.walk_minutes_to_next })
+      .eq("round_id", round.id)
+      .eq("number", leg.number);
+  }
+
+  // A group already walking to this hole is walking somewhere else now, and
+  // the countdown on every phone is measured to the old door. Re-arm it from
+  // the new leg — or drop it to "when you get there", which is what a walk
+  // with nothing to measure has always said.
+  if (
+    round.status === "live" &&
+    round.hole_phase === "walking" &&
+    round.current_hole === holeNumber
+  ) {
+    await supabase
+      .from("rounds")
+      .update({
+        walk_deadline_at: deadlineFrom(Date.now(), legInto(legs, holeNumber)),
+      })
+      .eq("id", round.id);
+  }
+
+  revalidatePath(`/round/${code}`);
+  revalidatePath(`/round/${code}/play`);
+  revalidatePath(`/round/${code}/card`);
+  return {};
+}
+
 /** Re-arm the current hole's shared countdown (caddy's discretion —
  * "Guinness takes as long as it takes"). */
 export async function resetHoleTimer(code: string): Promise<ActionResult> {
@@ -663,6 +813,25 @@ export async function removeOwnPenalty(
   if (error) return { error: error.message };
   revalidatePath(`/round/${code}`);
   return {};
+}
+
+/**
+ * The recap left the app for a group chat — phase one's fourth number.
+ *
+ * The other three moments in the funnel are already facts in the schema
+ * (a round's created_at, a seat's joined_at, a card's finished_at); a share
+ * is a tap on a phone and reaches Postgres only if something sends it. The
+ * whole table shares the card, guests included, so the count goes through
+ * `record_recap_share` — a definer function that admits members — rather
+ * than an update a guest could never make.
+ *
+ * Deliberately returns nothing and swallows its errors: the card has already
+ * gone by the time this runs, and a counter that failed is not something to
+ * put on screen.
+ */
+export async function recordRecapShare(code: string): Promise<void> {
+  const supabase = await createClient();
+  await supabase.rpc("record_recap_share", { join_code: code.toUpperCase() });
 }
 
 /** Marker's card: an official sets any player's swigs on any hole. RLS
@@ -775,6 +944,9 @@ export async function rehostRound(code: string): Promise<ActionResult> {
 
   // Through readRuleset, never a re-cast: the copy is the old snapshot
   // normalised, with the one advisory field a new night cannot inherit.
+  // `members` is deliberately not in the list either — a rematch is a new
+  // round and is covered only if a live pass is standing when it tees off.
+  // The INSERT half of the members guard would refuse it here regardless.
   const old = readRuleset(round.ruleset);
   const { data: next, error } = await supabase
     .from("rounds")

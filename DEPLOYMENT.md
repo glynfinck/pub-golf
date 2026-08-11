@@ -112,6 +112,10 @@ in local dev:
 | Site URL | `https://pub-golf.glyn.dev` | Where OAuth returns to |
 | Redirect URLs | `https://pub-golf.glyn.dev/**` | An unlisted origin is not rejected — Supabase falls back to Site URL and drops the path, which reads as an app bug |
 
+Neither of the last two rows changes if you take the custom auth domain in
+step 3. They are the *app's* URLs — where OAuth returns to — and the app does
+not move; only the auth server's own origin does.
+
 > Do **not** run `supabase config push`. It would overwrite the production
 > `site_url` with `http://localhost:3105` from `config.toml`, which is
 > local-first by design — and it would re-enable the email provider, which
@@ -142,12 +146,13 @@ these point at Supabase:
 | Environment | URI |
 | --- | --- |
 | Production | `https://quncylgcwfiqsjugnvtv.supabase.co/auth/v1/callback` |
+| Production, custom domain | `https://auth.pub-golf.glyn.dev/auth/v1/callback` — **as well as** the row above, not instead of it (see "The custom auth domain") |
 | Preview | `https://xssmjzinaghxjncoezez.supabase.co/auth/v1/callback` |
 | Local dev | `http://127.0.0.1:54331/auth/v1/callback` |
 
-One client serves all three, so there is one secret in circulation. The branch
-needs its own entry because it runs its own auth server — production's setup
-does not carry over.
+One client serves all of them, so there is one secret in circulation. The
+branch needs its own entry because it runs its own auth server — production's
+setup does not carry over.
 
 Where the credentials go, per environment:
 
@@ -164,8 +169,186 @@ Where the credentials go, per environment:
 - **Local dev** — `.env.local`, same two names (`supabase start` reads them
   through `config.toml`). Local also needs `skip_nonce_check`, already set.
 
-While the consent screen is in *Testing*, only accounts on its test-user list
-can sign in — publish it before letting anyone else host a round.
+#### Consent screen branding
+
+Google renders the sign-in consent screen from the Cloud project's
+[**Branding**](https://console.cloud.google.com/auth/branding) page — nothing
+in this repo reaches it. Leave it unset and Google falls back to the OAuth
+client's domain, which is *Supabase's*, because the authorized redirect URI
+points there. The first screen a host ever sees then introduces the app as
+`quncylgcwfiqsjugnvtv.supabase.co`.
+
+| Field | Value |
+| --- | --- |
+| App name | `Pub Golf` |
+| User support email | `glynfinck@gmail.com` |
+| App logo | `public/brand/icon-512.png` |
+| Application home page | `https://pub-golf.glyn.dev` |
+| Privacy policy | `https://pub-golf.glyn.dev/legal/privacy` |
+| Terms of service | `https://pub-golf.glyn.dev/legal/terms` |
+| Authorized domain | `glyn.dev` |
+
+The **logo** is the only field that queues: it triggers Google's brand
+verification, a few business days. Everything else applies immediately, and
+none of it blocks publishing — set the rest now if you want a clean screen
+this week.
+
+Brand verification audits the home page itself, and it has taken several
+passes. Worth reading in order, because each pass failed on a different thing
+and the fixes are all still load-bearing. The lesson underneath them: read
+Google's [quick reference guides](https://support.google.com/cloud/topic/13841839)
+rather than the one-line finding — the findings are summaries, and the
+remediation text under each one says what is actually being checked.
+
+1. **`/` used to 307 a signed-out visitor to `/signin`.** The name, the
+   purpose and the privacy link were nowhere the reviewer looked. Fixed by
+   answering signed out at the URL the consent screen advertises.
+2. **The sign-in screen with a paragraph bolted on top still "does not
+   explain the purpose of your app", and its app name "does not match".** A
+   page whose whole visual argument is one Google button reads as a door, not
+   a description. Fixed by `components/landing.tsx`, which `/` renders for a
+   signed-out visitor: `APP_NAME` as the `<h1>` spelled exactly as the consent
+   screen spells it, what the app is in the first paragraph in words a
+   stranger already knows, how a round works, and Privacy/Terms in the footer.
+   `/signin` deliberately does *not* render it — it is the lean one-tap screen
+   (`app/signin/page.tsx`) for people who know what they came for, and since
+   the redesign it carries no copy explaining the product at all: the mark, a
+   heading, the one line it derives from `next`, the button, and a link up to
+   this page for anyone who does want the explanation.
+3. **Domain ownership** — see below. This one is not a page-copy problem, and
+   no amount of rewriting the home page will clear it.
+4. **Both content findings survived a page that plainly answered them**, which
+   is what sent us to the guides. Two things were actually wrong, and neither
+   is what the findings' wording suggests:
+
+   * *"Does not explain the purpose of your app"* is not only about the
+     product. The [App Homepage](https://support.google.com/cloud/answer/13807376)
+     guide asks the page to "explain with transparency the purpose for which
+     your app requests user data", and its remediation says to explain the
+     purpose "**and how it uses Google user data you are requesting**". The
+     landing page described the app beautifully and never once said what it
+     asks Google for. It now carries a "Why Pub Golf asks for a Google
+     sign-in" section naming all three — name, account id, email — what each
+     is for, and that nothing else is requested. Those claims are the same
+     claims `/legal/privacy` makes; change one page and change the other, or
+     they start lying in different directions.
+   * *"The app name does not match"* was a CSS transform. The masthead is set
+     in caps, so the page **read** `PUB GOLF` while the consent screen says
+     `Pub Golf` — the DOM had the right string in the title, the `<h1>` and
+     the prose, and the rendered form is evidently what gets compared. The
+     landing `<h1>` is no longer `uppercase`. The mark's voice has not moved:
+     it lives on the sign-in masthead, which is what
+     `scripts/brand-lockups.mjs` reads.
+
+#### Proving you own the home page
+
+> "The website of your home page URL is not registered to you."
+
+Google means Search Console, and it means **the same Google account that owns
+the Cloud project** — verifying from a second account you also control does
+not count, and is the usual reason this finding survives a re-submission.
+
+Prefer the DNS route, because one property covers both things Google checks:
+the home page URL *and* the `glyn.dev` authorized domain on the consent screen.
+
+1. [Search Console](https://search.google.com/search-console) → add property →
+   **Domain** → `glyn.dev`.
+2. Copy the TXT record it prints. `glyn.dev` is on Vercel nameservers, so it
+   goes in Vercel → Domains → `glyn.dev` → DNS: type `TXT`, name `@`, value
+   `google-site-verification=…`.
+3. Wait for propagation (minutes, occasionally an hour), then hit **Verify**.
+
+If you would rather not touch DNS, the fallback verifies the app's own
+subdomain only — you would still need step 1 above for the authorized domain:
+
+1. Search Console → add property → **URL prefix** →
+   `https://pub-golf.glyn.dev/` → **HTML tag**.
+2. Put the token in `GOOGLE_SITE_VERIFICATION` in Vercel's Production
+   environment. It is read at build time, so **redeploy** — the tag is not
+   there until you do. `curl -s https://pub-golf.glyn.dev | grep
+   google-site-verification` is the check.
+3. Verify.
+
+Only once Search Console shows the property verified is it worth answering the
+branding panel — the button to press is *"I have fixed the issues"* /
+*"Request re-verification"*. Re-submitting against an unverified domain simply
+returns the same three findings, including the two the home page has already
+answered.
+
+#### Publishing it
+
+**While the consent screen is in *Testing*, only accounts on its test-user
+list can sign in.** Not "sign in with a warning" — every other Google account
+gets an error instead of a round, which makes hosting impossible for anyone
+you hand the app to. This is the single setting most likely to be mistaken
+for an app bug.
+
+Publishing is cheap here and does **not** queue behind Google's full
+verification review: the app asks only for `openid`, `email` and `profile`,
+all non-sensitive. It does ask for the privacy policy and terms URLs above,
+which is why they exist.
+
+The proof that it worked is not the dashboard saying "In production" — it is
+**a Google account that is not on the test-user list hosting a round.** Do
+that once, from a browser you are not already signed into.
+
+#### The custom auth domain
+
+Optional, and the reason to bother: even with branding set, the browser
+visibly bounces through `quncylgcwfiqsjugnvtv.supabase.co` on the way to
+Google and back. Supabase's [Custom Domains](https://supabase.com/docs/guides/platform/custom-domains)
+add-on replaces that origin with `auth.pub-golf.glyn.dev`. It is a paid
+add-on on a paid plan — around $10/month per project, confirmed in the
+dashboard's add-on panel — and the org is already on Pro.
+
+**Production only.** Staging sits behind Vercel Authentication and only you
+ever sign into it, so a second $10/month buys a screen nobody else can reach.
+
+`glyn.dev` is already on Vercel nameservers, so the CNAME is one record added
+in Vercel → Domains. The rest is the dashboard's add-on panel (there is a
+`supabase domains` CLI too; the panel walks the verification steps in order).
+
+Three things it touches beyond itself:
+
+1. **Google needs the new callback URI added alongside the old one** — the
+   row in the table above. Supabase keeps serving the default origin, and
+   removing the old entry breaks the flow you have not switched yet.
+2. **`NEXT_PUBLIC_SUPABASE_URL` changes** in Vercel's Production environment
+   (see step 4). Site URL and Redirect URLs do **not** — those are the app's
+   own URLs, and the app has not moved. Saving the variable changes nothing
+   on its own: `NEXT_PUBLIC_*` is inlined into the bundle at build time, so
+   the switch lands on the next deploy and not a moment before.
+3. **Everyone is signed out once, unless you pin the cookie name.** This is
+   not a guess. supabase-js derives the auth cookie from the URL's first
+   hostname label:
+
+   ```js
+   // @supabase/supabase-js/src/SupabaseClient.ts
+   const defaultStorageKey = `sb-${baseUrl.hostname.split('.')[0]}-auth-token`
+   ```
+
+   So `sb-quncylgcwfiqsjugnvtv-auth-token` becomes `sb-auth-auth-token`, and
+   every session already in a browser is orphaned by the rename. For a host
+   that is one Google tap. **For a guest it is the seat itself** — an
+   anonymous session is the only thing holding their card — so a live round
+   would empty into `/round/CODE/rescue` mid-play.
+
+   The fix is to keep the old name explicitly. Every client takes
+   `cookieOptions: { name: "sb-quncylgcwfiqsjugnvtv-auth-token" }`, and
+   `@supabase/ssr` maps that straight onto `storageKey`. There are **three**
+   to change, not two — `lib/supabase/client.ts`, `lib/supabase/server.ts`
+   and `lib/supabase/proxy.ts`, which is its own `createServerClient` and the
+   one easiest to forget, since missing it means the middleware refreshes a
+   cookie nothing else reads.
+
+   Set `cookieOptions.name` rather than `auth.storageKey`: `@supabase/ssr`
+   spreads those two in opposite orders in its browser and server factories,
+   so `auth.storageKey` wins on the server while `cookieOptions.name` wins in
+   the browser. Configure the wrong one and the halves of the app disagree
+   about which cookie holds the session.
+
+   Ship that pin **before** the origin changes, not with it. Without the pin,
+   do the switch when nothing is live on the board.
 
 ### 4. Vercel project
 
@@ -181,10 +364,11 @@ Production:
 
 | Variable | Value |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://quncylgcwfiqsjugnvtv.supabase.co` — becomes `https://auth.pub-golf.glyn.dev` once the custom domain in step 3 is active, and that swap is what signs everyone out if the cookie name is not pinned first |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | that project's publishable key (`sb_publishable_…`) |
 | `NEXT_PUBLIC_SITE_URL` | `https://pub-golf.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | Server-only. **Never** `NEXT_PUBLIC`. Application restriction must be *None* or *IP addresses* — a website restriction blocks server-side calls |
+| `GITHUB_ISSUE_TOKEN` | Server-only. Fine-grained PAT, **Issues: read and write on `glynfinck/pub-golf` alone**, nothing else — the app can only ever create an issue with it. Unset means reports are still taken and simply stay on the `bug_reports` table |
 
 Preview — set for the **whole Preview environment**, not scoped to the
 `preview` branch. Branch-scoped values do take precedence, but a silent
@@ -200,14 +384,52 @@ throwaway database are a feature.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | the **branch's** publishable key |
 | `NEXT_PUBLIC_SITE_URL` | `https://pub-golf-preview.glyn.dev` |
 | `GOOGLE_PLACES_API_KEY` | same key as production |
+| `GITHUB_ISSUE_TOKEN` | Same token as production, so the GitHub half can actually be exercised on staging. Safe because it is not the same *issue*: `VERCEL_ENV` is `preview` there, so `stageTag` titles it `[preview] …` and opens the body with "Not production — safe to close or delete". Search `is:issue "[preview]"` to sweep them up |
 
 `NEXT_PUBLIC_SITE_URL` is the quiet one: `lib/config.ts` **defaults it to
 `https://pub-golf.glyn.dev`**, so leaving it unset on preview does not fail —
 it makes every staging page advertise production URLs for `metadataBase` and
 its Open Graph images.
 
-`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` are
-optional placeholders; no code reads either one yet.
+The caddy's credential is the one variable with a **do-nothing** option.
+`lib/caddy/credentials.ts` tries three doors in order: `AI_GATEWAY_API_KEY`
+(Vercel's AI Gateway, an explicit choice, so it wins), then
+`VERCEL_OIDC_TOKEN`, then `ANTHROPIC_API_KEY` straight to Anthropic. Setting
+the gateway key buys spend limits and a usage log rather than capability:
+both doors carry `output_config` and `cache_control`, which are respectively
+the rule against inventing a pub and the entire cost model. Set none of the
+three and the caddy's group is simply not on the drafting table — absence,
+not an apology, exactly as an absent maps key removes the map. The token is
+read **per request, never at module load**: an OIDC token rotates, and one
+captured at cold start goes stale under the deploy.
+
+**The OIDC door is not free of setup, despite appearances.** Vercel's system
+variable reference lists `VERCEL_OIDC_TOKEN` as present *when OIDC Federation
+is enabled*, which is off until somebody turns on Secure Backend Access in
+Project Settings, and documents it as a build-time variable. So treat it as
+the convenience it is and not as the plan: **`AI_GATEWAY_API_KEY` is the door
+to actually configure**, on Preview as well as Production. Create one at
+Vercel → AI Gateway → API keys.
+
+Preview needs one more thing before the caddy appears at all, and it is not a
+key: **a green fee to hold.** The group renders for a signed-in host when
+there is a model credential *and* either the till is open
+(`STRIPE_SECRET_KEY`) or that host already holds a live day pass. Staging
+usually has no Stripe key, so the quickest way to see the caddy on a preview
+deploy is to insert an `entitlements` row for your own user on the branch
+project — `kind` `green_fee`, `round_id` null, `expires_at` in the future —
+which is exactly what a purchase would have written. No payment provider
+required, and it exercises the same `hasPass` path a real buyer takes.
+
+`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` plus `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`
+power the course builder's map sheet — the one map ID holds the cream
+style in its light slot and Midnight in its dark slot, with the map's
+colorScheme selecting the variant (the legacy `_CREAM`/`_MIDNIGHT` names
+are still read as fallbacks). Both are optional: without the key the
+builder stays list-only, and without the map ID the sheet falls back to
+Google's stock styling. The browser key is **not** the server's Places
+key — it is referrer-restricted to the app's domains, where the server
+key must not be.
 
 ### 5. Domains
 
@@ -324,72 +546,11 @@ it in both databases. It must be **1** in the branch project and **0** in
 production. Both halves are needed — the first alone does not rule out a dual
 write.
 
-## The preview environment
-
-**pub-golf-preview.glyn.dev** is a full staging copy: the `preview` git branch
-deploys there, against its own database.
-
-| Piece | Value |
-| --- | --- |
-| Git branch | `preview` |
-| Vercel | Preview deploy, aliased to `pub-golf-preview.glyn.dev` |
-| Supabase branch | `preview` → its own project `xssmjzinaghxjncoezez` |
-| Supabase URL | `https://xssmjzinaghxjncoezez.supabase.co` |
-
-The Supabase branch is a real separate project, created from
-`supabase/migrations` with **no production data**, so anything you do on
-preview — rounds, guests, claimed cards — is invisible to production and safe
-to throw away.
-
-Set Vercel's **Preview** environment variables to point at it, not at
-production:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=https://xssmjzinaghxjncoezez.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<the branch's publishable key>
-```
-
-Getting these wrong is the failure mode worth guarding against: preview
-builds silently pointing at the production database, writing real rounds.
-
-### Google sign-in on preview needs two extra things
-
-The branch has its own auth server, so production's setup does not carry it:
-
-1. **Google Cloud** → add `https://xssmjzinaghxjncoezez.supabase.co/auth/v1/callback`
-   to the OAuth client's authorized redirect URIs, alongside production's.
-2. **The branch's auth settings** → enable the Google provider with the same
-   client ID/secret, turn on anonymous sign-ins and manual linking, and add
-   `https://pub-golf-preview.glyn.dev/**` to the redirect allow list. Miss the
-   last one and you get the silent `/?code=…` bounce described in step 2.
-
-### Two things to know
-
-**Only you can open the preview URL.** Vercel Authentication is on with
-`all_except_custom_domains`, and that exemption covers the *production*
-custom domain only — `pub-golf.glyn.dev` is public, `pub-golf-preview.glyn.dev`
-still redirects to a Vercel login. Fine while you are the only one looking;
-to hand the link to someone without a Vercel account, either switch
-Deployment Protection off for previews (makes staging fully public) or turn
-on password protection and share the password.
-
-**CI does not gate the preview deploy.** `verify` runs on `preview` pushes,
-but Vercel's git integration deploys the branch immediately either way — a
-staging URL is not worth blocking on a test run. Only `main` has the ordered
-verify → migrate → deploy path.
-
-The Supabase branch is currently non-persistent, meaning it is tied to the
-`preview` git branch and is torn down with it. Mark it persistent in the
-dashboard if you want it to outlive the branch.
-
 ## Day-to-day
 
 Push to `main` and it goes to production; merge to `preview` to stage
 something first. Vercel builds the app, Supabase applies the migrations,
 neither waits for the other.
-
-To stage something first, merge it to `preview` and look at
-pub-golf-preview.glyn.dev before it goes near `main`.
 
 Rolling back app code is a Vercel instant rollback to the previous
 deployment. Rolling back a migration is a new forward migration — never edit
