@@ -6,6 +6,7 @@ import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
 import {
   CADDY_BUDGET_NOTE,
   caddyBudgetMicroPence,
+  conversationCapMicroPence,
   withinBudget,
 } from "@/lib/caddy/budget";
 import {
@@ -60,6 +61,13 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 export interface CaddyResult {
+  /**
+   * This refusal is "you already have what you paid for", not "something went
+   * wrong". The drafting table shows these as a door to the course the host
+   * has rather than as an error toast — a dead end with no way on is the worst
+   * possible way to learn what a fee bought.
+   */
+  spent?: boolean;
   sessionId?: string;
   course?: PlannedCourse;
   /** Which holes moved on a tweak, so the screen can hold the rest still. */
@@ -289,7 +297,7 @@ export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
  * free: the refusal happens before anything has been asked of the model.
  */
 export async function openPlan(rawBrief: unknown): Promise<
-  | { error: string }
+  | { error: string; spent?: boolean }
   | {
       supabase: Awaited<ReturnType<typeof createClient>>;
       userId: string;
@@ -316,7 +324,10 @@ export async function openPlan(rawBrief: unknown): Promise<
     const { data: covered } = await supabase.rpc("holds_day_pass", {
       who: user.id,
     });
-    return { error: covered === true ? SPENT_FEE : NEEDS_FEE };
+    return {
+      error: covered === true ? SPENT_FEE : NEEDS_FEE,
+      spent: covered === true,
+    };
   }
 
   const pins = await pinCoords(supabase, [
@@ -410,7 +421,7 @@ export async function askTheCaddy(input: {
   // are not free within an expired one, because then the day boundary buys
   // nothing.
   const { data: covered } = await supabase.rpc("holds_day_pass", { who: user.id });
-  if (covered !== true) return { error: PASS_RAN_OUT };
+  if (covered !== true) return { error: PASS_RAN_OUT, spent: true };
 
   // Cards only. A failed turn is a real row — it carries what the attempt cost
   // — but its `result` is empty, and replaying an empty card into the
@@ -484,6 +495,11 @@ async function spentToday(
  */
 function midConversation(brief: CaddyBrief) {
   return {
+    // One plan's share of the day. `conversationCapMicroPence` has existed and
+    // been tested since the budget was written and was wired to nothing at
+    // all — which stopped being harmless the moment a plan became a loop
+    // costing four times what a single call did.
+    budget: conversationCapMicroPence(),
     pins: { minLegMinutes: brief.stretch },
     search: async (query: string): Promise<CandidateDossier[]> => {
       const key = process.env.GOOGLE_PLACES_API_KEY;
@@ -541,7 +557,7 @@ export async function runTurn(input: {
   // Asked before the call, so a host at the ceiling is told plainly instead of
   // being charged for a turn that Postgres is about to refuse.
   if (!withinBudget(await spentToday(input.supabase, input.userId), caddyBudgetMicroPence())) {
-    return { error: CADDY_BUDGET_NOTE };
+    return { error: CADDY_BUDGET_NOTE, spent: true };
   }
 
   const ask = {
@@ -614,7 +630,7 @@ export async function runTurn(input: {
   const { error } = await record(false, outcome.course);
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
-    if (error.code === "42501") return { error: FULL_SHIFT };
+    if (error.code === "42501") return { error: FULL_SHIFT, spent: true };
     return { error: "The caddy couldn't file that card. Give it another go." };
   }
 

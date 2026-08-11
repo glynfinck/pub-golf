@@ -66,7 +66,10 @@ export async function POST(request: Request) {
   // apologise — there is nothing to narrate yet.
   const opened = await openPlan(brief);
   if ("error" in opened) {
-    return NextResponse.json({ error: opened.error }, { status: 200 });
+    return NextResponse.json(
+      { error: opened.error, spent: opened.spent === true },
+      { status: 200 },
+    );
   }
 
   const encoder = new TextEncoder();
@@ -125,6 +128,7 @@ export async function POST(request: Request) {
           type: "failed",
           error: result.error ?? "The caddy lost the ball. Ask again — this one's free.",
           detail: result.detail,
+          spent: result.spent === true,
         });
       } else {
         say({ type: "card", course: result.course, sessionId: result.sessionId });

@@ -275,13 +275,18 @@ describe("what a fee buys, counted", () => {
   });
 
   it("can afford every course it sells", () => {
-    // The credit ceiling and the money ceiling have to agree: selling three
-    // courses on a budget that funds two is a host refused mid-fee by a
-    // number nobody told them about. A plan is roughly a conversation's cap.
-    const perPlan = conversationCapMicroPence();
-    expect(perPlan * CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(
-      caddyBudgetMicroPence(),
-    );
+    // The credit ceiling and the money ceiling have to agree, or a host is
+    // refused mid-fee by a number nobody told them about — which is exactly
+    // what happened: a looped plan cost most of the day's budget and a fee
+    // that sells three courses delivered one.
+    //
+    // This only means anything because the conversation cap is now *enforced*
+    // (`askCaddyLooped` stops on it). It was dead code when this test was
+    // first written, which made the assertion a relationship between a cap
+    // nothing applied and a budget that did — true arithmetic, false comfort.
+    expect(
+      conversationCapMicroPence() * CADDY_COURSES_PER_FEE,
+    ).toBeLessThanOrEqual(caddyBudgetMicroPence());
   });
 
   it("says how many are left in words, never as a bare digit", () => {

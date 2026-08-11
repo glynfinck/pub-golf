@@ -14,7 +14,13 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
-import { addUsage, NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
+import {
+  addUsage,
+  costMicroPence,
+  NO_USAGE,
+  readUsage,
+  type CaddyUsage,
+} from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { dispatchTool } from "@/lib/caddy/session";
@@ -427,6 +433,9 @@ export async function askCaddyLooped(
   deps: {
     search: (query: string) => Promise<CandidateDossier[]>;
     pins: WalkPins;
+    /** What this one plan may spend, in micropence. The loop stops on it and
+     * hands over the board, exactly as it stops on the clock. */
+    budget: number;
   },
   narrate: (update: { thinking?: string; doing?: string }) => void,
 ): Promise<CaddyOutcome> {
@@ -446,6 +455,19 @@ export async function askCaddyLooped(
       if (outOfLoopTime(turn, Date.now() - startedAt)) {
         console.warn(
           `[caddy] loop stopped on the clock after ${turn} turns with ${board.holes.length} holes`,
+        );
+        break;
+      }
+      // And on the money, which until now nothing enforced. The day's budget
+      // was sized for a single-shot plan at about a fifth of what a loop
+      // costs, so one plan could and did swallow the lot — a host got two
+      // courses out of a fee that sells three, and met a ceiling nobody had
+      // mentioned. A conversation gets its share and no more; what it has
+      // built by then is a real card and goes home as one.
+      const spentSoFar = costMicroPence(usage, call.model);
+      if (turn > 0 && spentSoFar >= deps.budget) {
+        console.warn(
+          `[caddy] loop stopped on budget after ${turn} turns, ${spentSoFar} micropence, ${board.holes.length} holes`,
         );
         break;
       }

@@ -1,4 +1,5 @@
 import { readBrief } from "@/lib/caddy/brief";
+import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { createClient } from "@/lib/supabase/server";
 
@@ -124,6 +125,10 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
 export interface CaddyAllowance {
   /** There is a fee with a course still to plan. */
   canPlan: boolean;
+  /** How many courses the host's live fees still hold between them. Shown,
+   * because "Covered" on a fee with nothing left to give is the app telling a
+   * host they have something they do not. */
+  left: number;
   /** The course a spent fee is holding, so the screen can point at it rather
    * than describe it. Null when nothing is spent, and null on a database that
    * has not caught up. */
@@ -135,7 +140,7 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { canPlan: false, courseId: null };
+  if (!user) return { canPlan: false, left: 0, courseId: null };
 
   const { data: unspent, error } = await supabase.rpc("caddy_unspent_fee", {
     who: user.id,
@@ -143,8 +148,10 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
   // The allowance does not exist on this database yet. Say yes, exactly as
   // `liveFee` does in the same window — the two must agree, or the screen
   // offers a plan the pipeline then refuses.
-  if (error) return { canPlan: true, courseId: null };
-  if (unspent) return { canPlan: true, courseId: null };
+  if (error) return { canPlan: true, left: CADDY_COURSES_PER_FEE, courseId: null };
+
+  const { data: left } = await supabase.rpc("caddy_credits_left", { who: user.id });
+  if (unspent) return { canPlan: true, left: Number(left ?? 0), courseId: null };
 
   // Spent. Find what it is holding, so the answer can be a door rather than a
   // sentence. Read on the caller's own session: RLS makes "theirs" the only
@@ -156,5 +163,5 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return { canPlan: false, courseId: filed?.course_id ?? null };
+  return { canPlan: false, left: 0, courseId: filed?.course_id ?? null };
 }
