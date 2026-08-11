@@ -23,7 +23,7 @@ test("the lobby row holds one height, with the controls in the sheet", async ({
   const stamp = Date.now();
   await signInAs(page.context(), {
     email: `lobby-${stamp}@e2e.local`,
-    name: "Glyn",
+    name: "Wren",
   });
 
   await page.goto("/new");
@@ -55,7 +55,7 @@ test("the lobby row holds one height, with the controls in the sheet", async ({
 
   // ---- The stepper lives in the sheet, its + inside its frame ----
   await clickSettled(page, "lobby-player-row");
-  const raise = page.getByRole("button", { name: /raise glyn's handicap/i });
+  const raise = page.getByRole("button", { name: /raise wren's handicap/i });
   await expect(raise).toBeVisible();
   const frame = raise.locator("xpath=..");
   const plusBox = await raise.boundingBox();

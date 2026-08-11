@@ -1,7 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { signInAs } from "./auth";
-import { clickSettled, expectSettled, gotoSettled } from "./nav";
+import {
+  clickSettled,
+  expectSettled,
+  gotoSettled,
+  holeOutToResults,
+} from "./nav";
 
 /** Walk the group to the next tee: hole-out enters the walking phase,
  * tee-up re-arms the timer and puts every phone back on live play. */
@@ -22,7 +27,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Host signs in and creates the round ----
   const hostContext = await browser.newContext();
-  await signInAs(hostContext, { email: hostEmail, name: "Glyn" });
+  await signInAs(hostContext, { email: hostEmail, name: "Wren" });
   const host = await hostContext.newPage();
   await host.goto("/");
 
@@ -76,8 +81,21 @@ test("a full round: create, join, caddy controls, live scores, results", async (
 
   // ---- Host hands Jamie the caddy's card — same sheet ----
   // The caddy carries no card of their own, so the figure gives way to
-  // the standing on Jamie's line.
-  await host.getByRole("button", { name: /caddy · stays sober/i }).click();
+  // the standing on Jamie's line. The handicap raises above each re-render
+  // this sheet, and a click that lands on the node being swapped out fires
+  // no handler — Playwright saw it land, React never heard it, and the
+  // guest's lobby waited out its budget for a CADDY nobody made. The chip
+  // is a toggle, so the retry must read before it taps: aria-pressed is
+  // the commit's own receipt, and only an unpressed chip gets the click.
+  const caddyChip = host.getByRole("button", { name: /caddy · stays sober/i });
+  await expect(async () => {
+    if ((await caddyChip.getAttribute("aria-pressed")) !== "true") {
+      await caddyChip.click({ timeout: 2_000 });
+    }
+    await expect(caddyChip).toHaveAttribute("aria-pressed", "true", {
+      timeout: 1_000,
+    });
+  }).toPass({ timeout: 15_000 });
   await expect(
     guest.getByTestId("lobby-players").getByText("CADDY"),
   ).toBeVisible();
@@ -97,7 +115,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // Standings live behind the position ribbon — one tap expands the card.
   await guest.getByTestId("position-ribbon").click();
   await expect(
-    guest.getByTestId("standings").getByText("Glyn"),
+    guest.getByTestId("standings").getByText("Wren"),
   ).toBeVisible();
 
   // ---- The masthead: rules one tap away, the way out beside them ----
@@ -126,22 +144,22 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Marker's card: the caddy corrects the host's score on hole 1 ----
   await gotoSettled(guest, `/round/${roundCode}/card`);
   await guest
-    .getByRole("button", { name: /more swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /more swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("swig-count")).toHaveText("4");
 
   // The caddy calls a penalty on the host from the player sheet, then
   // thinks better of it. Both directions are attributed.
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
-  await guest.getByRole("button", { name: /call spill \+1 on Glyn/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
+  await guest.getByRole("button", { name: /call spill \+1 on Wren/i }).click();
   await expect(
-    guest.getByRole("button", { name: /retract spill \+1 from Glyn/i }),
+    guest.getByRole("button", { name: /retract spill \+1 from Wren/i }),
   ).toBeEnabled();
   await guest
-    .getByRole("button", { name: /retract spill \+1 from Glyn/i })
+    .getByRole("button", { name: /retract spill \+1 from Wren/i })
     .click();
   await expect(
-    guest.getByRole("button", { name: /retract spill \+1 from Glyn/i }),
+    guest.getByRole("button", { name: /retract spill \+1 from Wren/i }),
   ).toBeDisabled();
   await guest.keyboard.press("Escape");
   await gotoSettled(guest, `/round/${roundCode}/play`);
@@ -185,23 +203,23 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // The Invitational's third hole carries one; the first carries none. Roam
   // reviews both without moving the round off hole 2.
   await gotoSettled(guest, `/round/${roundCode}/card?hole=3`);
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
   await expect(
     guest.getByRole("button", {
-      name: /call drinking before the pass is complete \+2 on Glyn/i,
+      name: /call drinking before the pass is complete \+2 on Wren/i,
     }),
   ).toBeVisible();
   await guest.keyboard.press("Escape");
 
   await gotoSettled(guest, `/round/${roundCode}/card?hole=1`);
-  await guest.getByRole("button", { name: /open Glyn's card/i }).click();
+  await guest.getByRole("button", { name: /open Wren's card/i }).click();
   await expect(
     guest.getByRole("button", {
-      name: /call drinking before the pass is complete \+2 on Glyn/i,
+      name: /call drinking before the pass is complete \+2 on Wren/i,
     }),
   ).toBeHidden();
   await expect(
-    guest.getByRole("button", { name: /call spill \+1 on Glyn/i }),
+    guest.getByRole("button", { name: /call spill \+1 on Wren/i }),
   ).toBeVisible();
   await guest.keyboard.press("Escape");
 
@@ -210,7 +228,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await expectSettled(guest, "roaming-banner");
   // The caddy edits the record; the round stays on hole 2 for everyone.
   await guest
-    .getByRole("button", { name: /fewer swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /fewer swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("hole-venue")).toHaveText("Pub on the Park");
 
@@ -223,7 +241,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // Restore the host's corrected score before playing out.
   await gotoSettled(guest, `/round/${roundCode}/card`);
   await guest
-    .getByRole("button", { name: /more swigs for Glyn on hole 1/i })
+    .getByRole("button", { name: /more swigs for Wren on hole 1/i })
     .click();
   await expect(host.getByTestId("swig-count")).toHaveText("4");
   await gotoSettled(guest, `/round/${roundCode}/play`);
@@ -231,7 +249,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   // ---- Play the course out: walk, tee up, drink, repeat ----
   for (let hole = 1; hole <= 9; hole += 1) {
     if (hole === 9) {
-      await clickSettled(guest, "hole-out");
+      await holeOutToResults(guest, roundCode);
     } else {
       await holeOutAndTeeUp(guest);
       await expect(guest.getByTestId("hole-venue")).not.toHaveText("", {
@@ -241,7 +259,8 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   }
 
   // ---- The 19th hole: both phones land on results together ----
-  await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
+  // The caddy's own arrival is the hole-out's receipt above; the host's is
+  // the realtime assertion.
   await host.waitForURL(new RegExp(`/round/${roundCode}/results`));
   await expect(host.getByTestId("winner")).toBeVisible();
   await expect(host.getByTestId("final-standings")).toContainText("Jamie");
@@ -254,8 +273,7 @@ test("a full round: create, join, caddy controls, live scores, results", async (
   await clickSettled(guest, "reopen-round");
   await guest.waitForURL(new RegExp(`/round/${roundCode}/play`));
   await host.waitForURL(new RegExp(`/round/${roundCode}/play`));
-  await clickSettled(guest, "hole-out");
-  await guest.waitForURL(new RegExp(`/round/${roundCode}/results`));
+  await holeOutToResults(guest, roundCode);
 
   // ---- The guest claims their card: anonymous → Google-linked ----
   // The consent screen belongs to Google and cannot be driven here, so assert

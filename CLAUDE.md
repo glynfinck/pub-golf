@@ -23,6 +23,23 @@ is this Next version's middleware convention (see the `home` sibling repo).
 - `lib/course-templates.ts` holds the Invitational fixture (the printed
   scorecard); user-built courses live in `courses`/`course_holes` and are
   snapshotted into `holes` at round creation.
+- The builder's map (`components/course/pub-map-sheet.tsx`) is a
+  cloud-styled **Google** vector map on purpose: Google's terms put Places
+  results on a Google basemap only, so the theming lives in one
+  console-authored map ID (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`, riding
+  `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — a browser key, never the server's
+  Places key) that holds a cream style in its light slot and Midnight in
+  its dark slot; `colorScheme` selects the variant, and the house draws
+  its own pins. The style masters are vendored in `docs/map-styles/`
+  (Google's stylesheet JSON, every taxonomy feature pinned so no default —
+  blue in the dark variant — bleeds through); re-import them via Map
+  styles → Create style → JSON if the console copies are ever lost. The
+  legacy `_CREAM`/`_MIDNIGHT` env names are still read as fallbacks. The
+  search route aims every query — viewport bounds when the map framed one,
+  else the player's IP city off Vercel's geo headers, never the data
+  centre's. Request shaping is pure and unit-tested in `lib/pub-search.ts`;
+  with no browser key the builder is list-only and nothing Google reaches
+  the page.
 - The react-hooks lint rules are strict (purity, no setState in effect
   body) — no `Date.now()` in render; `hooks/use-countdown.ts` is the
   sanctioned timer pattern (rAF before setInterval, null-initial state).
@@ -44,13 +61,19 @@ is this Next version's middleware convention (see the `home` sibling repo).
   Regenerate icons with `sharp` and **`.ensureAlpha()`** — Next's ICO
   decoder rejects a non-RGBA PNG, and `sips` writes RGB whenever the source
   has no alpha, which fails the build rather than the file.
+  The manifest's `purpose: "maskable"` plate is the one icon that is
+  generated rather than vendored: `node scripts/brand-maskable.mjs` bleeds
+  the plate's own sampled ink to every edge and sets the squircle at 70% so
+  the glass clears Android's 80% safe circle. Android masks icons into the
+  launcher's shape, so without it every size above is letterboxed.
 - The lockups (glass left, name right) are generated, not drawn:
   `node scripts/brand-lockups.mjs` writes `lockup-*` (transparent and
   `-stock`) and `letterhead-*` (tagline beneath) for both grounds into
   `public/brand/`, compositing the trimmed mark masters with the vendored
   EB Garamond via Satori — the same renderer as `lib/og.tsx`, so the
   letterforms match the OG cards. The wordmark is the sign-in masthead's
-  voice verbatim (serif, uppercase, `tracking-[0.08em]`, foreground ink);
+  voice verbatim (`app/signin/page.tsx` — serif, uppercase,
+  `tracking-[0.08em]`, foreground ink, at whatever size that screen sets);
   change the voice there and these regenerate to follow, not the reverse.
 - `lib/mark.ts` is now only the pennant geometry the `Putt` busy animation
   putts at — it stopped being the logo when the artwork arrived, and there
@@ -71,6 +94,17 @@ is this Next version's middleware convention (see the `home` sibling repo).
   score) — a 0 never scores as a free under-par hole. The in-progress hole
   only counts once swigs > 0. This still holds after a mulligan:
   resetting a hole never buys a free one.
+- The report-a-bug sheet files a GitHub issue on a **public** repository, so
+  `lib/bug-report.ts` is the only thing that decides what may leave and is
+  pure for exactly that reason. The load-bearing rule: **a round code never
+  reaches the issue** — it is the join key, so a code on a public issue is an
+  open door onto a live round. It is stripped from the route, from the
+  player's own words, and from the title; the real code stays on the private
+  `bug_reports` row and the issue carries only that row's id (no name, no uid,
+  no email). Free text is printed inside a fence, which is what makes an
+  `@everyone` inert. Both doors — the Profile screen and the round's rules
+  sheet — go through `ReportBugSheet`; the parent owns both sheets so the
+  rules close as the report opens rather than stacking.
 - `rounds.ruleset` is read through `readRuleset` in `lib/ruleset.ts` and
   nowhere else — never re-cast the jsonb inline. It fills in defaults, so a
   round created before a rule existed reads as that rule being off.
@@ -82,6 +116,23 @@ is this Next version's middleware convention (see the `home` sibling repo).
   carry their own `penalties` jsonb — local rules, merged after the house
   list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
   the join key for the undo and the ×N count.
+- The green fee is a **day pass on its buyer**, not a line on a round
+  (`docs/MONETIZATION.md`): `entitlements` rows carry `round_id` null and
+  `expires_at`, and what a round keeps is `members` in its own ruleset
+  snapshot — stamped by `startRound` at tee-off, guarded by
+  `guard_round_members` (false→true only, UPDATE only, only while
+  `holds_day_pass(rounds.host)`). Covered stays covered: expiry and refunds
+  never reach a round already teed off, and un-stamping raises 42501. Read
+  the flag through `readRuleset`/`ruleset_members` — never a raw jsonb cast,
+  and never the *string* `"true"`, which both sides agree is not the flag.
+  The members' options group (`components/round/members-options.tsx`) lists
+  `GREEN_FEE_EXTRAS`, which names only what has shipped.
+- The phase-one funnel is two derived columns on `rounds`, not an events
+  table: `finished_at` comes off the status transition and `recap_shares`
+  moves only for `record_recap_share`, which announces itself with a
+  transaction-local `pubgolf.recap_share` the way seat rescue does. Neither
+  is writable by an official's ordinary update. `house_funnel` is
+  `service_role` only.
 - Handicaps come off gross to give **net**, and net is what the round is won
   on — `StandingRow` carries both, and ranking is on `netToPar`. They arrive
   pro rata (`handicap × holesPlayed / holes.length`) so the live board stays
@@ -142,7 +193,18 @@ never saw it because the guard exempts them. `penalties.strokes` is
 schema-bounded 1..20 (a self-called −20 was a legal win), and penalty
 retraction follows `called_by`, not whose card it sits on. All raise
 `42501` so `expectDenied` recognises them; `tests/db/rls-cheatproofing.test.ts`
-is the adversarial suite. Regenerate types after schema changes:
+is the adversarial suite. `bug_reports` is the report screen's table and is
+reporter-scoped in every direction — no official's view, because a report is
+between the player and the club secretary. It carries three rules worth
+knowing: the daily allowance is a trigger (`bug_report_daily_cap()`, mirrored
+in `lib/bug-report.ts` and proved equal by a test) taking an advisory lock on
+the reporter rather than `for update` on their profile row, since FOR UPDATE
+would conflict with the FK's KEY SHARE lock and put reports in the way of
+somebody joining a round; the issue is stamped back by the reporter's own
+session, so the write is fenced by a **column grant** on
+`(issue_number, issue_url)` and a USING clause of `issue_number is null` that
+makes it one-way; and `anon` is granted nothing at all, so a signed-out
+request gets the gate rather than a policy's empty list. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
 Two hosted environments, both deployed by the platforms rather than from this
@@ -168,6 +230,14 @@ Never reintroduce an emailed code: Supabase's built-in sender refuses any
 address outside the org team, so an email flow means Resend and a verified
 domain before it works for a single real player. `handle_new_user` reads
 `display_name`, then Google's `full_name`/`name`, before falling back.
+
+Two doors, and the division of labour between them is load-bearing: `/` sells
+(`components/landing.tsx` answers a signed-out visitor there, because Google's
+brand verification grades that URL and wants the name, the purpose and the
+privacy link on it), and `/signin` opens — mark, heading, the one line
+`signInReason` derives from `next`, the button. Copy explaining what the app
+*is* belongs on the landing page only; for one release it sat on both and the
+two URLs read as the same page twice.
 
 Walking state machine: `advanceHole` → phase `walking` (current_hole =
 the upcoming hole, drink timer down); `teeUpHole` → phase `live` (timer

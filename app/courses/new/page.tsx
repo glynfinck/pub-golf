@@ -1,125 +1,64 @@
-"use client";
+import { CaddyGates } from "@/components/course/caddy-gates";
+import { CourseBuilder } from "@/components/course/course-builder";
+import {
+  caddyReady,
+  showCaddyDiagnostics,
+  shutGates,
+} from "@/lib/caddy/readiness";
+import { getDayPass } from "@/lib/data/billing";
+import { getSessionUser } from "@/lib/data/rounds";
+import { createClient } from "@/lib/supabase/server";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { toast } from "sonner";
-import { Masthead } from "@/components/shell/masthead";
-import { Screen, ScreenHeader } from "@/components/shell/screen";
-import { HoleEditor, type DraftHole } from "@/components/course/hole-editor";
-import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
-import { Button } from "@/components/ui/button";
-import { FieldLabel, Input } from "@/components/ui/input";
-import { HouseMark } from "@/components/ui/house-mark";
-import { PendingLabel } from "@/components/ui/pending-label";
-import { useAction } from "@/hooks/use-action";
-import { createCourse } from "@/lib/actions/courses";
+/**
+ * Does this database have the caddy's tables yet?
+ *
+ * Asked rather than assumed because Vercel and Supabase deploy independently —
+ * DEPLOYMENT.md's whole reason for insisting migrations be additive — so the
+ * app can be live against a schema that has not caught up. A head count reads
+ * no rows and costs nothing; RLS would scope it to this host anyway.
+ */
+async function caddyTablesPresent(): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("caddy_sessions")
+    .select("id", { count: "exact", head: true });
+  if (!error) return true;
+  // Two codes for one condition, because they come from different layers and
+  // which one you get depends on the PostgREST version in front of the
+  // database: 42P01 is Postgres saying the relation does not exist, PGRST205
+  // is PostgREST saying it is not in its schema cache. Checking only the
+  // Postgres one would report a missing table as present on any modern stack —
+  // which is precisely the deploy this check exists to catch.
+  //
+  // Anything else — a policy returning nothing, a grant refusal — means the
+  // table is there, which is all this asks.
+  return error.code !== "42P01" && error.code !== "PGRST205";
+}
 
-/** The course builder: search Google for the pubs, dress each hole with
- * par and drink, save. No map — the Maps app handles directions on the
- * night. */
-export default function NewCoursePage() {
-  const router = useRouter();
-  const { run, pending, busy } = useAction();
-  const [name, setName] = useState("");
-  const [holes, setHoles] = useState<DraftHole[]>([]);
+/** The drafting table with a blank sheet on it (components/course/course-builder). */
+export default async function NewCoursePage() {
+  const [pass, user, tablesPresent] = await Promise.all([
+    getDayPass(),
+    getSessionUser(),
+    caddyTablesPresent(),
+  ]);
 
-  function addPub(pub: FoundPub) {
-    setHoles((current) => [
-      ...current,
-      {
-        ...pub,
-        drink: "Pint of your choosing",
-        par: 4,
-        hazard: null,
-        hazard_note: null,
-        penalties: [],
-      },
-    ]);
-  }
-
-  function save() {
-    run(async () => {
-      const result = await createCourse({
-        name,
-        holes: holes.map((hole) => ({
-          venue_id: hole.venue_id,
-          venue_name: hole.venue_name,
-          drink: hole.drink,
-          par: hole.par,
-          hazard: hole.hazard,
-          hazard_note: hole.hazard_note,
-          // A rule with no offence on it is a half-typed thought, not a rule.
-          penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
-          lat: hole.lat,
-          lng: hole.lng,
-        })),
-      });
-      if (result.error) return result;
-      toast.success("Course saved to the book.");
-      router.push("/courses");
-    });
-  }
-
-  const par = holes.reduce((sum, hole) => sum + hole.par, 0);
+  const gateInput = {
+    signedIn: user != null,
+    anonymous: user?.is_anonymous === true,
+    hasPass: pass != null,
+    tablesPresent,
+  };
+  const ready = caddyReady(process.env, gateInput);
 
   return (
-    <Screen>
-      <Masthead
-        back={{ href: "/courses", label: "Courses" }}
-        center={<HouseMark className="mx-auto size-6" />}
-        busy={busy}
-      />
-      <ScreenHeader
-        eyebrow={`New course · ${holes.length} holes so far`}
-        title="Plot the course"
-      />
-
-      <div>
-        <FieldLabel htmlFor="course-name">Course name</FieldLabel>
-        <Input
-          id="course-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="The Soho Quick Six"
-        />
-      </div>
-
-      <PlaceSearch onAdd={addPub} nextHoleNumber={holes.length + 1} />
-
-      {holes.map((hole, index) => (
-        <HoleEditor
-          key={`${hole.venue_name}-${index}`}
-          hole={hole}
-          number={index + 1}
-          onChange={(patch) =>
-            setHoles((current) =>
-              current.map((h, i) => (i === index ? { ...h, ...patch } : h)),
-            )
-          }
-          onRemove={() =>
-            setHoles((current) => current.filter((_, i) => i !== index))
-          }
-        />
-      ))}
-
-      {holes.length > 0 ? (
-        <p className="text-center text-[11px] text-muted-foreground">
-          Par {par} · walking times measured between pubs automatically.
-        </p>
+    <>
+      <CourseBuilder caddy={ready} hasPass={pass != null} />
+      {/* Absence rather than apology stays the rule for players; this is for
+          whoever is deploying, and only ever off production. */}
+      {!ready && showCaddyDiagnostics(process.env) ? (
+        <CaddyGates gates={shutGates(process.env, gateInput)} />
       ) : null}
-
-      <Button
-        onClick={save}
-        disabled={pending || !name.trim() || holes.length === 0}
-        className="mt-auto"
-      >
-        <PendingLabel
-          pending={pending}
-          busy={busy}
-          label={`Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`}
-          pendingLabel="Filing the course"
-        />
-      </Button>
-    </Screen>
+    </>
   );
 }

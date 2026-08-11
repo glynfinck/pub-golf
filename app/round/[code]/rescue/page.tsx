@@ -14,6 +14,8 @@ import { RescueView } from "@/components/round/rescue-view";
  * one tap in the client view, so a crawler unfurling a shared link still
  * reads no names.
  */
+export const metadata = { title: "Back on the card" };
+
 export default async function RescuePage({
   params,
 }: {

@@ -1,18 +1,71 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { Landing } from "@/components/landing";
+import { DayPassCard } from "@/components/round/day-pass-card";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
+import { DESCRIPTION } from "@/lib/config";
+import { getDayPass } from "@/lib/data/billing";
+import { countLeagueRounds } from "@/lib/data/league";
 import { getMyRounds, getProfile } from "@/lib/data/rounds";
+import { greeting } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-export default async function ClubhousePage() {
-  const profile = await getProfile();
-  if (!profile) redirect("/signin");
+/**
+ * The greeting is resolved on the server, in London, on purpose.
+ *
+ * Reading the browser's clock would be more correct for a player abroad, but
+ * it costs a client component and a hydration guard, and a greeting that
+ * flips a beat after paint is worse than one that is an hour out. The house
+ * keeps British time — the same choice every `en-GB` date on these screens
+ * already makes.
+ */
+function houseHour(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: "Europe/London",
+    }).format(new Date()),
+  );
+}
 
-  const rounds = await getMyRounds();
+/**
+ * The root route's own description, overriding the tagline the layout sets
+ * for every other page. "Nine pubs. Par 36. Lowest swigs wins." is a slogan,
+ * and this is the one URL where a reader (or a verifier) has not yet been
+ * told what the thing does.
+ *
+ * Shared with the schema.org block on the page itself (`components/landing`),
+ * because a verifier reading both wants them to agree.
+ */
+export const metadata = { description: DESCRIPTION };
+
+export default async function ClubhousePage() {
+  // One wait, not four — the pause on a tab switch is these round trips.
+  const [profile, rounds, pass, leagueRounds] = await Promise.all([
+    getProfile(),
+    getMyRounds(),
+    getDayPass(),
+    countLeagueRounds(),
+  ]);
+
+  // A signed-out visitor gets the landing page, not a bounce to /signin and
+  // not the sign-in screen wearing a paragraph. Google's brand verification
+  // grades this URL, and it rejected both of those in turn: the redirect for
+  // hiding the name and the privacy link, then the sign-in screen for still
+  // not explaining what the app does. The layout hides the tab bar on the
+  // same condition, so the page stands on its own.
+  if (!profile) {
+    return (
+      <Screen className="gap-6">
+        <Landing />
+      </Screen>
+    );
+  }
+
   const active = rounds.find((round) => round.status !== "finished");
   const past = rounds.filter((round) => round.status === "finished");
 
@@ -21,7 +74,7 @@ export default async function ClubhousePage() {
       <RuleDouble head />
       <ScreenHeader
         eyebrow="The Clubhouse"
-        title={`Evening, ${profile.display_name.split(" ")[0]}`}
+        title={`${greeting(houseHour())}, ${profile.display_name.split(" ")[0]}`}
         action={<Avatar name={profile.display_name} />}
       />
 
@@ -54,6 +107,27 @@ export default async function ClubhousePage() {
           No round on the card tonight. Start one, or join with a code.
         </Card>
       )}
+
+      {/* The pass while it runs; the league for good once a round has teed
+          off on one. Never both — the card carries the league's own door. */}
+      {pass ? (
+        <DayPassCard pass={pass} />
+      ) : leagueRounds > 0 ? (
+        <Link
+          href="/league"
+          className="flex items-center justify-between rounded-xl bg-card px-4 py-3.5 ring-1 ring-foreground/10"
+          data-testid="league-link"
+        >
+          <span>
+            <span className="eyebrow block text-fairway">Members&apos; league</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              The order of merit across {leagueRounds} covered{" "}
+              {leagueRounds === 1 ? "round" : "rounds"}
+            </span>
+          </span>
+          <span className="text-xs font-bold text-fairway">Open</span>
+        </Link>
+      ) : null}
 
       <div className="flex gap-3">
         <Link href="/new" className={cn(buttonVariants(), "flex-1")}>

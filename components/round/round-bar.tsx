@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CircleHelp } from "lucide-react";
 import { RulesSheet } from "@/components/round/rules-sheet";
 import { Masthead } from "@/components/shell/masthead";
+import { ReportBugSheet } from "@/components/support/report-bug-sheet";
 import type { RoundBundle } from "@/lib/data/rounds";
 
 /**
@@ -28,6 +29,7 @@ export function RoundBar({
   busy?: boolean;
 }) {
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   return (
     <>
@@ -67,6 +69,22 @@ export function RoundBar({
         round={round}
         holes={holes}
         hole={hole}
+        onReportBug={() => {
+          setRulesOpen(false);
+          setReportOpen(true);
+        }}
+      />
+
+      {/* Both sheets are owned here so the handover is a swap, never a
+          stack — the rules close as the report opens. The round travels
+          with the report: the code stays private (it is the join key) and
+          only the hole and phase are ever printed. */}
+      <ReportBugSheet
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        roundCode={round.code}
+        hole={hole ?? round.current_hole}
+        phase={round.status === "live" ? round.hole_phase : round.status}
       />
     </>
   );

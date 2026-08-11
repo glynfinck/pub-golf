@@ -4,9 +4,7 @@ import { rematchName } from "@/lib/rematch";
 
 describe("rematchName", () => {
   it("steps a trailing roman numeral", () => {
-    expect(rematchName("The Glyn Invitational XXX")).toBe(
-      "The Glyn Invitational XXXI",
-    );
+    expect(rematchName("The Invitational XXX")).toBe("The Invitational XXXI");
     expect(rematchName("Invitational IX")).toBe("Invitational X");
     expect(rematchName("Marathon XL")).toBe("Marathon XLI");
     expect(rematchName("Opening Night I")).toBe("Opening Night II");

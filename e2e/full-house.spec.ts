@@ -7,7 +7,14 @@ import {
 } from "@playwright/test";
 
 import { signInAs } from "./auth";
-import { clickSettled, expectSettled, gotoSettled } from "./nav";
+import { drink } from "./drink";
+import {
+  clickSettled,
+  expectSettled,
+  gotoSettled,
+  holeOutToResults,
+} from "./nav";
+import { budget, closeQuietly } from "./harness";
 import { leaveSeats, standOnTheHole, tableDrinks, takeSeats } from "./seats";
 import type { Seat } from "./seats";
 
@@ -73,15 +80,6 @@ async function joinAsGuest(
   return { context, page };
 }
 
-/** Tap +1 SWIG `count` times on one phone. */
-async function drink(page: Page, count: number) {
-  for (let sip = 0; sip < count; sip += 1) {
-    await page.getByTestId("swig-plus").click();
-  }
-  if (count > 0) {
-    await expect(page.getByTestId("swig-count")).toHaveText(String(count));
-  }
-}
 
 test("a full house: twenty seats, three phones watching, one card", async ({
   browser,
@@ -90,7 +88,7 @@ test("a full house: twenty seats, three phones watching, one card", async ({
   // 19th. Sized the way foursome's budget is: on a cold dev server the route
   // compiles alone eat minutes — a cost CI never pays, since it serves the
   // build the job already made.
-  test.setTimeout(300_000);
+  test.setTimeout(budget(300_000));
   const stamp = Date.now();
   let crowd: Seat[] = [];
 
@@ -101,7 +99,7 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     // ---- The host plots two pubs: short enough to play to the 19th ----
     await signInAs(hostContext, {
       email: `fullhouse-${stamp}@e2e.local`,
-      name: "Glyn",
+      name: "Wren",
     });
     const host = await hostContext.newPage();
 
@@ -121,14 +119,25 @@ test("a full house: twenty seats, three phones watching, one card", async ({
       await expect(addPub).toBeEnabled({ timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
 
-    // Hydration proven — every fill from here sticks.
-    await host.getByLabel(/course name/i).fill(`Full House Crawl ${stamp}`);
     await addPub.click();
     await pubField.fill("The Last Orders");
     await addPub.click();
-    await host
-      .getByRole("button", { name: /save the course · 2 holes/i })
-      .click();
+    // The save button answers for the whole form: its label counts the
+    // holes and it enables only once live React also holds a course name.
+    // CI has seen the count reach 2 while the name never made it out of
+    // the DOM, so the name fill and the enablement check retry as one
+    // block — the click stays outside it, because a click that lands must
+    // not repeat.
+    const saveCourse = host.getByRole("button", {
+      name: /save the course · 2 holes/i,
+    });
+    await expect(async () => {
+      await host
+        .getByLabel(/course name/i)
+        .fill(`Full House Crawl ${stamp}`);
+      await expect(saveCourse).toBeEnabled({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+    await saveCourse.click();
     await host.waitForURL(/\/courses$/);
 
     await host.goto("/new");
@@ -255,9 +264,9 @@ test("a full house: twenty seats, three phones watching, one card", async ({
       tableDrinks(crowd, 2, (seat) => (seat.name === "Rue" ? 1 : 3)),
     ]);
 
-    await clickSettled(host, "hole-out");
+    await holeOutToResults(host, code);
     await Promise.all(
-      [host, ana.page, bram.page].map((page) =>
+      [ana.page, bram.page].map((page) =>
         page.waitForURL(new RegExp(`/round/${code}/results`)),
       ),
     );
@@ -272,14 +281,16 @@ test("a full house: twenty seats, three phones watching, one card", async ({
     // No `exact` here: a final-standings row sets rank and name in one line
     // of type, so no element's text is exactly the bare name — substring
     // match, the same way `foursome` reads this table.
-    for (const name of ["Glyn", "Ana", "Bram", "Rue", "Tam"]) {
+    for (const name of ["Wren", "Ana", "Bram", "Rue", "Tam"]) {
       await expect(
         host.getByTestId("final-standings").getByText(name),
       ).toBeVisible();
     }
   } finally {
     leaveSeats(crowd);
-    await hostContext.close();
-    for (const context of guestContexts) await context.close();
+    // Teardown never decides the verdict — see closeQuietly. This spec once
+    // reported a failure *at* `hostContext.close()` when what had actually
+    // run out was the test's own budget.
+    await closeQuietly(hostContext, ...guestContexts);
   }
 });

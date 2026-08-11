@@ -1,5 +1,6 @@
 "use client";
 
+import { Bug } from "lucide-react";
 import { Fragment } from "react";
 import { LocalRulesHeading } from "@/components/round/local-rules-heading";
 import { DotLeaderRow } from "@/components/ui/dot-leader";
@@ -42,6 +43,7 @@ export function RulesSheet({
   round,
   holes,
   hole,
+  onReportBug,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,6 +51,9 @@ export function RulesSheet({
   holes: RoundBundle["holes"];
   /** The hole whose local rules join the house tariff, if the screen is on one. */
   hole?: number;
+  /** Hands the round over to the report sheet. The parent owns both sheets —
+   * one closes as the other opens, so they never stack. */
+  onReportBug?: () => void;
 }) {
   const ruleset = readRuleset(round.ruleset);
   const lines = roundRuleLines(ruleset, holes);
@@ -174,6 +179,32 @@ export function RulesSheet({
             The tariff, not the till — penalties go on the card from the
             Penalties button on the hole.
           </p>
+
+          {/* The one line in the sheet that is not about scoring. It sits
+              here rather than behind a legal link because this is the sheet
+              a player actually opens, mid-round, in a pub. */}
+          <p className="mt-3 border-t border-border pt-3 text-center text-[11px] text-muted-foreground">
+            Any hole plays just as well with a soft drink; the card
+            can&apos;t tell. Know your limits, and sort out how everyone gets
+            home.
+          </p>
+
+          {/* The in-round door onto the report sheet. It lives here because
+              this is the sheet a player already opens when the app is not
+              doing what they expected — and a report filed from inside a
+              round arrives knowing the hole, the phase and the build. */}
+          {onReportBug ? (
+            <button
+              type="button"
+              onClick={onReportBug}
+              aria-haspopup="dialog"
+              data-testid="rules-report-bug"
+              className="mt-3 flex min-h-11 items-center justify-center gap-1.5 border-t border-border pt-3 text-[11px] font-bold text-fairway"
+            >
+              <Bug size={13} aria-hidden />
+              Something not playing right? Report a bug
+            </button>
+          ) : null}
 
           <p className="mt-3 text-center font-serif text-xs italic text-muted-foreground">
             A card is a bit of fun, not a contract.

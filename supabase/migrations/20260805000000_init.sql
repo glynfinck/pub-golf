@@ -67,7 +67,7 @@ create table public.venues (
 );
 
 -- ---------- rounds ----------
--- Join codes double as the public route key (/round/GLYN29): 6 chars from a
+-- Join codes double as the public route key (/round/TAVERN): 6 chars from a
 -- 32-char alphabet with 0/O/1/I removed. 32 divides 256, so modulo has no
 -- bias. Uniqueness is enforced by the column constraint; the default
 -- retries until it finds a free code.

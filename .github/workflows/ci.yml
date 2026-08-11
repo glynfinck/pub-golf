@@ -51,6 +51,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The Stripe sandbox tier, in the gate by decision: the one step that
+      # talks to a third party, accepted because it is test mode only (the
+      # suite refuses a live key), four small API calls, and green-with-skips
+      # when no STRIPE_SANDBOX_SECRET_KEY exists (forks never see secrets).
+      # Seeding first is idempotent, so a fresh sandbox can never fail the
+      # gate for being empty. Runs before the stack: no Docker, fails fast.
+      - name: Stripe sandbox (seed + smoke)
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SANDBOX_SECRET_KEY }}
+        run: |
+          node scripts/stripe-seed.mjs
+          npm run test:stripe
+
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -89,6 +102,13 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
+            # Billing touches no real Stripe anywhere in CI. The webhook spec
+            # signs its own events with this dummy secret (Stripe's own
+            # generateTestHeaderString), and the dummy secret key only has to
+            # be non-empty for the route to consider billing configured —
+            # neither value is ever sent to Stripe.
+            echo "STRIPE_SECRET_KEY=sk_test_ci_dummy"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_ci_dummy"
           } >> .env.local
 
       # RLS is the app's real access control — every server action reaches
