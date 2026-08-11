@@ -1,0 +1,19 @@
+{
+  "note": "Raw caddy_turns from preview, captured before a test-state reset wiped them. This is the evidence docs/CADDY-TOPUPS.md prices against; the analysis there is derived from exactly these twelve rows. cost_micropence is recomputed in Postgres, at standard (not introductory) Sonnet 5 rates.",
+  "captured": "2026-08-11",
+  "source": "xssmjzinaghxjncoezez public.caddy_turns",
+  "turns": [
+    {"kind":"plan","model":"anthropic/claude-opus-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:14:51Z"},
+    {"kind":"plan","model":"anthropic/claude-opus-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:19:00Z"},
+    {"kind":"plan","model":"anthropic/claude-opus-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:23:45Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:34:29Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:37:48Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:41:31Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":true,"input":0,"output":0,"cache_write":0,"cache_read":0,"cost_micropence":0,"at":"2026-08-11T11:45:00Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":false,"input":128,"output":1700,"cache_write":10676,"cache_read":0,"cost_micropence":5273520,"at":"2026-08-11T11:48:18Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":false,"input":134,"output":2105,"cache_write":11367,"cache_read":0,"cost_micropence":5968260,"at":"2026-08-11T12:00:27Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":false,"input":203,"output":1560,"cache_write":11691,"cache_read":0,"cost_micropence":5428020,"at":"2026-08-11T12:26:00Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":false,"input":203,"output":1418,"cache_write":11691,"cache_read":0,"cost_micropence":5257620,"at":"2026-08-11T12:39:42Z"},
+    {"kind":"plan","model":"anthropic/claude-sonnet-5","failed":false,"input":37493,"output":10432,"cache_write":14698,"cache_read":58792,"cost_micropence":27337128,"at":"2026-08-11T15:40:39Z"}
+  ]
+}
