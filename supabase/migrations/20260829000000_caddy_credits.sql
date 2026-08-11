@@ -1,10 +1,13 @@
 -- ---------------------------------------------------------------------------
 -- Courses are counted, and the count is written down.
 --
--- 20260828 made a fee hold one course at a time: tear it out and plan another,
--- free, for ever. That was forgiving and it was also underivable — deleting the
--- course erased the only evidence the allowance had been used, so "how many
--- courses did this fee buy?" had no answer the schema could give.
+-- The first attempt at this made a fee hold one course at a time: tear it out
+-- and plan another, free, for ever. That was forgiving and it was also
+-- underivable — deleting the course erased the only evidence the allowance had
+-- been used, so "how many courses did this fee buy?" had no answer the schema
+-- could give. It never reached a database and has been folded into this file
+-- rather than shipped and undone in the same release; a migration that creates
+-- a trigger for its successor to drop is a story nobody should have to read.
 --
 -- A fee now buys a fixed number of courses and every one of them leaves a row.
 -- Consumption is a fact, not a state: tearing the course out of the book does
@@ -25,10 +28,10 @@
 -- its pass would be an indefinite one, which is the whole thing the day
 -- boundary exists to prevent.
 --
--- Supersedes `guard_caddy_course_allowance`, dropped below. Dropping a trigger
--- that only ever refused is safe under DEPLOYMENT.md's additive rule: nothing
--- breaks by being permitted, and the new guard is stricter in every case the
--- old one covered.
+-- Additive per DEPLOYMENT.md: a new table, a new trigger and two new
+-- functions. Code that has never heard of any of it goes on working, which
+-- matters because Vercel and Supabase do not wait for each other — `liveFee`
+-- already falls back to "any live fee" while this is missing.
 -- ---------------------------------------------------------------------------
 
 /** How many courses one green fee buys. Mirrored in lib/caddy/credits.ts and
@@ -36,6 +39,11 @@
  * they have something they do not. */
 create function public.caddy_courses_per_fee()
 returns integer language sql immutable as $$ select 3 $$;
+
+-- The unspent-fee lookup reads sessions by fee and wants an index for it.
+create index if not exists caddy_sessions_entitlement_idx
+  on public.caddy_sessions (entitlement_id)
+  where entitlement_id is not null;
 
 create table public.caddy_credits (
   id uuid primary key default gen_random_uuid(),
@@ -145,9 +153,11 @@ create trigger guard_caddy_credit
 -- ---------------------------------------------------------------------------
 -- What a host has left, and which fee to work under.
 --
--- `caddy_unspent_fee` keeps its name and its meaning — "a fee with a course
--- still to give" — so every caller carries on unchanged; only the definition
--- of spent moves from holdings to credits.
+-- `caddy_unspent_fee` answers "which fee still has a course to give", and is
+-- the one question the app asks about the allowance — `liveFee` picks the fee
+-- to work under with it and `caddyAllowance` decides what to show. `or replace`
+-- so a database that ran the folded-in holdings version locally is corrected
+-- rather than erroring.
 -- ---------------------------------------------------------------------------
 create or replace function public.caddy_unspent_fee(who uuid)
 returns uuid
@@ -190,7 +200,7 @@ $$;
 
 grant execute on function public.caddy_credits_left (uuid) to authenticated;
 
--- Superseded: the allowance is counted now, and tearing a course out no longer
--- gives anything back.
+-- Belt and braces for anyone who ran the holdings version locally before it
+-- was folded in above. Both `if exists`, so this is a no-op everywhere else.
 drop trigger if exists guard_caddy_course_allowance on public.caddy_sessions;
 drop function if exists public.guard_caddy_course_allowance ();

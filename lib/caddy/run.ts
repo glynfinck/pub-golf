@@ -116,17 +116,16 @@ async function host() {
  * bound the tokens, which is the right guard against a script; neither bounds
  * what somebody unhurried walks away with.
  *
- * "Spent" means a course is in the book right now. Tearing it out nulls the
- * link (`on delete set null`, 20260827) and the fee is unspent again — so the
- * host can plan, look, dislike it, delete it and plan again all day. What they
- * cannot do is *hoard*.
+ * "Spent" is a count of credits, not a state of the book. Tearing a course out
+ * gives nothing back: the caddy did the work and we paid for it. What a host
+ * keeps for free is every edit to what they already have.
  *
  * Asking Postgres rather than assembling it here, because the same question is
- * answered by `guard_caddy_course_allowance` on the way in and the two must
- * agree: this decides which fee to work under, and the trigger decides whether
- * the stamp is allowed. A definer function for the reason `holds_day_pass`
- * is one — the caddy acts on a host's behalf and a round-less entitlement is
- * visible to its buyer alone.
+ * answered by `guard_caddy_credit` on the way in and the two must agree: this
+ * decides which fee to work under, and the trigger decides whether the credit
+ * may be spent. A definer function for the reason `holds_day_pass` is one —
+ * the caddy acts on a host's behalf and a round-less entitlement is visible to
+ * its buyer alone.
  */
 async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
