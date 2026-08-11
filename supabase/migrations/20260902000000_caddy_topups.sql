@@ -19,6 +19,29 @@
 -- a top-up keeps selling fees and reading balances exactly as before.
 -- ---------------------------------------------------------------------------
 
+-- The gate before the grant. `entitlements.kind` is CHECK-constrained to the
+-- kinds that existed when the table was written, so without this a top-up
+-- entitlement cannot be inserted at all and the trigger below never fires —
+-- the grant logic would be perfect and the purchase would 23514 at the door.
+--
+-- Found by inserting one against the preview database rather than by reading
+-- this file, which is the argument for the end-to-end check in a sentence.
+--
+-- Dropped and recreated rather than added to: a CHECK has no ALTER, and the
+-- constraint is small enough that restating it whole is clearer than the
+-- alternative. `if exists` so a database that never had it is not an error.
+alter table public.entitlements
+  drop constraint if exists entitlements_kind_check;
+
+alter table public.entitlements
+  add constraint entitlements_kind_check
+  check (kind = any (array[
+    'green_fee',
+    'season_ticket',
+    'caddy_topup_1',
+    'caddy_topup_3'
+  ]));
+
 /**
  * What each top-up grants, by entitlement kind and quota.
  *
@@ -31,7 +54,7 @@
  * does not recognise grants nothing instead of inserting a null amount that
  * would read as an unlimited grant.
  */
-create function public.caddy_topup_size(kind text, quota public.caddy_quota)
+create or replace function public.caddy_topup_size(kind text, quota public.caddy_quota)
 returns integer language sql immutable as $$
   select case kind
     when 'caddy_topup_1' then case quota when 'redesign' then 1 when 'tweak' then 10 end

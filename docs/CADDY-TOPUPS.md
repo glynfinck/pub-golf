@@ -197,7 +197,8 @@ the seams:
   grant is still spent first
 - a pack bought with **no** green fee at all still grants — a top-up is a
   purchase, not an add-on to a pass
-- a refunded pack removes its grants, and does not remove the fee's
+- a refunded pack removes its grants, and does not remove the fee's —
+  **this does not currently hold, see below**
 - spends already made against a refunded pack do not push the balance negative
   (the reason grants and spends are separate tables)
 - the day-lock: an expired grant stops counting, and its spends stop counting
@@ -205,3 +206,37 @@ the seams:
 
 The last three are the ones a single signed-delta ledger would have got wrong,
 so they are the ones worth writing first.
+
+## Open: a refunded top-up keeps its rounds
+
+Found by deleting an entitlement against preview and watching the grants
+survive it.
+
+`caddy_grants.entitlement_id` is `on delete set null`, so removing the
+purchase orphans the grant rather than removing it. For a **green fee** that is
+harmless and arguably right: the grant carries the pass's `expires_at`, so an
+orphan dies on its own clock within the day, and the row survives as a record
+of what was given.
+
+For a **top-up it is a hole**. A durable grant has no expiry, so an orphaned
+one is immortal: refund the purchase, keep the rounds for ever. Nothing else in
+the ledger closes this — `caddy_balance` counts any live grant, and a null
+`entitlement_id` reads as live.
+
+Three ways out, none obviously best:
+
+1. **`on delete cascade` on the FK.** One line, and it makes refunds correct
+   for both kinds. It also drops the fee's accounting record, and takes the
+   grant's spends with it on the same cascade — the balance recomputes fine,
+   but "what did this fee produce" stops being answerable.
+2. **Cascade only for durable grants**, via a trigger on entitlement delete
+   that removes grants with a null `expires_at`. Keeps the fee's record,
+   targets exactly the hole. More machinery than a foreign key.
+3. **Never delete the entitlement on refund** — mark it refunded and have the
+   balance ignore grants behind a refunded purchase. The most honest
+   accounting, and the largest change.
+
+Not fixed here because the fix is a schema decision on the paid path and this
+was found at the end of a long session. It must be settled before top-ups can
+actually be sold; until there is a checkout path there is nothing to refund,
+so nothing is currently at risk.
