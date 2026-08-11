@@ -75,7 +75,7 @@ export function CaddyGroup({
         startVenueId: null,
         finishVenueId: null,
       });
-      if (result.error) return { error: result.error };
+      if (result.error) return { error: result.error, detail: result.detail };
       if (result.course && result.sessionId) {
         setSessionId(result.sessionId);
         onSession(result.sessionId);
@@ -89,7 +89,7 @@ export function CaddyGroup({
     if (!sessionId) return;
     run(async () => {
       const result = await askTheCaddy({ sessionId, ...input });
-      if (result.error) return { error: result.error };
+      if (result.error) return { error: result.error, detail: result.detail };
       if (result.course) onCourse(result.course, result.changed ?? []);
       setAsk("");
       return {};

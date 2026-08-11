@@ -10,6 +10,7 @@ import {
 } from "@/lib/caddy/budget";
 import { askCaddy, type CaddyTurnRecord } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
+import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
   buildCandidates,
   type CandidateDossier,
@@ -42,6 +43,9 @@ export interface CaddyResult {
   /** Which holes moved on a tweak, so the screen can hold the rest still. */
   changed?: number[];
   error?: string;
+  /** The vendor's own complaint, redacted. Set only off production, and read
+   * only by the staging note — never rendered to a player. */
+  detail?: string;
 }
 
 const NO_CADDY = "The caddy isn't on duty here.";
@@ -399,7 +403,13 @@ async function turn(input: {
     // read is the one below, not a second failure about bookkeeping.
     await record(true, {});
     if (outcome.reason === "unavailable") {
-      return { error: "The caddy lost the ball. Ask again — this one's free." };
+      return {
+        error: "The caddy lost the ball. Ask again — this one's free.",
+        // Off production only, and it is the same line the server log gets:
+        // whoever is looking at staging can read the vendor's actual complaint
+        // rather than asking someone else to go and read logs for them.
+        detail: showCaddyDiagnostics(process.env) ? outcome.detail : undefined,
+      };
     }
     return { error: planFailureNote(outcome.reason) };
   }

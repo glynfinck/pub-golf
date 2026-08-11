@@ -16,6 +16,7 @@ import type { CaddyBrief } from "@/lib/caddy/brief";
 import { NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
+import { describeFailure } from "@/lib/caddy/failure";
 
 /**
  * The caddy's own hand — the one place in the app that talks to a model.
@@ -74,7 +75,13 @@ export interface CaddyAsk {
 export type CaddyOutcome = (
   | PlanResult
   | { ok: false; reason: "unavailable" }
-) & { usage: CaddyUsage; model: string };
+) & {
+  usage: CaddyUsage;
+  model: string;
+  /** Why it failed, redacted and one line. Never shown to a player — it exists
+   * for the server log and for the staging note. */
+  detail?: string;
+};
 
 /**
  * Ask the caddy. Returns a resolved card or a reason, and never throws — every
@@ -132,13 +139,20 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
       return spent({ ok: false as const, reason: "malformed" as const });
     }
     return spent(parsePlan(payload, input.candidates, input.brief));
-  } catch {
+  } catch (cause) {
     // Timeouts, rate limits, a bad gateway — all of them are "the caddy lost
     // the ball", all of them cost the host nothing, and none of them reach
     // them as a vendor's error message. Usage is genuinely unknown here: the
     // call may never have reached the model, and guessing a number would put
     // an invented charge on a real bill.
-    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model };
+    //
+    // The reason is kept rather than dropped. Swallowing it entirely is what
+    // turned the first real staging failure into a guessing game — the host
+    // saw one line, the log had nothing, and the only way forward was to
+    // redeploy with logging. Once was enough.
+    const detail = describeFailure(cause);
+    console.error(`[caddy] ${credentials.via} ${model} failed: ${detail}`);
+    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model, detail };
   }
 }
 
