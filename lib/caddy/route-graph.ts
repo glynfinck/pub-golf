@@ -64,6 +64,13 @@ export interface PlannedRoute {
   /** Distinct `kind`s across the stops. Nine identical chain bars can be the
    * shortest route on the map and the worst night on it. */
   variety: number;
+  /** How far the walk actually gets you: the straight line from the first stop
+   * to the last. A crawl that ends where it started has none. */
+  progressKm: number;
+  /** Walk divided by progress. One is a straight line; three is a night spent
+   * doubling back through the same two streets, which is what "tight and back
+   * and forthy" means as a number. */
+  detour: number;
   /** Why this one is in the set, for the model to read: "shortest",
    * "kindest legs", "most variety". */
   character: string;
@@ -332,10 +339,17 @@ function describe(
     });
   }
   const kinds = new Set(stops.map((id) => nodes.get(id)?.kind ?? id));
+  const totalKm = walk(table, stops);
+  const progressKm = gap(table, stops[0], stops[stops.length - 1]);
   return {
     stops,
     legs,
-    totalKm: walk(table, stops),
+    progressKm,
+    // Guarded, because a route that finishes where it began has no progress to
+    // divide by — and that is the most doubled-back route there is, so it
+    // scores as the worst rather than as infinity.
+    detour: progressKm > 0.05 ? totalKm / progressKm : 99,
+    totalKm,
     worstLegKm: legs.reduce((worst, leg) => Math.max(worst, leg.km), 0),
     variety: kinds.size,
     character,
@@ -361,7 +375,15 @@ export function scoreRoute(route: PlannedRoute, targetKm: number | null): number
   // Variety pulls the other way, so it subtracts. Capped: past a handful of
   // distinct kinds nobody notices another.
   const sameness = (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
-  return spread + trek + sameness * 0.5;
+  // A night should go somewhere. Two pubs on one street and back again can hit
+  // the target distance exactly and still be the same corner all evening —
+  // this is what separates a jaunt from a lap of the block, and nothing in the
+  // distance terms above can see the difference.
+  //
+  // Free up to a modest amount of wandering, because a crawl is not a commute
+  // and the odd step back for a good pub is fine. Past that it bites.
+  const backAndForth = Math.max(0, route.detour - 1.6) * 0.6;
+  return spread + trek + sameness * 0.5 + backAndForth;
 }
 
 /**

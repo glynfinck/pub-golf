@@ -334,3 +334,44 @@ describe("the instructions and the map agree", () => {
     expect(prompt).not.toContain("try_route before you hand anything over");
   });
 });
+
+describe("a night should go somewhere", () => {
+  it("prefers a jaunt to a lap of the same block", () => {
+    // The complaint this encodes: a route can hit the target distance exactly
+    // and still spend the whole evening on two streets. Distance cannot see
+    // it — only walk-against-progress can.
+    //
+    // The doubling-back route is built by hand rather than by the router,
+    // because the router is the thing being tested and will not willingly
+    // produce one. Same stops, same total walk, same target: the only thing
+    // that differs is how far the night actually got.
+    const jaunt = buildRouteGraph(LINE, { holes: 4, startId: "a", finishId: "f" })
+      .routes[0];
+    expect(jaunt.detour).toBeLessThan(1.6);
+
+    const lap = { ...jaunt, detour: 4, progressKm: jaunt.totalKm / 4 };
+    expect(scoreRoute(lap, jaunt.totalKm)).toBeGreaterThan(
+      scoreRoute(jaunt, jaunt.totalKm),
+    );
+  });
+
+  it("measures progress as the line from first stop to last", () => {
+    const route = buildRouteGraph(LINE, { holes: 3, startId: "a", finishId: "c" })
+      .routes[0];
+    // Three stops on a straight line: the walk and the straight line agree, so
+    // there is no detour to speak of.
+    expect(route.progressKm).toBeCloseTo(route.totalKm, 5);
+    expect(route.detour).toBeCloseTo(1, 2);
+  });
+
+  it("forgives a step back, and only a step", () => {
+    // A crawl is not a commute. The odd doubling back for a good pub costs
+    // nothing; a night of it does.
+    const base = buildRouteGraph(LINE, { holes: 4, startId: "a", finishId: "f" })
+      .routes[0];
+    const slight = scoreRoute({ ...base, detour: 1.5 }, base.totalKm);
+    const straight = scoreRoute({ ...base, detour: 1.0 }, base.totalKm);
+    expect(slight).toBe(straight);
+    expect(scoreRoute({ ...base, detour: 3 }, base.totalKm)).toBeGreaterThan(slight);
+  });
+});

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
-import { PLACES_FIELD_MASK } from "@/lib/pub-search";
+import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
 /**
  * The gather: the caddy's own question to Places.
@@ -52,6 +52,8 @@ const CORRIDOR_SAMPLES = 3;
 
 interface GooglePlace {
   id?: string;
+  /** What the place mostly *is*. Checked, not trusted to the request. */
+  primaryType?: string;
   displayName?: { text?: string };
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
@@ -103,6 +105,11 @@ export interface GatheredPub extends Omit<PubSource, "venueId"> {
 function toGathered(place: GooglePlace): GatheredPub | null {
   const name = place.displayName?.text;
   if (!place.id || !name) return null;
+  // The request asked for drinking places; this checks the answer. A request
+  // parameter is a preference and this is a promise — sending a group to a
+  // door that is a restaurant is the worst thing this app can do, and it is
+  // barely better than sending them to one that is not there.
+  if (!isDrinkingPlace(place.primaryType)) return null;
   return {
     googlePlaceId: place.id,
     name,
@@ -146,7 +153,13 @@ async function call(
 /** Pubs and bars around a point, at walking radius. */
 function nearbyBody(center: { lat: number; lng: number }, radius: number) {
   return {
-    includedTypes: ["pub", "bar"],
+    // `includedPrimaryTypes`, not `includedTypes`, and the difference is the
+    // whole rule. `includedTypes` matches *any* type a place carries, and
+    // Google hangs "bar" on plenty of places that are not one — a nightclub
+    // with a bar in it, a restaurant with a bar in it. That is how a club and
+    // a tapas restaurant ended up on a crawl. The primary type is what the
+    // place mostly *is*, which is the question being asked.
+    includedPrimaryTypes: ["pub", "bar", "wine_bar"],
     maxResultCount: 20,
     rankPreference: "POPULARITY",
     locationRestriction: {
