@@ -14,6 +14,8 @@ import {
 
 import { expectDenied } from "./helpers/assert";
 
+const HOUR = 3_600_000;
+
 /**
  * The caddy's two tables, attacked.
  *
@@ -433,6 +435,132 @@ describe("the course a session filed", () => {
       .eq("id", sessionId);
     expect(error).toBeNull();
     expect((await storedSession(sessionId))?.completed_at).not.toBeNull();
+  });
+});
+
+describe("a fee buys one course, and tearing it out buys the next", () => {
+  let host: Actor;
+  let feeId: string;
+
+  async function seedCourse(owner: Actor, name = "The Shoreditch Nine") {
+    const { data, error } = await adminClient()
+      .from("courses")
+      .insert({ owner: owner.userId, name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function fileCourse(session: string, courseId: string) {
+    return host.db
+      .from("caddy_sessions")
+      .update({ course_id: courseId })
+      .eq("id", session);
+  }
+
+  beforeEach(async () => {
+    host = await signedInUser("Allowance Host");
+    feeId = await seedFee(host);
+  });
+
+  it("lets the first course through", async () => {
+    const session = await seedSession(host, feeId);
+    const { error } = await fileCourse(session, await seedCourse(host));
+    expect(error).toBeNull();
+  });
+
+  it("refuses a second course on the same fee", async () => {
+    // The hole this closes: twenty-four hours of caddy meant Shoreditch, then
+    // Soho, then Camden, keeping all three. Unbounded output for a fixed
+    // price — and neither the budget nor fair use catches it, because both
+    // bound tokens rather than what somebody unhurried walks away with.
+    const first = await seedSession(host, feeId);
+    await fileCourse(first, await seedCourse(host, "The First"));
+
+    const second = await seedSession(host, feeId);
+    const { error } = await fileCourse(second, await seedCourse(host, "The Second"));
+    expectDenied(error);
+  });
+
+  it("frees the fee when the course is torn out of the book", async () => {
+    // No bookkeeping and nothing to clean up: `on delete set null` (20260827)
+    // nulls the link, and the fee is unspent by the same fact that made it
+    // spent. Plan, look, dislike it, delete, plan again — all day.
+    const first = await seedSession(host, feeId);
+    const courseId = await seedCourse(host, "The Regrettable");
+    await fileCourse(first, courseId);
+    await adminClient().from("courses").delete().eq("id", courseId);
+
+    const second = await seedSession(host, feeId);
+    const { error } = await fileCourse(second, await seedCourse(host, "The Better One"));
+    expect(error).toBeNull();
+  });
+
+  it("gives a second fee its own course", async () => {
+    // "Unless they want to buy more" has to actually work, and it only does
+    // because the allowance is keyed on the entitlement rather than the host.
+    const another = await seedFee(host);
+    const first = await seedSession(host, feeId);
+    await fileCourse(first, await seedCourse(host, "Fee One"));
+
+    const second = await seedSession(host, another);
+    const { error } = await fileCourse(second, await seedCourse(host, "Fee Two"));
+    expect(error).toBeNull();
+  });
+
+  it("never takes back a course already in the book", async () => {
+    // Not a clawback: the guard refuses a new stamp and never touches an
+    // existing one, so deploying it cannot remove anything a host already has.
+    const first = await seedSession(host, feeId);
+    const courseId = await seedCourse(host, "Already Mine");
+    await fileCourse(first, courseId);
+
+    const second = await seedSession(host, feeId);
+    await fileCourse(second, await seedCourse(host, "Refused"));
+
+    const { data } = await adminClient()
+      .from("caddy_sessions")
+      .select("course_id")
+      .eq("id", first)
+      .maybeSingle();
+    expect(data?.course_id).toBe(courseId);
+  });
+
+  it("still lets a session that has spent the fee be closed", async () => {
+    // The guard is about claiming a course. Closing a session and dropping its
+    // dossier must stay possible, or a host's last act on their one course
+    // would fail.
+    const session = await seedSession(host, feeId);
+    await fileCourse(session, await seedCourse(host));
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ completed_at: new Date().toISOString(), dossier: [] })
+      .eq("id", session);
+    expect(error).toBeNull();
+  });
+
+  it("offers an unspent fee, and stops offering a spent one", async () => {
+    // The app and the trigger answer the same question and must agree: this
+    // picks the fee to work under, the trigger decides whether the stamp is
+    // allowed. Disagreement is a host who is told to go ahead and then refused.
+    const before = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
+    expect(before.data).toBe(feeId);
+
+    const session = await seedSession(host, feeId);
+    await fileCourse(session, await seedCourse(host));
+
+    const after = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
+    expect(after.data).toBeNull();
+  });
+
+  it("does not offer an expired fee, spent or not", async () => {
+    await adminClient()
+      .from("entitlements")
+      .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
+      .eq("id", feeId);
+    const { data } = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
+    expect(data).toBeNull();
   });
 });
 

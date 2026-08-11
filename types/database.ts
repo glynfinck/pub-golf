@@ -803,6 +803,7 @@ export type Database = {
           seat_id: string
         }[]
       }
+      caddy_unspent_fee: { Args: { who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {
         Args: { since?: string; until?: string }

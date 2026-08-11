@@ -72,6 +72,17 @@ export interface CaddyResult {
 
 const NO_CADDY = "The caddy isn't on duty here.";
 const NEEDS_FEE = "The caddy comes with the green fee.";
+/**
+ * Held a fee, already has the course it bought.
+ *
+ * A different situation from having no fee and it says so, because being told
+ * "the caddy comes with the green fee" when you have just paid one reads as
+ * the app losing your money. No guilt and no upsell in the line either — it
+ * names the two ways on, both of which are free, and leaves buying another to
+ * the host's own idea.
+ */
+const SPENT_FEE =
+  "Your course is already in the book — the caddy plans one to a fee. Change it as much as you like, or tear it out and the caddy will plan you another.";
 const THIN_PATCH =
   "Not enough pubs in that patch for the round you asked for. Widen the patch, or drop a few holes.";
 // One line for both ceilings. A host who meets the turn cap and a host who
@@ -90,23 +101,34 @@ async function host() {
   return { supabase, user };
 }
 
-/** The buyer's live green fee, if there is one. Read on the host's own
- * session — the entitlements policy shows a round-less row to its owner
- * alone, which is exactly the audience. */
+/**
+ * The buyer's live green fee that still has its course to give.
+ *
+ * Two conditions, and the second is the one that makes the tariff hold. A fee
+ * buys **one** caddy course, kept — otherwise a patient host plans Shoreditch,
+ * then Soho, then Camden inside the same day and keeps all three, which is
+ * unbounded output for a fixed price. The fair-use ceiling and the budget
+ * bound the tokens, which is the right guard against a script; neither bounds
+ * what somebody unhurried walks away with.
+ *
+ * "Spent" means a course is in the book right now. Tearing it out nulls the
+ * link (`on delete set null`, 20260827) and the fee is unspent again — so the
+ * host can plan, look, dislike it, delete it and plan again all day. What they
+ * cannot do is *hoard*.
+ *
+ * Asking Postgres rather than assembling it here, because the same question is
+ * answered by `guard_caddy_course_allowance` on the way in and the two must
+ * agree: this decides which fee to work under, and the trigger decides whether
+ * the stamp is allowed. A definer function for the reason `holds_day_pass`
+ * is one — the caddy acts on a host's behalf and a round-less entitlement is
+ * visible to its buyer alone.
+ */
 async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data } = await supabase
-    .from("entitlements")
-    .select("id, expires_at")
-    .eq("user_id", userId)
-    .eq("kind", "green_fee")
-    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-    .order("expires_at", { ascending: false, nullsFirst: true })
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
+  const { data } = await supabase.rpc("caddy_unspent_fee", { who: userId });
+  return data ? { id: data as string } : null;
 }
 
 /** The `venues` rows for a gather, upserted exactly as the builder's own
@@ -244,7 +266,14 @@ export async function openPlan(rawBrief: unknown): Promise<
   const { supabase, user } = session;
 
   const fee = await liveFee(supabase, user.id);
-  if (!fee) return { error: NEEDS_FEE };
+  if (!fee) {
+    // Distinguish "no fee" from "fee already spent" — the same refusal for
+    // both would tell a host who paid twenty minutes ago that they had not.
+    const { data: covered } = await supabase.rpc("holds_day_pass", {
+      who: user.id,
+    });
+    return { error: covered === true ? SPENT_FEE : NEEDS_FEE };
+  }
 
   const pins = await pinCoords(supabase, [
     brief.startVenueId,

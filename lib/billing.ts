@@ -75,7 +75,7 @@ export function dayPassLive(
 export const GREEN_FEE_EXTRAS = [
   {
     title: "The caddy",
-    detail: "your night's course, planned in twenty seconds",
+    detail: "one course, planned for you — yours to change or replace",
   },
 ] as const;
 
