@@ -3,6 +3,7 @@
 import { EllipsisVertical } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { CaddyPennant } from "@/components/course/caddy-pennant";
 import { ManageCourseSheet } from "@/components/course/manage-course-sheet";
 import { Card } from "@/components/ui/card";
 import type { MyCourse } from "@/lib/data/courses";
@@ -38,7 +39,16 @@ export function CoursesList({ courses }: { courses: MyCourse[] }) {
                 {course.hole_count}
               </span>
               <span className="min-w-0 flex-1">
-                <b className="block truncate text-sm">{course.name}</b>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <b className="truncate text-sm">{course.name}</b>
+                  {/* Beside the name rather than out at the end of the row:
+                      this says something *about the course*, and a mark
+                      floated away from the thing it describes gets read as
+                      another control. */}
+                  {course.byCaddy ? (
+                    <CaddyPennant className="flex shrink-0 items-center" />
+                  ) : null}
+                </span>
                 <span className="block text-[11px] text-muted-foreground">
                   {course.hole_count} holes · par {course.par}
                 </span>

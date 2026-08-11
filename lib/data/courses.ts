@@ -11,6 +11,15 @@ export interface MyCourse {
   par: number;
   /** Σ walk_minutes_to_next, for the 19th-hole estimate. */
   walk_minutes: number;
+  /**
+   * The caddy planned this one.
+   *
+   * Newly load-bearing rather than decorative: a green fee buys one caddy
+   * course at a time and tearing it out frees the next, so a host with five
+   * hand-plotted courses and one of these has to be able to tell which is
+   * which. Delete the wrong one and nothing is freed.
+   */
+  byCaddy: boolean;
 }
 
 /** The viewer's saved courses, newest first. */
@@ -21,15 +30,23 @@ export async function getMyCourses(): Promise<MyCourse[]> {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data } = await supabase
-    .from("courses")
-    .select("id, name, created_at, course_holes(par, walk_minutes_to_next)")
-    .order("created_at", { ascending: false });
+  const [{ data }, { data: planned }] = await Promise.all([
+    supabase
+      .from("courses")
+      .select("id, name, created_at, course_holes(par, walk_minutes_to_next)")
+      .order("created_at", { ascending: false }),
+    // Which courses came off the caddy, read from the sessions that filed
+    // them rather than from a flag on the course. There is no second copy of
+    // the truth to drift: the link is the same one the allowance counts.
+    supabase.from("caddy_sessions").select("course_id").not("course_id", "is", null),
+  ]);
+  const byCaddy = new Set((planned ?? []).map((row) => row.course_id));
 
   return (data ?? []).map((course) => ({
     id: course.id,
     name: course.name,
     created_at: course.created_at,
+    byCaddy: byCaddy.has(course.id),
     hole_count: course.course_holes.length,
     par: course.course_holes.reduce((sum, hole) => sum + hole.par, 0),
     walk_minutes: course.course_holes.reduce(
