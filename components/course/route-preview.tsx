@@ -254,8 +254,54 @@ function WalkedLine({
  * a decision that has not been taken.
  */
 function PatchPins({ live, picked }: { live: LivePatch; picked: Set<string> }) {
+  // The walk as it is being decided.
+  //
+  // `picked` arrives in the caddy's own order, which is the order it means to
+  // walk them, so the line can be drawn long before the card exists. It grows
+  // a stop at a time and re-routes visibly when the caddy changes its mind
+  // about a hole — which is a far better answer to "what is it doing for three
+  // minutes" than any amount of reasoning text.
+  //
+  // It also makes a broken stream survivable. A host who has watched nine
+  // stops land has seen their course, so a connection that dies on the way
+  // back is a rough ending rather than a loss.
+  //
+  // Built from `live.pins`, so a picked id with no pin behind it is simply
+  // skipped rather than drawn at the origin.
+  //
+  // A record rather than a `Map`, because `Map` in this file is the Google
+  // one: the component import shadows the global constructor, and `new Map()`
+  // here compiles to an attempt to construct a React component.
+  const byId: Record<string, LivePatch["pins"][number]> = {};
+  for (const pin of live.pins) byId[pin.id] = pin;
+  const walked = live.picked
+    .map((id) => byId[id])
+    .filter((pin): pin is LivePatch["pins"][number] => pin != null)
+    .map((pin) => ({ lat: pin.lat, lng: pin.lng }));
+
   return (
     <>
+      {walked.length > 1 ? (
+        <Polyline
+          path={walked}
+          strokeOpacity={0}
+          icons={[
+            {
+              // The same dotted walking line the finished card draws, so the
+              // route does not change costume when it stops being a draft.
+              icon: {
+                path: "M0,0m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0",
+                fillColor: "#1e4630",
+                fillOpacity: 0.5,
+                scale: 2,
+                strokeOpacity: 0,
+              },
+              offset: "0",
+              repeat: "10px",
+            },
+          ]}
+        />
+      ) : null}
       {live.pins.map((pin) => {
         const chosen = picked.has(pin.id);
         return (
