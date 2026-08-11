@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CandidateDossier } from "@/lib/caddy/dossier";
-import { patchBlock } from "@/lib/caddy/plan";
+import { CADDY_SYSTEM_TOOLS, patchBlock } from "@/lib/caddy/plan";
 import {
   buildRouteGraph,
   routesBlock,
@@ -289,5 +289,48 @@ describe("targetKmFor", () => {
     expect(targetKmFor(8, 4)).toBeCloseTo((8 / 60) * 4.5 * 3, 5);
     // A one-hole round has no legs, and must not ask for a walk of zero.
     expect(targetKmFor(8, 1)).toBeGreaterThan(0);
+  });
+});
+
+describe("the instructions and the map agree", () => {
+  /**
+   * The failure this exists to stop, which already happened once.
+   *
+   * The routes went into the prompt and the model went on searching anyway,
+   * because the system prompt still described a search-and-refine workflow.
+   * Data does not override instructions — it gives a model something else to
+   * read while it does what it was told. The two halves have to be checked
+   * against each other, because each is correct on its own.
+   */
+  const brief = {
+    where: "Shoreditch",
+    startVenueId: null,
+    finishVenueId: null,
+    holes: 4,
+    vibe: "classic",
+    particulars: [],
+    note: "",
+    stretch: 8,
+  } as unknown as Parameters<typeof patchBlock>[1];
+
+  it("points the caddy at sections the block actually emits", () => {
+    const block = patchBlock(LINE, brief);
+    for (const section of ["<routes>", "<swaps>"]) {
+      expect(CADDY_SYSTEM_TOOLS, `the prompt never mentions ${section}`).toContain(
+        section,
+      );
+      expect(block, `the block never emits ${section}`).toContain(section);
+    }
+  });
+
+  it("tells the caddy to draft before it searches", () => {
+    // The empty-board failure in one instruction: a model that searches for
+    // ten minutes and never drafts leaves nothing to hand over when the clock
+    // runs out. Drafting first means even a timeout is a card.
+    const prompt = CADDY_SYSTEM_TOOLS;
+    expect(prompt).toContain("PUT A ROUTE ON THE TABLE FIRST");
+    // And the old instruction to re-measure everything is gone, since that is
+    // what turned a plan into a dozen turns.
+    expect(prompt).not.toContain("try_route before you hand anything over");
   });
 });
