@@ -3,6 +3,11 @@
 import { headers } from "next/headers";
 
 import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
+import {
+  CADDY_BUDGET_NOTE,
+  caddyBudgetMicroPence,
+  withinBudget,
+} from "@/lib/caddy/budget";
 import { askCaddy, type CaddyTurnRecord } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
 import {
@@ -43,8 +48,10 @@ const NO_CADDY = "The caddy isn't on duty here.";
 const NEEDS_FEE = "The caddy comes with the green fee.";
 const THIN_PATCH =
   "Not enough pubs in that patch for the round you asked for. Widen the patch, or drop a few holes.";
-const FULL_SHIFT =
-  "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
+// One line for both ceilings. A host who meets the turn cap and a host who
+// meets the budget are in the same position and are told the same thing —
+// which is also why neither message names the number it hit.
+const FULL_SHIFT = CADDY_BUDGET_NOTE;
 
 /** The signed-in host, or null. Guests never cross this boundary: hosting a
  * round takes a Google sign-in and so does planning one. */
@@ -284,10 +291,15 @@ export async function askTheCaddy(input: {
     return { error: "That patch has been put away. Plan a fresh one." };
   }
 
+  // Cards only. A failed turn is a real row — it carries what the attempt cost
+  // — but its `result` is empty, and replaying an empty card into the
+  // transcript would show the caddy a hole-less course as though it had
+  // written one.
   const { data: turns } = await supabase
     .from("caddy_turns")
     .select("kind, ask, result")
     .eq("session_id", input.sessionId)
+    .eq("failed", false)
     .order("created_at", { ascending: true });
 
   const history: CaddyTurnRecord[] = (turns ?? []).map((entry) => ({
@@ -309,7 +321,34 @@ export async function askTheCaddy(input: {
   });
 }
 
-/** One turn: ask, and keep the card if one arrived. */
+/**
+ * What this host has spent on the caddy in the last rolling day.
+ *
+ * Read on their own session, which is all RLS will show them anyway. The
+ * authority on this number is `guard_caddy_fair_use` in Postgres — it takes a
+ * lock and cannot be raced, and it is what actually refuses. This read is the
+ * *polite* version of the same question, asked before the money is spent
+ * rather than after: without it, a host at the ceiling would pay for one more
+ * call and then be told it could not be filed, which is the one shape of
+ * failure that genuinely wastes money.
+ */
+async function spentToday(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("caddy_turns")
+    .select("cost_micropence")
+    .eq("host", userId)
+    .gt("created_at", since);
+  return (data ?? []).reduce(
+    (total, row) => total + Number(row.cost_micropence ?? 0),
+    0,
+  );
+}
+
+/** One turn: ask, and keep what it cost whether or not a card arrived. */
 async function turn(input: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   userId: string;
@@ -321,6 +360,12 @@ async function turn(input: {
   ask?: string;
   holeNumber?: number | null;
 }): Promise<CaddyResult> {
+  // Asked before the call, so a host at the ceiling is told plainly instead of
+  // being charged for a turn that Postgres is about to refuse.
+  if (!withinBudget(await spentToday(input.supabase, input.userId), caddyBudgetMicroPence())) {
+    return { error: CADDY_BUDGET_NOTE };
+  }
+
   const outcome = await askCaddy({
     brief: input.brief,
     candidates: input.candidates,
@@ -330,7 +375,29 @@ async function turn(input: {
     roll: input.kind === "roll",
   });
 
+  /** The ledger line. Written for a failure too — the vendor billed us for it
+   * either way — but marked `failed`, which is what keeps the host's promise
+   * honest: the money counts, the card does not. */
+  const record = async (failed: boolean, result: unknown) =>
+    input.supabase.from("caddy_turns").insert({
+      session_id: input.sessionId,
+      host: input.userId,
+      kind: input.kind,
+      ask: input.ask ?? null,
+      result: result as never,
+      failed,
+      model: outcome.model,
+      input_tokens: outcome.usage.input,
+      output_tokens: outcome.usage.output,
+      cache_write_tokens: outcome.usage.cacheWrite,
+      cache_read_tokens: outcome.usage.cacheRead,
+    });
+
   if (!outcome.ok) {
+    // Best effort, and deliberately unchecked: if the ledger itself refuses
+    // this row the host is already past the ceiling, and the line they need to
+    // read is the one below, not a second failure about bookkeeping.
+    await record(true, {});
     if (outcome.reason === "unavailable") {
       return { error: "The caddy lost the ball. Ask again — this one's free." };
     }
@@ -338,13 +405,7 @@ async function turn(input: {
   }
 
   // The card arrived, so the turn is written — and only now does it count.
-  const { error } = await input.supabase.from("caddy_turns").insert({
-    session_id: input.sessionId,
-    host: input.userId,
-    kind: input.kind,
-    ask: input.ask ?? null,
-    result: outcome.course as unknown as never,
-  });
+  const { error } = await record(false, outcome.course);
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
     if (error.code === "42501") return { error: FULL_SHIFT };

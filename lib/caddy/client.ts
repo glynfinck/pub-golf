@@ -13,6 +13,7 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
+import { NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 
@@ -63,19 +64,30 @@ export interface CaddyAsk {
   roll?: boolean;
 }
 
-export type CaddyOutcome =
+/**
+ * What a call cost, always — on the way out of a card and on the way out of a
+ * failure alike. A refusal and a malformed answer are billed by the vendor
+ * exactly like a good one, so the caller needs the figure in every branch or
+ * failures become the one unmetered way to spend (see the `failed` column in
+ * migration 20260826).
+ */
+export type CaddyOutcome = (
   | PlanResult
-  | { ok: false; reason: "unavailable" };
+  | { ok: false; reason: "unavailable" }
+) & { usage: CaddyUsage; model: string };
 
 /**
  * Ask the caddy. Returns a resolved card or a reason, and never throws — every
- * failure here is a line on screen and none of them counts against the host.
+ * failure here is a line on screen and none of them costs the host a card.
  */
 export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
   // Read per call, never at module load: a Vercel OIDC token rotates, and a
   // credential captured once at cold start goes stale under the deploy.
   const credentials = caddyCredentials(process.env);
-  if (!credentials) return { ok: false, reason: "unavailable" };
+  if (!credentials) {
+    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model: "" };
+  }
+  const model = credentials.model;
 
   const client = new Anthropic({
     apiKey: credentials.apiKey ?? null,
@@ -86,7 +98,7 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
 
   try {
     const response = await client.messages.create({
-      model: credentials.model,
+      model,
       max_tokens: MAX_TOKENS,
       system: CADDY_SYSTEM,
       output_config: {
@@ -99,27 +111,34 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
       messages,
     });
 
+    // Read before anything can return: the tokens are spent whatever the
+    // content turns out to be.
+    const usage = readUsage(response.usage);
+    const spent = <T extends { ok: boolean }>(outcome: T) => ({ ...outcome, usage, model });
+
     // A refusal is a content outcome, not an error — check before reading.
     if (response.stop_reason === "refusal") {
-      return { ok: false, reason: "malformed" };
+      return spent({ ok: false as const, reason: "malformed" as const });
     }
     const text = response.content
       .map((block) => (block.type === "text" ? block.text : ""))
       .join("");
-    if (!text.trim()) return { ok: false, reason: "malformed" };
+    if (!text.trim()) return spent({ ok: false as const, reason: "malformed" as const });
 
     let payload: unknown;
     try {
       payload = JSON.parse(text);
     } catch {
-      return { ok: false, reason: "malformed" };
+      return spent({ ok: false as const, reason: "malformed" as const });
     }
-    return parsePlan(payload, input.candidates, input.brief);
+    return spent(parsePlan(payload, input.candidates, input.brief));
   } catch {
     // Timeouts, rate limits, a bad gateway — all of them are "the caddy lost
-    // the ball", all of them are free, and none of them reach the host as a
-    // vendor's error message.
-    return { ok: false, reason: "unavailable" };
+    // the ball", all of them cost the host nothing, and none of them reach
+    // them as a vendor's error message. Usage is genuinely unknown here: the
+    // call may never have reached the model, and guessing a number would put
+    // an invented charge on a real bill.
+    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model };
   }
 }
 

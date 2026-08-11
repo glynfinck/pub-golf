@@ -212,28 +212,49 @@ export type Database = {
       caddy_turns: {
         Row: {
           ask: string | null
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_micropence: number
           created_at: string
+          failed: boolean
           host: string
           id: string
+          input_tokens: number
           kind: string
+          model: string
+          output_tokens: number
           result: Json
           session_id: string
         }
         Insert: {
           ask?: string | null
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_micropence?: number
           created_at?: string
+          failed?: boolean
           host?: string
           id?: string
+          input_tokens?: number
           kind?: string
+          model?: string
+          output_tokens?: number
           result: Json
           session_id: string
         }
         Update: {
           ask?: string | null
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_micropence?: number
           created_at?: string
+          failed?: boolean
           host?: string
           id?: string
+          input_tokens?: number
           kind?: string
+          model?: string
+          output_tokens?: number
           result?: Json
           session_id?: string
         }
@@ -722,6 +743,18 @@ export type Database = {
     Functions: {
       approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
       bug_report_daily_cap: { Args: never; Returns: number }
+      caddy_budget_micropence: { Args: never; Returns: number }
+      caddy_cost_micropence: {
+        Args: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Returns: number
+      }
+      caddy_fair_use_cap: { Args: never; Returns: number }
       dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
       get_round_card: {
