@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { CandidateDossier } from "@/lib/caddy/dossier";
+import { patchBlock } from "@/lib/caddy/plan";
 import {
   buildRouteGraph,
+  routesBlock,
+  targetKmFor,
   kindOf,
   nearestNeighbours,
   overlap,
@@ -229,5 +232,62 @@ describe("scoreRoute", () => {
     expect(chainRoute.variety).toBe(1);
     expect(mixedRoute.variety).toBe(4);
     expect(scoreRoute(chainRoute, null)).toBeGreaterThan(scoreRoute(mixedRoute, null));
+  });
+});
+
+describe("routesBlock", () => {
+  const brief = {
+    where: "Shoreditch",
+    startVenueId: null,
+    finishVenueId: null,
+    holes: 4,
+    vibe: "classic",
+    particulars: [],
+    note: "",
+    stretch: 8,
+  } as unknown as Parameters<typeof patchBlock>[1];
+
+  it("is byte-stable, because it sits inside the cached prefix", () => {
+    // The prefix carries the cache breakpoint. A block that differs by a byte
+    // between turns misses cache on every one of them, which on a looped plan
+    // is the difference between pennies and pounds.
+    expect(patchBlock(LINE, brief)).toBe(patchBlock(LINE, brief));
+  });
+
+  it("names only candidate ids — it cannot invent a pub", () => {
+    // Named pubs, so "the block contains no names" is a real assertion rather
+    // than one the fixture satisfies by having ids for names.
+    const named = ["The Bell", "Crown Tavern", "Nags Head", "Red Lion"].map(
+      (name, index) => pub(`p${index}`, 0, index, name),
+    );
+    const block = routesBlock(buildRouteGraph(named, { holes: 4 }));
+    // The dossier above carries what a pub is *like*; this block is only about
+    // where things are, and a name here would be a name the model could copy.
+    for (const candidate of named) expect(block).not.toContain(candidate.name);
+    // And every stop it does name is an id that was handed in.
+    const ids = new Set(named.map((c) => c.id));
+    for (const stop of block.matchAll(/\bp\d+\b/g)) {
+      expect(ids.has(stop[0])).toBe(true);
+    }
+  });
+
+  it("reaches the prompt at all", () => {
+    // The wiring itself. Built-and-never-called is the failure this catches.
+    expect(patchBlock(LINE, brief)).toContain("<routes>");
+    expect(patchBlock(LINE, brief)).toContain("<swaps>");
+  });
+
+  it("says nothing when there is nothing to route", () => {
+    expect(routesBlock(buildRouteGraph([], { holes: 4 }))).toBe("");
+  });
+});
+
+describe("targetKmFor", () => {
+  it("reads the stated minimum leg as the walk the host wants", () => {
+    // Eight minutes between four pubs is three legs of eight minutes at a
+    // stroll, not the shortest line through four doors.
+    expect(targetKmFor(8, 4)).toBeCloseTo((8 / 60) * 4.5 * 3, 5);
+    // A one-hole round has no legs, and must not ask for a walk of zero.
+    expect(targetKmFor(8, 1)).toBeGreaterThan(0);
   });
 });

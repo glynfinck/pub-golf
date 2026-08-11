@@ -335,7 +335,7 @@ function buildMessages(input: CaddyAsk): Anthropic.MessageParam[] {
       content: [
         {
           type: "text",
-          text: patchBlock(input.candidates),
+          text: patchBlock(input.candidates, input.brief),
           // The breakpoint. Everything above is byte-identical for the life of
           // the session; everything below is cheap to re-send.
           cache_control: { type: "ephemeral" },

@@ -10,6 +10,11 @@ import {
   vibeMeaning,
   type CaddyBrief,
 } from "@/lib/caddy/brief";
+import {
+  buildRouteGraph,
+  routesBlock,
+  targetKmFor,
+} from "@/lib/caddy/route-graph";
 import { drinkForHazard, HAZARDS, type HazardId } from "@/lib/hazards";
 import { orderWalk } from "@/lib/caddy/route";
 import {
@@ -230,8 +235,29 @@ export function askBlock(ask: string, holeNumber: number | null): string {
 
 /** The dossier, re-exported through the plan module so callers assemble a
  * request from one place. */
-export function patchBlock(candidates: CandidateDossier[]): string {
-  return dossierBlock(candidates);
+/** A pinned tee arrives as a `venues` row id; the graph speaks in candidate
+ * ids. Null when the pin is not among the candidates, which the graph then
+ * treats as unpinned rather than as an impossible constraint. */
+function candidateIdFor(
+  candidates: CandidateDossier[],
+  venueId: string | null,
+): string | null {
+  if (!venueId) return null;
+  return candidates.find((c) => c.venueId === venueId)?.id ?? null;
+}
+
+export function patchBlock(
+  candidates: CandidateDossier[],
+  brief: CaddyBrief,
+): string {
+  const graph = buildRouteGraph(candidates, {
+    holes: brief.holes,
+    startId: candidateIdFor(candidates, brief.startVenueId),
+    finishId: candidateIdFor(candidates, brief.finishVenueId),
+    targetKm: targetKmFor(brief.stretch, brief.holes),
+  });
+  const routes = routesBlock(graph);
+  return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);
 }
 
 /**

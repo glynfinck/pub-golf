@@ -464,3 +464,57 @@ export function buildRouteGraph(
 
   return { nodes, neighbours, routes: kept };
 }
+
+/** Walking pace, km/h. The house already assumes a stroll rather than a march
+ * everywhere else it estimates a walk. */
+const STROLL_KMH = 4.5;
+
+/**
+ * The walk the brief is asking for, in kilometres.
+ *
+ * `stretch` is the shortest walk the host wants *between* two pubs, so the
+ * round they have in mind is roughly that leg repeated. Treating a stated
+ * minimum as the target is the honest reading of it: somebody who asks for ten
+ * minutes between pubs wants a walk, and handing them nine doors on one street
+ * is answering a different question.
+ */
+export function targetKmFor(stretchMinutes: number, holes: number): number {
+  return (stretchMinutes / 60) * STROLL_KMH * Math.max(holes - 1, 1);
+}
+
+/**
+ * The graph, as the caddy reads it.
+ *
+ * Terse on purpose: this sits inside the cached prefix, so it is written once
+ * per session and read on every turn, but it is still context that the dossier
+ * has to share. Ids and numbers, no prose — the model has the dossier for what
+ * a pub is *like*, and needs this only for where things are.
+ */
+export function routesBlock(graph: RouteGraph): string {
+  if (!graph.routes.length) return "";
+  const lines: string[] = [
+    "<routes>",
+    "Worked out for you: complete walks over the candidates above, best first.",
+    "Take one and adjust it. You are not required to — but you should not need",
+    "to search, and every stop below is a real candidate id.",
+    "",
+  ];
+  graph.routes.forEach((route, index) => {
+    const legs = route.legs.map((leg) => leg.km.toFixed(2)).join("/");
+    lines.push(
+      `R${index + 1} [${route.character}] ${route.stops.join(" > ")}` +
+        ` | total ${route.totalKm.toFixed(2)}km | legs ${legs}` +
+        ` | longest ${route.worstLegKm.toFixed(2)}km | ${route.variety} kinds`,
+    );
+  });
+  lines.push("", "<swaps>", "Nearest alternatives to each stop, with the walk to it.");
+  for (const node of graph.nodes) {
+    const near = graph.neighbours[node.id];
+    if (!near?.length) continue;
+    lines.push(
+      `${node.id}: ${near.map((n) => `${n.id} ${n.km.toFixed(2)}km`).join(", ")}`,
+    );
+  }
+  lines.push("</swaps>", "</routes>");
+  return lines.join("\n");
+}
