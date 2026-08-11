@@ -22,6 +22,7 @@ import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
   MAX_TOOL_TURNS,
+  outOfLoopTime,
   type CaddyBoard,
 } from "@/lib/caddy/tools";
 import {
@@ -105,6 +106,8 @@ const THINKING_SHOWN = { type: "adaptive", display: "summarized" } as const;
  * itself needs.
  */
 const MAX_TOKENS = 16_000;
+
+
 
 /** One turn of the conversation, as the transcript remembers it. */
 export interface CaddyTurnRecord {
@@ -435,8 +438,17 @@ export async function askCaddyLooped(
   let candidates = input.candidates;
   let usage: CaddyUsage = { ...NO_USAGE };
 
+  const startedAt = Date.now();
   try {
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
+      // Out of time is a reason to hand over, never a reason to fail. The
+      // board is whatever the last completed turn left, which is a card.
+      if (outOfLoopTime(turn, Date.now() - startedAt)) {
+        console.warn(
+          `[caddy] loop stopped on the clock after ${turn} turns with ${board.holes.length} holes`,
+        );
+        break;
+      }
       const response = await call.client.messages.create({
         model: call.model,
         max_tokens: MAX_TOKENS,

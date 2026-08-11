@@ -6,18 +6,21 @@ import {
   type PubSource,
 } from "@/lib/caddy/dossier";
 import {
-  applyDraftTool,
-  boardBlock,
+  CADDY_LOOP_MS,
   CADDY_TOOLS,
-  isDraftTool,
-  readSearchCall,
-  searchResultBlock,
   TOOL_MOVE,
   TOOL_NAME,
   TOOL_READ,
   TOOL_REMOVE,
   TOOL_SEARCH,
   TOOL_SET,
+  TURN_HEADROOM_MS,
+  applyDraftTool,
+  boardBlock,
+  isDraftTool,
+  outOfLoopTime,
+  readSearchCall,
+  searchResultBlock,
   type CaddyBoard,
 } from "@/lib/caddy/tools";
 
@@ -418,5 +421,41 @@ describe("CADDY_TOOLS", () => {
 
   it("refuses a tool it has never heard of", () => {
     expect(applyDraftTool("drop_table", {}, BOARD, CANDIDATES).ok).toBe(false);
+  });
+});
+
+describe("the loop's own clock", () => {
+  it("never stops before the first turn has happened", () => {
+    // A loop that gave up having done nothing would hand back an empty board
+    // and call it a card.
+    expect(outOfLoopTime(0, CADDY_LOOP_MS * 10)).toBe(false);
+  });
+
+  it("keeps going while there is room for another turn", () => {
+    expect(outOfLoopTime(1, 0)).toBe(false);
+    expect(outOfLoopTime(5, CADDY_LOOP_MS - TURN_HEADROOM_MS - 1)).toBe(false);
+  });
+
+  it("stops one turn early rather than starting one it cannot finish", () => {
+    // The failure this exists for: the first real looped plan was killed by
+    // the platform mid-turn, which lost the card *and* the ledger row — the
+    // row is written after the call returns, and a killed function never
+    // returns. Beginning a turn with no room to finish it is how that happens.
+    expect(outOfLoopTime(3, CADDY_LOOP_MS - TURN_HEADROOM_MS + 1)).toBe(true);
+    expect(outOfLoopTime(3, CADDY_LOOP_MS)).toBe(true);
+  });
+
+  it("leaves a whole turn's room, not a sliver", () => {
+    // A turn is a model call with thinking on plus a Places search. The
+    // headroom has to be a real turn or the guard is decoration.
+    expect(TURN_HEADROOM_MS).toBeGreaterThanOrEqual(30_000);
+    expect(CADDY_LOOP_MS).toBeGreaterThan(TURN_HEADROOM_MS * 2);
+  });
+
+  it("finishes inside the route's own ceiling", () => {
+    // `maxDuration` on app/api/caddy/plan/route.ts is the backstop; this is
+    // the mechanism, and it has to come in under it with room for the reply.
+    const ROUTE_MAX_MS = 300_000;
+    expect(CADDY_LOOP_MS + TURN_HEADROOM_MS).toBeLessThan(ROUTE_MAX_MS);
   });
 });

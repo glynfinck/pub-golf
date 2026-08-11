@@ -37,8 +37,17 @@ import { encodeEvent, pickedIds, type CaddyEvent } from "@/lib/caddy/stream";
 /** Node, not edge: the pipeline reads `next/headers` for the geo bias and
  * talks to Places and Supabase on the host's own session. */
 export const runtime = "nodejs";
-/** Long enough for a full plan on a slow patch, and no longer. */
-export const maxDuration = 120;
+/**
+ * Long enough for a full plan on a slow patch, and no longer.
+ *
+ * The tool loop needs minutes rather than the twenty seconds a single-shot
+ * plan took, and the first real one was killed here at 120 — which cost the
+ * host nothing on screen and cost us every token it had already spent, because
+ * the ledger row is written after the call returns. The loop now keeps its own
+ * clock (`CADDY_LOOP_MS`) and stops itself well inside this, so a card and its
+ * bill both make it home. This is the backstop, not the mechanism.
+ */
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   if (!caddyEnabled(process.env)) {

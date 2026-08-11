@@ -51,6 +51,38 @@ import type { RouteTrial } from "@/lib/caddy/route";
  * board at that point is a real card and is handed over as one. */
 export const MAX_TOOL_TURNS = 12;
 
+/**
+ * How long the loop may work before it hands over what it has, and how much
+ * room one more turn needs.
+ *
+ * The turn cap alone was not enough. The first real looped plan was killed by
+ * the platform at `maxDuration`, which cost the host nothing on screen and
+ * cost us every token it had already spent — the ledger row is written after
+ * the call returns, and a killed function never returns. A timeout was the one
+ * remaining way to spend money nobody counted.
+ *
+ * The headroom is the interesting half: a turn is a model call with thinking
+ * on plus however long a Places search takes, so beginning one with thirty
+ * seconds left is how you get killed mid-flight and lose the card *and* the
+ * accounting. Better to stop one turn early holding a finished card.
+ */
+export const CADDY_LOOP_MS = 210_000;
+export const TURN_HEADROOM_MS = 45_000;
+
+/**
+ * Is there time for another turn?
+ *
+ * The clock comes in as a number rather than being read in here, which is the
+ * house rule for anything with timing in it: a decision a test can make
+ * without waiting three and a half minutes to watch it.
+ *
+ * Never stops before the first turn. A loop that gave up having done nothing
+ * would hand back an empty board and call it a card.
+ */
+export function outOfLoopTime(turn: number, elapsedMs: number): boolean {
+  return turn > 0 && elapsedMs > CADDY_LOOP_MS - TURN_HEADROOM_MS;
+}
+
 /** A search the caddy runs mid-conversation, and the ceiling on what one is
  * allowed to bring back. Small on purpose: this is a follow-up ("anywhere with
  * a garden?"), not a second gather. */
