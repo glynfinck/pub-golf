@@ -54,6 +54,36 @@ interface ApiErrorish {
   error?: unknown;
 }
 
+/** The HTTP status a thrown thing carries, if it carries one. */
+export function statusOf(cause: unknown): number | null {
+  if (typeof cause !== "object" || cause === null) return null;
+  const raw = (cause as ApiErrorish).status;
+  const status = typeof raw === "string" ? Number(raw) : raw;
+  return typeof status === "number" && Number.isFinite(status) ? status : null;
+}
+
+/**
+ * Will asking again ever work?
+ *
+ * This distinction is the difference between an honest line and a lie. A
+ * timeout, a rate limit or a bad gateway are worth another tap and the host is
+ * told so. A 403 saying the account cannot use this model is not: it will
+ * answer identically for ever, and "ask again — this one's free" invites a host
+ * who has paid us to sit there tapping a button that cannot succeed.
+ *
+ * The doubt falls toward transient. A wrongly-transient message costs one
+ * wasted tap; a wrongly-permanent one tells a host the caddy is off duty when
+ * it would have worked the second time.
+ */
+export function isPermanentFailure(cause: unknown): boolean {
+  const status = statusOf(cause);
+  // No status at all is a network error or an SDK bug — both worth retrying.
+  if (status === null) return false;
+  // 408 and 429 are 4xx that explicitly mean "later".
+  if (status === 408 || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
 /**
  * One line describing a thrown thing.
  *

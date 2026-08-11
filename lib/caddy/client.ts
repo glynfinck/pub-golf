@@ -16,7 +16,7 @@ import type { CaddyBrief } from "@/lib/caddy/brief";
 import { NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
-import { describeFailure } from "@/lib/caddy/failure";
+import { describeFailure, isPermanentFailure } from "@/lib/caddy/failure";
 
 /**
  * The caddy's own hand — the one place in the app that talks to a model.
@@ -74,7 +74,7 @@ export interface CaddyAsk {
  */
 export type CaddyOutcome = (
   | PlanResult
-  | { ok: false; reason: "unavailable" }
+  | { ok: false; reason: "unavailable" | "misconfigured" }
 ) & {
   usage: CaddyUsage;
   model: string;
@@ -152,7 +152,11 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
     // redeploy with logging. Once was enough.
     const detail = describeFailure(cause);
     console.error(`[caddy] ${credentials.via} ${model} failed: ${detail}`);
-    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model, detail };
+    // A 401/403/404 is the deploy being wrong, not the night being unlucky —
+    // it will answer identically for ever. Saying so is the difference between
+    // an honest line and one that has a paying host tapping a dead button.
+    const reason = isPermanentFailure(cause) ? "misconfigured" : "unavailable";
+    return { ok: false, reason, usage: { ...NO_USAGE }, model, detail };
   }
 }
 

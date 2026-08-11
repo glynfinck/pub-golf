@@ -402,9 +402,16 @@ async function turn(input: {
     // this row the host is already past the ceiling, and the line they need to
     // read is the one below, not a second failure about bookkeeping.
     await record(true, {});
-    if (outcome.reason === "unavailable") {
+    if (outcome.reason === "unavailable" || outcome.reason === "misconfigured") {
       return {
-        error: "The caddy lost the ball. Ask again — this one's free.",
+        // Two different truths. A timeout is worth another tap; a deploy that
+        // cannot reach its model is not, and telling a host to ask again would
+        // sit them in front of a button that cannot work. Neither costs them
+        // anything, and neither mentions the machinery.
+        error:
+          outcome.reason === "misconfigured"
+            ? "The caddy's off duty — that's ours to fix, and it hasn't cost you a thing."
+            : "The caddy lost the ball. Ask again — this one's free.",
         // Off production only, and it is the same line the server log gets:
         // whoever is looking at staging can read the vendor's actual complaint
         // rather than asking someone else to go and read logs for them.

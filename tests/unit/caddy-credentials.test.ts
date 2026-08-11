@@ -4,8 +4,10 @@ import {
   AI_GATEWAY_BASE_URL,
   CADDY_MODEL,
   CADDY_MODEL_VIA_GATEWAY,
+  bareModel,
   caddyCredentials,
   caddyEnabled,
+  modelFor,
 } from "@/lib/caddy/credentials";
 
 describe("caddyCredentials", () => {
@@ -73,5 +75,59 @@ describe("caddyEnabled", () => {
     expect(caddyEnabled({ AI_GATEWAY_API_KEY: "k" })).toBe(true);
     expect(caddyEnabled({ VERCEL_OIDC_TOKEN: "k" })).toBe(true);
     expect(caddyEnabled({ ANTHROPIC_API_KEY: "k" })).toBe(true);
+  });
+});
+
+describe("modelFor", () => {
+  it("defaults to Sonnet, not the top tier", () => {
+    // The task is constrained, schema-held work — choosing nine pubs from
+    // forty and dressing them — and output dominates the bill.
+    expect(CADDY_MODEL).toBe("claude-sonnet-5");
+  });
+
+  it("adds the provider for the gateway and takes it off for Anthropic", () => {
+    expect(modelFor({}, "gateway")).toBe(CADDY_MODEL_VIA_GATEWAY);
+    expect(modelFor({}, "anthropic")).toBe(CADDY_MODEL);
+  });
+
+  it("takes an override", () => {
+    // The reason this exists: the gateway gates models by account tier and
+    // answers one you cannot reach with a 403, so trying another id must not
+    // need a redeploy.
+    expect(modelFor({ CADDY_MODEL: "claude-opus-5" }, "gateway")).toBe(
+      "anthropic/claude-opus-5",
+    );
+    expect(modelFor({ CADDY_MODEL: "claude-opus-5" }, "anthropic")).toBe(
+      "claude-opus-5",
+    );
+  });
+
+  it("never double-prefixes an override that already names a provider", () => {
+    expect(modelFor({ CADDY_MODEL: "openai/gpt-5.4" }, "gateway")).toBe(
+      "openai/gpt-5.4",
+    );
+    expect(modelFor({ CADDY_MODEL: "anthropic/claude-opus-5" }, "gateway")).toBe(
+      "anthropic/claude-opus-5",
+    );
+  });
+
+  it("ignores a blank override rather than asking for an empty model", () => {
+    expect(modelFor({ CADDY_MODEL: "   " }, "gateway")).toBe(CADDY_MODEL_VIA_GATEWAY);
+  });
+
+  it("carries the override through credential resolution", () => {
+    expect(
+      caddyCredentials({ AI_GATEWAY_API_KEY: "k", CADDY_MODEL: "claude-opus-5" })?.model,
+    ).toBe("anthropic/claude-opus-5");
+    expect(
+      caddyCredentials({ ANTHROPIC_API_KEY: "k", CADDY_MODEL: "claude-opus-5" })?.model,
+    ).toBe("claude-opus-5");
+  });
+});
+
+describe("bareModel", () => {
+  it("strips one provider prefix and leaves a bare id alone", () => {
+    expect(bareModel("anthropic/claude-opus-5")).toBe("claude-opus-5");
+    expect(bareModel("claude-opus-5")).toBe("claude-opus-5");
   });
 });
