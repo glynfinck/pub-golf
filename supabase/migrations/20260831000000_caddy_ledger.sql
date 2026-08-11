@@ -1,6 +1,19 @@
 -- ---------------------------------------------------------------------------
 -- The caddy's ledger: what a host was given, and what they have used.
 --
+-- Replaces `caddy_credits` from 20260829, which shipped to the branch project
+-- before this design existed. That one counted a single quota and could not
+-- answer the question two quotas make obvious, so it is torn out below rather
+-- than edited: **it has run.** A migration that has been applied is immutable,
+-- and the fact that its file was still sitting in the branch unmerged an hour
+-- earlier is not a licence — the check has to be "has this run?", asked now,
+-- not "was it unmerged when I last looked?".
+--
+-- Rewriting it in place would have been worse than useless: Supabase records
+-- `20260829000000` as applied and would skip a replacement wearing the same
+-- version, so `caddy_credits` would linger and none of the tables below would
+-- ever be created.
+--
 -- Two quotas, because the two things a host asks for differ in cost by an
 -- order of magnitude. A **re-design** is a fresh Places gather, a forty-pub
 -- dossier written into cache and a tool loop; a **tweak** is a cached prefix
@@ -44,6 +57,18 @@
 -- Per-grant rather than read off `entitlements` so a top-up can carry its own
 -- window later without this table learning anything new.
 -- ---------------------------------------------------------------------------
+
+-- ——— out with the single-quota ledger ———
+--
+-- Nothing read these but the app on this branch, and the app on this branch is
+-- deployed together with this file. Dropped in dependency order: the trigger
+-- before the function it calls, the functions before the table they read.
+drop trigger if exists guard_caddy_credit on public.caddy_turns;
+drop function if exists public.guard_caddy_credit ();
+drop function if exists public.caddy_unspent_fee (uuid);
+drop function if exists public.caddy_credits_left (uuid);
+drop table if exists public.caddy_credits;
+drop function if exists public.caddy_courses_per_fee ();
 
 create type public.caddy_quota as enum ('redesign', 'tweak');
 
