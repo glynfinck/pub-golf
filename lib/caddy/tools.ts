@@ -7,6 +7,7 @@ import {
   HAZARD_NOTE_MAX,
   clampInt,
   clampText,
+  nullableEnum,
   readHazard,
   readRules,
 } from "@/lib/caddy/plan";
@@ -154,7 +155,7 @@ export const CADDY_TOOLS = [
           type: "integer",
           description: "Swigs the drink should take: 2 a half or a short, 3 a spirit and mixer, 4 a pint, 5 a pint of something heavy.",
         },
-        hazard: { type: ["string", "null"], enum: [...HAZARDS.map((h) => h.id), null] },
+        hazard: nullableEnum(HAZARDS.map((h) => h.id)),
         hazardNote: { type: ["string", "null"] },
         fitNote: {
           type: ["string", "null"],

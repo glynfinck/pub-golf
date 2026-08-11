@@ -8,6 +8,8 @@ import {
   MAX_CANDIDATES,
   type PubSource,
 } from "@/lib/caddy/dossier";
+import { CADDY_TOOLS } from "@/lib/caddy/tools";
+import { HAZARDS } from "@/lib/hazards";
 import {
   briefBlock,
   CADDY_SYSTEM,
@@ -416,5 +418,43 @@ describe("changedHoles", () => {
 
   it("counts a lengthened card's new holes", () => {
     expect(changedHoles(card(["a"]), card(["a", "b"]))).toEqual([1]);
+  });
+});
+
+describe("schemas a constrained decoder will actually accept", () => {
+  /** Every subschema in a JSON Schema tree. */
+  function subschemas(node: unknown, found: Record<string, unknown>[] = []) {
+    if (typeof node !== "object" || node === null) return found;
+    if (Array.isArray(node)) {
+      node.forEach((item) => subschemas(item, found));
+      return found;
+    }
+    const row = node as Record<string, unknown>;
+    found.push(row);
+    Object.values(row).forEach((value) => subschemas(value, found));
+    return found;
+  }
+
+  const SCHEMAS: [string, unknown][] = [
+    ["planSchema", planSchema(CANDIDATES)],
+    ["CADDY_TOOLS", CADDY_TOOLS.map((tool) => tool.input_schema)],
+  ];
+
+  it.each(SCHEMAS)("%s never pairs an enum with a union type", (_name, schema) => {
+    // The bug this is here for cost an afternoon of round trips. Anthropic's
+    // validator checks each enum value against the declared type and refuses
+    // `{ type: ["string","null"], enum: [...] }` with "Enum value 'water' does
+    // not match declared type" — a 400 before the model ever sees the request.
+    // `enum` alone is the accepted spelling and is strictly stronger.
+    subschemas(schema).forEach((node) => {
+      if (node.enum !== undefined) expect(Array.isArray(node.type)).toBe(false);
+    });
+  });
+
+  it("still constrains the hazard to the house's three, or nothing", () => {
+    const holes = (planSchema(CANDIDATES) as never as {
+      properties: { holes: { items: { properties: Record<string, { enum?: unknown[] }> } } };
+    }).properties.holes.items.properties;
+    expect(holes.hazard.enum).toEqual([...HAZARDS.map((h) => h.id), null]);
   });
 });

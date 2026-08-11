@@ -162,6 +162,25 @@ export function patchBlock(candidates: CandidateDossier[]): string {
 }
 
 /**
+ * A nullable enum, in the one spelling a constrained decoder accepts.
+ *
+ * `{ type: ["string", "null"], enum: [...] }` is valid JSON Schema and reads
+ * like the obvious way to say "one of these, or nothing". Anthropic's schema
+ * validator refuses it — it checks each enum value against the declared type
+ * and reports `Enum value 'water' does not match declared type
+ * '['string','null']'` — so the whole request 400s before the model sees it.
+ *
+ * `enum` on its own is the fix and is strictly stronger anyway: it constrains
+ * the value to exactly this list, which already implies the type. Shared with
+ * `lib/caddy/tools.ts` rather than written twice, because both schemas go to
+ * the same validator and a second copy is a second chance to spell it the way
+ * that fails.
+ */
+export function nullableEnum(values: readonly string[]): Record<string, unknown> {
+  return { enum: [...values, null] };
+}
+
+/**
  * The response schema, as JSON Schema for structured outputs.
  *
  * `candidateId` is an enum rather than a string, so the constrained decoder
@@ -187,10 +206,7 @@ export function planSchema(
             candidateId: { type: "string", enum: candidates.map((c) => c.id) },
             drink: { type: "string" },
             par: { type: "integer" },
-            hazard: {
-              type: ["string", "null"],
-              enum: [...HAZARDS.map((h) => h.id), null],
-            },
+            hazard: nullableEnum(HAZARDS.map((h) => h.id)),
             hazardNote: { type: ["string", "null"] },
             fitNote: { type: ["string", "null"] },
             localRules: {
