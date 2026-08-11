@@ -164,6 +164,96 @@ export type Database = {
           },
         ]
       }
+      caddy_sessions: {
+        Row: {
+          brief: Json
+          completed_at: string | null
+          created_at: string
+          dossier: Json
+          entitlement_id: string | null
+          host: string
+          id: string
+        }
+        Insert: {
+          brief?: Json
+          completed_at?: string | null
+          created_at?: string
+          dossier?: Json
+          entitlement_id?: string | null
+          host?: string
+          id?: string
+        }
+        Update: {
+          brief?: Json
+          completed_at?: string | null
+          created_at?: string
+          dossier?: Json
+          entitlement_id?: string | null
+          host?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caddy_sessions_entitlement_id_fkey"
+            columns: ["entitlement_id"]
+            isOneToOne: false
+            referencedRelation: "entitlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_sessions_host_fkey"
+            columns: ["host"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      caddy_turns: {
+        Row: {
+          ask: string | null
+          created_at: string
+          host: string
+          id: string
+          kind: string
+          result: Json
+          session_id: string
+        }
+        Insert: {
+          ask?: string | null
+          created_at?: string
+          host?: string
+          id?: string
+          kind?: string
+          result: Json
+          session_id: string
+        }
+        Update: {
+          ask?: string | null
+          created_at?: string
+          host?: string
+          id?: string
+          kind?: string
+          result?: Json
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caddy_turns_host_fkey"
+            columns: ["host"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_turns_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "caddy_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       entitlements: {
         Row: {
           amount_total: number | null

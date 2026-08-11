@@ -168,7 +168,9 @@ export function patchBlock(candidates: CandidateDossier[]): string {
  * cannot emit an id that was never offered. That is the never-invent-a-pub
  * rule expressed where it cannot be argued with.
  */
-export function planSchema(candidates: CandidateDossier[]): object {
+export function planSchema(
+  candidates: CandidateDossier[],
+): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
