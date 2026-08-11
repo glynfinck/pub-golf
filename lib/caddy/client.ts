@@ -29,6 +29,7 @@ import { dispatchTool } from "@/lib/caddy/session";
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
+  isDraftTool,
   TURN_TIMEOUT_MS,
   MAX_TOOL_TURNS,
   outOfLoopTime,
@@ -534,6 +535,7 @@ export async function askCaddyLooped(
       const results: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
+        const before = board.holes.length;
         const answered = await dispatchTool(block.name, block.input, {
           board,
           candidates,
@@ -541,6 +543,28 @@ export async function askCaddyLooped(
           search: deps.search,
         });
         board = answered.board;
+
+        /**
+         * What the tool actually received, when a call changes nothing.
+         *
+         * Written because an evening was lost to guessing at this. A card came
+         * back with every drink defaulted, which is indistinguishable at the
+         * far end from the fallback board firing — and the schema, the
+         * dispatcher, `applyDraftTool`, `clampText` and `neutralise` all
+         * checked out, so the payload is the only thing left that can answer
+         * it. The keys are logged and the values are not: a key list says
+         * whether `drink` arrived at all, which is the question, and the
+         * values are a host's course rather than ours to print.
+         */
+        if (isDraftTool(block.name) && board.holes.length === before) {
+          const keys =
+            typeof block.input === "object" && block.input !== null
+              ? Object.keys(block.input as Record<string, unknown>).sort()
+              : ["(not an object)"];
+          console.warn(
+            `[caddy] ${block.name} changed nothing on turn ${turn}. keys=[${keys.join(",")}] reply=${answered.reply.slice(0, 120)}`,
+          );
+        }
         if (answered.added.length) candidates = [...candidates, ...answered.added];
         if (answered.narration) narrate({ doing: answered.narration });
         results.push({
@@ -577,6 +601,16 @@ export async function askCaddyLooped(
   // have to reason about removing, which changes every successful plan to
   // rescue the failing ones. This changes only the runs that would otherwise
   // have delivered nothing.
+  // One line that says what the loop actually did, because "every drink says
+  // Pint of your choosing" has two completely different causes — the fallback
+  // firing, and `set_hole` landing with no drink on it — and they were
+  // indistinguishable from the card.
+  console.warn(
+    `[caddy] loop finished: ${board.holes.length} holes, ` +
+      `${board.holes.filter((hole) => hole.drink === "Pint of your choosing").length} undressed, ` +
+      `named=${board.name ? "yes" : "no"}`,
+  );
+
   if (board.holes.length === 0) {
     const rescue = fallbackBoard(candidates, input.brief);
     if (rescue.holes.length > 0) {
