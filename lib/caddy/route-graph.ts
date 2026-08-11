@@ -1,4 +1,4 @@
-import type { CandidateDossier } from "@/lib/caddy/dossier";
+import type { CandidateDossier, PubFacts } from "@/lib/caddy/dossier";
 import { haversineKm } from "@/lib/geo";
 
 /**
@@ -37,6 +37,10 @@ export interface RouteNode {
   id: string;
   lat: number;
   lng: number;
+  rating: number | null;
+  reviewCount: number | null;
+  priceLevel: number | null;
+  facts: PubFacts;
   /** Chains repeat their name, so the normalised name is a good enough
    * "kind of place" for variety scoring without needing a taxonomy. */
   kind: string;
@@ -104,7 +108,11 @@ export interface RouteRequest {
 }
 
 const DEFAULT_NEIGHBOURS = 5;
-const DEFAULT_ROUTES = 4;
+/** Ten objectives, so up to ten routes — but only where they genuinely differ.
+ * The block sits above the cache breakpoint, so it is written once a session
+ * and read free thereafter; the cost of a longer menu is one prompt, not one
+ * per turn. */
+const DEFAULT_ROUTES = 10;
 
 /**
  * Two routes sharing all but one stop are one route wearing two hats. Handing
@@ -142,6 +150,10 @@ export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
       id: candidate.id,
       lat: candidate.lat,
       lng: candidate.lng,
+      rating: candidate.rating,
+      reviewCount: candidate.reviewCount,
+      priceLevel: candidate.priceLevel,
+      facts: candidate.facts,
       kind: kindOf(candidate.name),
     });
   }
@@ -387,6 +399,118 @@ export function scoreRoute(route: PlannedRoute, targetKm: number | null): number
 }
 
 /**
+ * How many of a fact a route carries. `null` is not `false` — Google simply
+ * did not say — so an unknown counts as neither, which keeps a patch with thin
+ * data from scoring as a patch with bad pubs.
+ */
+function carrying(
+  stops: string[],
+  nodes: Map<string, RouteNode>,
+  fact: keyof PubFacts,
+): number {
+  return stops.filter((id) => nodes.get(id)?.facts[fact] === true).length;
+}
+
+/**
+ * The menu, and the reason there is one.
+ *
+ * The first cut produced its alternatives by perturbing a single objective, so
+ * every route was a slightly different attempt at being short. That is
+ * variation, not choice: a host cycling through them is reading four answers to
+ * one question. Each entry here **wins a different argument** — the ones a
+ * host actually has when planning a night by hand — and all of them are scored
+ * off data the dossier already carries.
+ *
+ * Lower is better throughout, so every scorer is written as a penalty.
+ */
+export interface RouteObjective {
+  key: string;
+  /** What the model reads, so it can choose between them. */
+  character: string;
+  score: (route: PlannedRoute, nodes: Map<string, RouteNode>, targetKm: number | null) => number;
+}
+
+export const ROUTE_OBJECTIVES: RouteObjective[] = [
+  {
+    key: "balanced",
+    character: "best fit for the brief",
+    score: (route, _nodes, target) => scoreRoute(route, target),
+  },
+  {
+    key: "onward",
+    character: "keeps moving — least doubling back",
+    score: (route) => route.detour,
+  },
+  {
+    key: "rated",
+    character: "the best-reviewed pubs in the patch",
+    score: (route, nodes) => {
+      // Weighted by review count, so one glowing five-star with three reviews
+      // does not beat a well-loved local with four hundred.
+      let weighted = 0;
+      let weight = 0;
+      for (const id of route.stops) {
+        const node = nodes.get(id);
+        if (!node?.rating) continue;
+        const w = Math.log10((node.reviewCount ?? 0) + 10);
+        weighted += node.rating * w;
+        weight += w;
+      }
+      return weight === 0 ? 5 : 5 - weighted / weight;
+    },
+  },
+  {
+    key: "drinks",
+    character: "widest range of drinks",
+    score: (route, nodes) => {
+      // The house rule enforced by geometry rather than by dressing: a card
+      // cannot pour what its pubs do not stock, so a route that cannot carry a
+      // short or a glass of wine is a route that can only be nine pints.
+      const beer = carrying(route.stops, nodes, "servesBeer");
+      const wine = carrying(route.stops, nodes, "servesWine");
+      const shorts = carrying(route.stops, nodes, "servesCocktails");
+      const covered = [beer, wine, shorts].filter((n) => n > 0).length;
+      return 3 - covered;
+    },
+  },
+  {
+    key: "kind",
+    character: "kindest legs — nothing far between stops",
+    score: (route) => route.worstLegKm,
+  },
+  {
+    key: "mixed",
+    character: "most variety — fewest repeats of the same place",
+    score: (route) => -route.variety,
+  },
+  {
+    key: "cheap",
+    character: "easiest on a round of drinks",
+    score: (route, nodes) => {
+      const priced = route.stops
+        .map((id) => nodes.get(id)?.priceLevel)
+        .filter((level): level is number => typeof level === "number");
+      return priced.length === 0 ? 4 : priced.reduce((a, b) => a + b, 0) / priced.length;
+    },
+  },
+  {
+    key: "outdoor",
+    character: "beer gardens where there are any",
+    score: (route, nodes) => -carrying(route.stops, nodes, "outdoorSeating"),
+  },
+  {
+    key: "groups",
+    character: "room for a big table",
+    score: (route, nodes) => -carrying(route.stops, nodes, "goodForGroups"),
+  },
+  {
+    key: "sport",
+    character: "somewhere with the match on",
+    score: (route, nodes) => -carrying(route.stops, nodes, "goodForWatchingSports"),
+  },
+];
+
+/**
  * The map, ready to hand over.
  *
  * Seed several greedy tours from different second stops, improve each by
@@ -438,50 +562,32 @@ export function buildRouteGraph(
   });
 
   const target = request.targetKm ?? null;
-  const scored = improved
-    .map((stops) => describe(table, byId, stops, "shortest"))
-    .sort((a, b) => scoreRoute(a, target) - scoreRoute(b, target));
+  const described = improved.map((stops) => describe(table, byId, stops, ""));
 
+  // Each objective picks its own winner from the same pool, which is what
+  // makes this a menu rather than a shortlist: the routes differ because they
+  // are answers to different questions, not because they were perturbed.
+  //
+  // A route already taken cannot win twice, and a near-duplicate of one
+  // already kept is skipped — two routes sharing all but one stop are one
+  // route wearing two hats, and offering both spends context to give no
+  // choice. So an objective whose best is already on the menu simply does not
+  // contribute, and the menu is shorter than the objective list.
   const kept: PlannedRoute[] = [];
-  for (const route of scored) {
-    if (kept.length >= (request.routes ?? DEFAULT_ROUTES)) break;
-    const tooSimilar = kept.some(
-      (other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR,
+  const wanted = request.routes ?? DEFAULT_ROUTES;
+  for (const objective of ROUTE_OBJECTIVES) {
+    if (kept.length >= wanted) break;
+    const ranked = [...described].sort(
+      (a, b) => objective.score(a, byId, target) - objective.score(b, byId, target),
     );
-    if (!tooSimilar) kept.push(route);
-  }
-
-  // Character is relative to the set, so it can only be named once the set is
-  // known — and every label must be distinct, or the model is offered "most
-  // variety" twice and has no way to tell them apart.
-  if (kept.length > 0) {
-    const taken = new Set<number>([0]);
-    kept[0].character = "best fit for the brief";
-    const pick = (better: (a: PlannedRoute, b: PlannedRoute) => boolean) => {
-      let best: number | null = null;
-      for (let i = 1; i < kept.length; i += 1) {
-        if (taken.has(i)) continue;
-        if (best === null || better(kept[i], kept[best])) best = i;
-      }
-      return best;
-    };
-    const kindest = pick((a, b) => a.worstLegKm < b.worstLegKm);
-    if (kindest !== null) {
-      kept[kindest].character = "kindest legs";
-      taken.add(kindest);
-    }
-    const mixed = pick((a, b) => a.variety > b.variety);
-    if (mixed !== null) {
-      kept[mixed].character = "most variety";
-      taken.add(mixed);
-    }
-    let spare = 1;
-    for (let i = 1; i < kept.length; i += 1) {
-      if (!taken.has(i)) {
-        kept[i].character = `another way round (${spare})`;
-        spare += 1;
-      }
-    }
+    const winner = ranked.find(
+      (route) =>
+        !kept.includes(route) &&
+        !kept.some((other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR),
+    );
+    if (!winner) continue;
+    winner.character = objective.character;
+    kept.push(winner);
   }
 
   return { nodes, neighbours, routes: kept };

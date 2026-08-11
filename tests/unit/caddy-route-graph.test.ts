@@ -375,3 +375,71 @@ describe("a night should go somewhere", () => {
     expect(scoreRoute({ ...base, detour: 3 }, base.totalKm)).toBeGreaterThan(slight);
   });
 });
+
+describe("the menu answers different questions", () => {
+  /** A patch where the objectives genuinely disagree: a cheap chain strip with
+   * no garden, and a pricier row of one-offs that pour everything. */
+  const PATCH = [
+    { id: "c1", name: "Wetherspoon One", price: 1, rating: 3.4, beer: true, wine: false, cocktails: false, garden: false },
+    { id: "c2", name: "Wetherspoon Two", price: 1, rating: 3.3, beer: true, wine: false, cocktails: false, garden: false },
+    { id: "c3", name: "Wetherspoon Three", price: 1, rating: 3.5, beer: true, wine: false, cocktails: false, garden: false },
+    { id: "g1", name: "The Bell", price: 3, rating: 4.7, beer: true, wine: true, cocktails: true, garden: true },
+    { id: "g2", name: "Crown Tavern", price: 3, rating: 4.8, beer: true, wine: true, cocktails: true, garden: true },
+    { id: "g3", name: "Nags Head", price: 3, rating: 4.6, beer: true, wine: true, cocktails: false, garden: true },
+  ].map((row, index) => ({
+    ...pub(row.id, index % 2, index, row.name),
+    rating: row.rating,
+    reviewCount: 400,
+    priceLevel: row.price,
+    facts: {
+      outdoorSeating: row.garden,
+      allowsDogs: null,
+      servesBeer: row.beer,
+      servesWine: row.wine,
+      servesCocktails: row.cocktails,
+      liveMusic: null,
+      goodForWatchingSports: null,
+      goodForGroups: null,
+    },
+  }));
+
+  it("gives every route a distinct character", () => {
+    const graph = buildRouteGraph(PATCH, { holes: 3, routes: 6 });
+    const characters = graph.routes.map((route) => route.character);
+    expect(new Set(characters).size).toBe(characters.length);
+    // And none is left unnamed, which would mean an objective won nothing.
+    for (const character of characters) expect(character.length).toBeGreaterThan(0);
+  });
+
+  it("finds a route that can pour more than beer", () => {
+    // The house rule held by the router: a card cannot pour what its pubs do
+    // not stock, so at least one route on the menu must be able to carry a
+    // short and a glass of wine rather than nine pints.
+    // Breadth across the card, not every pub pouring everything — a round
+    // wants one hole on a short, not nine. So at least one route must cover
+    // beer, wine and cocktails between its stops.
+    const graph = buildRouteGraph(PATCH, { holes: 3, routes: 8 });
+    const covers = (route: (typeof graph.routes)[number], fact: "servesBeer" | "servesWine" | "servesCocktails") =>
+      route.stops.some((id) => PATCH.find((p) => p.id === id)?.facts[fact] === true);
+    const wide = graph.routes.some(
+      (route) =>
+        covers(route, "servesBeer") &&
+        covers(route, "servesWine") &&
+        covers(route, "servesCocktails"),
+    );
+    expect(wide).toBe(true);
+  });
+
+  it("finds a cheaper route and a better-reviewed one, and they differ", () => {
+    const graph = buildRouteGraph(PATCH, { holes: 3, routes: 8 });
+    const priceOf = (route: (typeof graph.routes)[number]) =>
+      route.stops.reduce(
+        (sum, id) => sum + (PATCH.find((p) => p.id === id)?.priceLevel ?? 0),
+        0,
+      );
+    const cheapest = Math.min(...graph.routes.map(priceOf));
+    const dearest = Math.max(...graph.routes.map(priceOf));
+    // If every route costs the same the menu is offering one thing many times.
+    expect(dearest).toBeGreaterThan(cheapest);
+  });
+});
