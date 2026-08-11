@@ -109,3 +109,56 @@ the twelve-turn loop should stop being the case that times out.
 If it works, `MAX_TOOL_TURNS` can come down as a consequence rather than as a
 guess — which is the honest version of the cost cut, since cutting it today
 would just make plans fail sooner.
+
+## Refinement: a menu, not a shortlist
+
+The first cut generates three to five routes by seeding greedy from different
+origins and filtering on overlap. That gives *variation* — different pubs — but
+not *character*: every one of them is trying to be short, so the agent is
+choosing between four answers to the same question. Cycling through them means
+nothing.
+
+Ten routes is the right number, but only if each one **won a different
+objective**. Diversity should come from optimising different things, not from
+perturbing one thing.
+
+The objectives, all from data already gathered:
+
+| Route | Optimises | From |
+|---|---|---|
+| The short one | total walk nearest the target | coordinates |
+| The good one | mean rating, weighted by review count | `rating`, `reviewCount` |
+| The wide one | breadth of drinks across the card | `servesBeer`/`servesWine`/`servesCocktails` |
+| The kind one | no brutal leg | coordinates |
+| The mixed one | distinct kinds of place | name brand word |
+| The cheap one | `priceLevel` | `priceLevel` |
+| The outdoor one | beer gardens | `outdoorSeating` |
+| The group one | room for a table of eight | `goodForGroups` |
+
+Plus two or three balanced compromises, which are what the current scorer
+already produces. A pub-golf round is a *night*, and these are the axes a host
+actually argues about when planning one by hand.
+
+### Drinks belong in the router, not only in the dressing
+
+The house rule is that the caddy must never put a drink on a hole the pub
+cannot pour. Today that is enforced when the card is dressed, which is too
+late: by then the stops are chosen, and a route where nothing serves spirits
+can only be dressed as nine pints.
+
+So drink breadth is a routing objective. A route is scored on whether the card
+it could carry is varied — at least one stop that pours a short, at least one
+that pours wine — and a route that cannot support a varied card scores worse
+before the model ever sees it. That turns a constraint the dressing had to work
+around into one the geometry already satisfies.
+
+This is also the cheapest possible place to enforce it. The facts are in the
+dossier, the scoring is arithmetic, and a rule proved by a pure function is a
+rule that cannot be argued out of by a model having a bad turn.
+
+### What it costs
+
+Nothing meaningful. Ten routes at N≈40 is still milliseconds — the work is in
+the distance matrix, which is computed once and shared across every objective.
+The block grows, but it sits above the cache breakpoint, so it is paid for once
+per session and read free thereafter.
