@@ -449,7 +449,13 @@ export async function askCaddyLooped(
         );
         break;
       }
-      const response = await call.client.messages.create({
+      // Streamed, not awaited whole. The loop shipped using `messages.create`
+      // and that was the wrong call in the most literal sense: a turn takes
+      // the better part of a minute, so the host got a spinner and silence
+      // until it finished, then a paragraph all at once. The narration is the
+      // reason any of this streams — dropping it inside the loop dropped it
+      // from the *only* turn long enough to need it.
+      const turnStream = call.client.messages.stream({
         model: call.model,
         max_tokens: MAX_TOKENS,
         system: CADDY_SYSTEM_TOOLS,
@@ -458,11 +464,16 @@ export async function askCaddyLooped(
         tools: CADDY_TOOLS,
         messages,
       });
-      usage = addUsage(usage, readUsage(response.usage));
-
-      response.content.forEach((block) => {
-        if (block.type === "thinking" && block.thinking) narrate({ thinking: block.thinking });
+      turnStream.on("streamEvent", (event) => {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "thinking_delta"
+        ) {
+          narrate({ thinking: event.delta.thinking });
+        }
       });
+      const response = await turnStream.finalMessage();
+      usage = addUsage(usage, readUsage(response.usage));
 
       // Nothing more to do: the caddy has stopped reaching for tools, which is
       // how it says the card is finished.

@@ -116,11 +116,15 @@ export function pickedIds(text: string): string[] {
  *
  * A window, not a transcript. The reasoning runs to thousands of words and
  * nobody is reading it — what it is there for is the difference between a
- * spinner and something visibly working, which the last line or two provides
- * as well as the whole thing and without turning the drafting table into a log
- * viewer.
+ * spinner and something visibly working, which the last line provides as well
+ * as the whole thing and without turning the drafting table into a log viewer.
+ *
+ * Sized down from 240 after the first real run overflowed the panel it sits
+ * in. Two clamps, not one: this bounds the string and `line-clamp` bounds the
+ * box, because a window that depends on how wide somebody's phone is will
+ * eventually meet a phone it does not fit.
  */
-export const THINKING_WINDOW = 240;
+export const THINKING_WINDOW = 130;
 
 /** The tail of the thinking, tidied for a single line on screen. */
 export function thinkingTail(text: string, max = THINKING_WINDOW): string {

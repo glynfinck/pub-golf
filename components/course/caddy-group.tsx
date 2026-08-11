@@ -202,26 +202,38 @@ export function CaddyGroup({
         aria-live="polite"
       >
         <Putt />
+        {/* Three fixed rows, and the heading never moves.
+            It used to be replaced by whatever tool the caddy had reached for,
+            which put "Looking for pubs with a beer garden near Old Street" in
+            an 18px serif and pushed the panel out of shape. The heading is now
+            the one stable thing on the screen and everything that varies sits
+            under it, in its own row, clamped. */}
         <div className="text-center font-serif text-lg leading-tight text-balance">
-          {doing || (sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch")}
+          {sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch"}
         </div>
-        {/* What it is actually thinking, where there is any. One line, the
-            end of it, and it fades in rather than jumping — a window on the
-            work, not a log. Absent on a tweak and absent if the stream never
-            sends any, which is why the line above still says something on
-            its own. */}
-        {thinking ? (
-          <p
-            aria-live="off"
-            className="animate-in fade-in line-clamp-3 text-center text-[11px] text-balance text-muted-foreground/80 italic"
-          >
-            {thinking}
-          </p>
-        ) : (
-          <p className="text-[11px] text-muted-foreground">
-            {sessionId ? "Won’t be a moment." : "About twenty seconds."}
-          </p>
-        )}
+        <div className="flex min-h-9 w-full flex-col items-center justify-start gap-1 overflow-hidden">
+          {doing ? (
+            <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
+              {doing}
+            </p>
+          ) : null}
+          {/* What it is actually thinking, where there is any — the end of it,
+              fading rather than jumping. Absent on a tweak and absent if the
+              stream sends none, which is why the heading above still says
+              something on its own. */}
+          {thinking ? (
+            <p
+              aria-live="off"
+              className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+            >
+              {thinking}
+            </p>
+          ) : doing ? null : (
+            <p className="text-[11px] text-muted-foreground">
+              {sessionId ? "Won’t be a moment." : "About twenty seconds."}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
