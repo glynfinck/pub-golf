@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CADDY_COURSES_PER_FEE,
+  CADDY_GRANT_SIZE,
   coursesLeftNote,
 } from "@/lib/caddy/credits";
 import {
   CADDY_BUDGET_NOTE,
   CADDY_BUDGET_SHARE,
-  CADDY_CONVERSATION_SHARE,
   MODEL_PRICES,
   NO_USAGE,
   PENCE_PER_USD,
   addUsage,
   caddyBudgetMicroPence,
-  conversationCapMicroPence,
   costMicroPence,
   microPencePerToken,
   priceOf,
@@ -156,12 +154,6 @@ describe("the ceiling", () => {
     expect(caddyBudgetMicroPence()).toBe(caddyBudgetMicroPence(TARIFF.greenFee.amounts.gbp));
   });
 
-  it("gives one conversation a third of the day", () => {
-    expect(conversationCapMicroPence(1200)).toBe(
-      Math.floor(caddyBudgetMicroPence(1200) * CADDY_CONVERSATION_SHARE),
-    );
-    expect(conversationCapMicroPence(1200)).toBeLessThan(caddyBudgetMicroPence(1200));
-  });
 
   it("leaves the ordinary night nowhere near it", () => {
     // A fresh plan: a 12k-token cached prefix written once, 3k of answer.
@@ -270,23 +262,28 @@ describe("what a fee buys, counted", () => {
     // The number is a product decision, not arithmetic — this only holds it
     // inside the range where it is still a fee for a night out rather than a
     // subscription. `tests/db` proves it equals the database's own copy.
-    expect(CADDY_COURSES_PER_FEE).toBeGreaterThan(1);
-    expect(CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(10);
+    expect(CADDY_GRANT_SIZE.redesign).toBeGreaterThan(1);
+    expect(CADDY_GRANT_SIZE.redesign).toBeLessThanOrEqual(10);
+    // Tweaks are set where a real evening never reaches them: the allowance
+    // exists so a runaway script meets something, not so a fussy host does.
+    expect(CADDY_GRANT_SIZE.tweak).toBeGreaterThan(CADDY_GRANT_SIZE.redesign * 10);
   });
 
-  it("can afford every course it sells", () => {
-    // The credit ceiling and the money ceiling have to agree, or a host is
-    // refused mid-fee by a number nobody told them about — which is exactly
-    // what happened: a looped plan cost most of the day's budget and a fee
-    // that sells three courses delivered one.
+  it("has room for every course it sells, or the tariff breaks its own promise", () => {
+    // A fee selling three re-designs needs a budget that funds three *whole*
+    // ones. Asserted against what a plan really costs, not against a
+    // per-conversation cap — that cap briefly existed and truncated a plan to
+    // fit its share, which is the wrong trade: work is bounded in turns, and
+    // what a turn costs is ours to absorb.
     //
-    // This only means anything because the conversation cap is now *enforced*
-    // (`askCaddyLooped` stops on it). It was dead code when this test was
-    // first written, which made the assertion a relationship between a cap
-    // nothing applied and a budget that did — true arithmetic, false comfort.
-    expect(
-      conversationCapMicroPence() * CADDY_COURSES_PER_FEE,
-    ).toBeLessThanOrEqual(caddyBudgetMicroPence());
+    // LOOPED_PLAN is still the single-call figure because that is the only
+    // measurement there has ever been. `caddy_turns.cost_micropence` is
+    // recording the real one; re-base this from the ledger and it will fail
+    // until `CADDY_BUDGET_SHARE` follows, which is the point.
+    const LOOPED_PLAN = 11_000_000;
+    expect(LOOPED_PLAN * CADDY_GRANT_SIZE.redesign).toBeLessThanOrEqual(
+      caddyBudgetMicroPence(),
+    );
   });
 
   it("says how many are left in words, never as a bare digit", () => {

@@ -192,33 +192,35 @@ function dearest(): ModelPrice {
  */
 export const CADDY_BUDGET_SHARE = 0.12;
 
-/**
- * One planning conversation's own slice of that.
- *
- * Belt to the ceiling's braces, and aimed at a different failure: the tool loop
- * means a single ask can now spend many times in one breath, so a model that
- * starts pacing round the loop would otherwise burn the whole day's allowance
- * before any row was written. A third means a bad conversation costs a third of
- * the day, and the host still has two more.
- */
-export const CADDY_CONVERSATION_SHARE = 1 / 3;
-
-/** The day's allowance in micropence, from the fee in pence. */
-export function caddyBudgetMicroPence(feePence: number = TARIFF.greenFee.amounts.gbp): number {
+/** The day's allowance in micropence, from the fee in pence. A share rather
+ * than a number, so moving the price moves the allowance and there is no
+ * second place to forget. */
+export function caddyBudgetMicroPence(
+  feePence: number = TARIFF.greenFee.amounts.gbp,
+): number {
   return Math.floor(feePence * CADDY_BUDGET_SHARE * 1_000_000);
 }
 
-/** What one conversation may spend before it is wound up. */
-export function conversationCapMicroPence(
-  feePence: number = TARIFF.greenFee.amounts.gbp,
-): number {
-  return Math.floor(caddyBudgetMicroPence(feePence) * CADDY_CONVERSATION_SHARE);
-}
+/**
+ * There was a per-conversation share here, and it is gone on purpose.
+ *
+ * It capped one plan at a third of the day and *truncated* the loop to fit —
+ * which looks like generosity and is the opposite. A host who paid for a
+ * re-design and got a four-turn card that was never route-checked has been
+ * quietly handed a lesser product and cannot tell, and this repo already has
+ * the rule: no silent caps.
+ *
+ * Work is bounded in **turns** now (`MAX_TOOL_TURNS`), which is an honest
+ * bound the caddy is told about, and what a turn costs is ours to absorb —
+ * absorbing variance is what a fixed price is for. The only money ceiling left
+ * in the loop is a runaway breaker set far above any honest plan, and it
+ * shouts when it fires because it means something is wrong.
+ */
 
 /**
  * May another call be made? Checked *before* spending, with the cost of the
  * call about to be made unknown — so this is a "have you already had enough"
- * test, and the conversation cap plus `max_tokens` bound the overshoot.
+ * test, and `MAX_TOOL_TURNS` plus `max_tokens` bound the overshoot.
  */
 export function withinBudget(spentMicroPence: number, budgetMicroPence: number): boolean {
   return spentMicroPence < budgetMicroPence;

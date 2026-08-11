@@ -6,7 +6,6 @@ import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
 import {
   CADDY_BUDGET_NOTE,
   caddyBudgetMicroPence,
-  conversationCapMicroPence,
   withinBudget,
 } from "@/lib/caddy/budget";
 import {
@@ -139,7 +138,10 @@ async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data, error } = await supabase.rpc("caddy_unspent_fee", { who: userId });
+  const { data, error } = await supabase.rpc("caddy_next_grant", {
+    who: userId,
+    quota: "redesign",
+  });
   if (!error) return data ? { id: data as string } : null;
 
   // The allowance function is not on this database yet.
@@ -158,7 +160,7 @@ async function liveFee(
   // migration lands. Only for a genuinely missing function — any other error
   // is a real refusal and is left alone.
   if (!missingFunction(error)) return null;
-  const { data: any_fee } = await supabase
+  const { data: anyFee } = await supabase
     .from("entitlements")
     .select("id")
     .eq("user_id", userId)
@@ -167,7 +169,7 @@ async function liveFee(
     .order("expires_at", { ascending: true, nullsFirst: false })
     .limit(1)
     .maybeSingle();
-  return any_fee ?? null;
+  return anyFee ?? null;
 }
 
 /**
@@ -495,11 +497,11 @@ async function spentToday(
  */
 function midConversation(brief: CaddyBrief) {
   return {
-    // One plan's share of the day. `conversationCapMicroPence` has existed and
-    // been tested since the budget was written and was wired to nothing at
-    // all — which stopped being harmless the moment a plan became a loop
-    // costing four times what a single call did.
-    budget: conversationCapMicroPence(),
+    // A runaway ceiling, not a share of the day. A plan is bounded by its
+    // turns and the host gets the whole of what they paid for; this catches a
+    // loop that has gone wrong, and the whole day's allowance is comfortably
+    // above anything an honest one has ever cost.
+    breaker: caddyBudgetMicroPence(),
     pins: { minLegMinutes: brief.stretch },
     search: async (query: string): Promise<CandidateDossier[]> => {
       const key = process.env.GOOGLE_PLACES_API_KEY;

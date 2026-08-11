@@ -189,8 +189,28 @@ mechanism and they must never be confused, because they fail differently.**
 - A **quota refuses**. "You've used your three re-designs." That is a product
   fact, it belongs on screen, and it deserves a warm line and a door to what
   the host already has.
-- A **cost cap truncates**. It never says no — it stops the loop and hands over
-  the card built so far. Silent, invisible, an engineering detail.
+- A **circuit breaker** stops a runaway. It is set far above any honest plan,
+  it logs loudly when it fires, and a host should never meet one. If somebody
+  does, that is an incident to investigate rather than a tariff.
+
+A third idea was tried and is wrong: a cost cap that **truncates** an action to
+fit its share of the fee. It looks like generosity — never refuse, just hand
+over what you have — and it is the opposite. A host who paid for a re-design
+and received a four-turn card that was never route-checked has been quietly
+given a lesser product, and cannot tell. This repo already states the rule
+elsewhere: *no silent caps; silent truncation reads as "covered everything"
+when it did not.*
+
+**Work is bounded in turns, not in tokens.** `MAX_TOOL_TURNS` is an honest
+bound — the caddy is told how many turns it has and is expected to finish
+inside them — and cost follows from it. That is a decision about thoroughness,
+which is ours to make, rather than a budget the host pays for in quality.
+
+**And the variance is ours.** Some courses cost a tenth of what others do. A
+fixed-price package absorbs that by construction; pricing it on the observed
+mean plus headroom is the whole mechanism. Pushing the variance back onto the
+host — yours was expensive, so yours is shorter — defeats the point of selling
+a fixed price at all.
 
 Every symptom the caddy produced in its first day of real use came from one
 confusion: **the daily budget refused.** It is a cost cap wearing a quota's
@@ -205,7 +225,8 @@ the money was allowed to say no.
 |---|---|---|---|
 | Re-designs | actions | refusing | yes — an abstract bar |
 | Tweaks | actions, generously | refusing | no, unless approached |
-| Per-action cost | tokens and seconds | truncating | never |
+| Work per action | turns | finishing | never |
+| Runaway | cost, far above normal | breaking, loudly | never |
 | Anti-script | turns per day | refusing | never, by a human |
 
 **Two quotas, not one, because the costs differ by an order of magnitude.** A
@@ -216,10 +237,12 @@ thing `lib/caddy/fair-use.ts` promises most loudly, *ask as often as you
 like*, was being consumed by the thing next to it. Splitting them is not extra
 machinery, it is the fix.
 
-**Counting actions is only safe because each action is capped.** Cap the
-action, then count the actions, and pounds never appear in the product at all.
-The daily budget stops existing as a rule and becomes an arithmetic
-consequence of the quotas times their caps.
+**Counting actions is safe because the work in an action is bounded** — a
+fixed number of turns, each with a fixed token ceiling — so the worst case is
+knowable in advance even though the typical case is far below it. Count the
+actions and pounds never appear in the product at all. The daily budget stops
+existing as a rule; what replaces it is a quota the host understands and a
+breaker they never see.
 
 **The two are not equally visible.** Re-designs are chunky, bought, and the
 only number that helps at the point of sale. Tweaks are the membership
@@ -232,6 +255,16 @@ qualitative states, no digits and no reset timer. The covenant's ban on
 countdown clocks is about manufactured urgency, and a number ticking toward
 zero on something already bought is exactly that.
 
+**Time is the one limit that does bind, and it binds everything.** Credits
+live inside the fee's day and lock at its end, spent or not — an unspent credit
+that outlived its pass would be an indefinite one, which is the whole reason
+the day boundary exists. Tweaks stop at the same moment: a conversation is
+resumable for twelve hours, so without that check a session opened late at
+night could go on producing entirely new cards after the pass had run out.
+Expiry is a fair limit in a way truncation is not, because it is knowable in
+advance, it is the same for everybody, and it takes nothing away from work
+already done — every course a fee planned stays the host's for good.
+
 **The promise is a floor, not a ceiling.** "A green fee plans you at least
 three courses." A floor can be kept and then beaten — a host whose courses came
 cheap gets another as generosity. A ceiling is a thing to defend.
@@ -243,6 +276,14 @@ cheap gets another as generosity. A ceiling is a thing to defend.
    usage UI redone. Complete and shippable on its own; the green fee grants the
    package and nothing new is sold.
 2. **The wallet** — what a host holds, on their profile. Reads the same ledger.
+**A pricing note that outranks all of the above.** `CADDY_BUDGET_SHARE` is 12%
+of the fee — 48p — and it was sized when a plan was a single call costing about
+11p. A looped plan costs several times that, which is why a fee that sells
+three courses could deliver one. The share has to be re-based on what a looped
+plan actually costs before any of this is sold, and `caddy_turns.cost_micropence`
+is already recording exactly that. Re-base from the ledger, not from an
+estimate: the estimates in this file's history have been wrong twice.
+
 3. **Top-ups** — new Stripe SKUs, checkout paths, webhook fulfilment for new
    entitlement kinds. Deliberately last: it is the most external surface and
    the least useful until somebody has actually run out, and by then

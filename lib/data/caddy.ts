@@ -142,16 +142,23 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
   } = await supabase.auth.getUser();
   if (!user) return { canPlan: false, left: 0, courseId: null };
 
-  const { data: unspent, error } = await supabase.rpc("caddy_unspent_fee", {
+  // The countable quota, and the only one shown. Tweaks have an allowance too
+  // and it is deliberately invisible — a meter on "ask as often as you like"
+  // turns membership back into credits.
+  const { data: left, error } = await supabase.rpc("caddy_balance", {
     who: user.id,
+    quota: "redesign",
   });
   // The allowance does not exist on this database yet. Say yes, exactly as
   // `liveFee` does in the same window — the two must agree, or the screen
   // offers a plan the pipeline then refuses.
+  // The ledger is not on this database yet. Say yes, exactly as `liveFee` does
+  // in the same window — the two must agree, or the screen offers a plan the
+  // pipeline then refuses.
   if (error) return { canPlan: true, left: CADDY_COURSES_PER_FEE, courseId: null };
 
-  const { data: left } = await supabase.rpc("caddy_credits_left", { who: user.id });
-  if (unspent) return { canPlan: true, left: Number(left ?? 0), courseId: null };
+  const remaining = Number(left ?? 0);
+  if (remaining > 0) return { canPlan: true, left: remaining, courseId: null };
 
   // Spent. Find what it is holding, so the answer can be a door rather than a
   // sentence. Read on the caller's own session: RLS makes "theirs" the only

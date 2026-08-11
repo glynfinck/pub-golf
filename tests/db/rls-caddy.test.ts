@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_FAIR_USE_PER_DAY } from "@/lib/caddy/fair-use";
-import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
+import { CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import { caddyBudgetMicroPence, MODEL_PRICES } from "@/lib/caddy/budget";
 import {
   adminClient,
@@ -439,142 +439,165 @@ describe("the course a session filed", () => {
   });
 });
 
-describe("a fee buys a counted number of courses", () => {
+describe("the ledger: granted, spent, and expired", () => {
   let host: Actor;
   let feeId: string;
   let sessionId: string;
 
-  async function creditsOn(entitlement: string) {
+  async function balance(quota: "redesign" | "tweak") {
+    const { data } = await adminClient().rpc("caddy_balance", {
+      who: host.userId,
+      quota,
+    });
+    return Number(data ?? 0);
+  }
+
+  async function spendsFor() {
     const { count } = await adminClient()
-      .from("caddy_credits")
+      .from("caddy_spends")
       .select("id", { count: "exact", head: true })
-      .eq("entitlement_id", entitlement);
+      .eq("host", host.userId);
     return count ?? 0;
   }
 
-  /** A plan that produced a card — the only thing that spends a credit. */
-  function planTurn(session: string) {
-    return turnRow(host, session, { kind: "plan" });
-  }
-
   beforeEach(async () => {
-    host = await signedInUser("Credit Host");
+    host = await signedInUser("Ledger Host");
     feeId = await seedFee(host);
     sessionId = await seedSession(host, feeId);
   });
 
-  it("spends one when a plan produces a card", async () => {
-    const { error } = await host.db.from("caddy_turns").insert(planTurn(sessionId));
-    expect(error).toBeNull();
-    expect(await creditsOn(feeId)).toBe(1);
+  it("grants the package with the fee, in one transaction", async () => {
+    // On the entitlement rather than in the webhook's code, so there is no
+    // window in which a host has paid and holds nothing.
+    expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign);
+    expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak);
   });
 
-  it("spends none on a roll or a tweak", async () => {
-    // They belong to a session that has already paid. What bounds them is the
-    // budget and fair use, both of which count tokens rather than courses —
-    // worry one course all evening, free.
-    await host.db.from("caddy_turns").insert(planTurn(sessionId));
+  it("spends a re-design on a plan and on a roll, a tweak on a tweak", async () => {
+    // A roll is a re-design: it produces a different course from the same
+    // patch, which is the expensive thing. Only a tweak edits what is there.
+    await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
     await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "roll" }));
     await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "tweak" }));
-    expect(await creditsOn(feeId)).toBe(1);
+
+    expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign - 2);
+    expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak - 1);
   });
 
-  it("spends none on a plan that failed", async () => {
-    // The same promise the `failed` column keeps for money: the vendor billed
-    // us, the host owes nothing. No card, no credit.
+  it("spends nothing on a turn that produced no card", async () => {
     await host.db
       .from("caddy_turns")
       .insert(turnRow(host, sessionId, { kind: "plan", failed: true, result: {} }));
-    expect(await creditsOn(feeId)).toBe(0);
+    expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign);
+    expect(await spendsFor()).toBe(0);
   });
 
-  it("refuses the plan after the last course on the fee", async () => {
-    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
-      const session = await seedSession(host, feeId);
-      const { error } = await host.db.from("caddy_turns").insert(planTurn(session));
-      expect(error).toBeNull();
+  it("keeps the two quotas apart, which is the whole point of two", async () => {
+    // Sharing one allowance meant two expensive plans ate the tweaking
+    // budget — so the loudest promise the caddy makes was being consumed by
+    // the thing next to it.
+    for (let i = 0; i < CADDY_GRANT_SIZE.redesign; i += 1) {
+      await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
     }
-    const oneMore = await seedSession(host, feeId);
-    expectDenied(await host.db.from("caddy_turns").insert(planTurn(oneMore)).then((r) => r.error));
-    expect(await creditsOn(feeId)).toBe(CADDY_COURSES_PER_FEE);
-  });
+    expect(await balance("redesign")).toBe(0);
+    expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak);
 
-  it("does not give a credit back when the course is torn out", async () => {
-    // The whole difference from the holdings rule this replaced. The caddy did
-    // the work and we paid for it; deleting the result does not undo either.
-    const courseId = await (async () => {
-      const { data } = await adminClient()
-        .from("courses")
-        .insert({ owner: host.userId, name: "The Regrettable" })
-        .select("id")
-        .single();
-      return data!.id;
-    })();
-    await host.db.from("caddy_turns").insert(planTurn(sessionId));
-    await host.db.from("caddy_sessions").update({ course_id: courseId }).eq("id", sessionId);
-    await adminClient().from("courses").delete().eq("id", courseId);
-
-    expect(await creditsOn(feeId)).toBe(1);
-  });
-
-  it("locks an unused credit once the day is over", async () => {
-    // "This even applies if the user hasn't created anything yet" — a credit
-    // that outlived its pass would be an indefinite one, which is the whole
-    // thing the day boundary exists to prevent.
-    await adminClient()
-      .from("entitlements")
-      .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
-      .eq("id", feeId);
-    expectDenied(
-      await host.db.from("caddy_turns").insert(planTurn(sessionId)).then((r) => r.error),
-    );
-    expect(await creditsOn(feeId)).toBe(0);
-  });
-
-  it("gives a second fee its own courses", async () => {
-    const another = await seedFee(host);
-    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
-      await host.db.from("caddy_turns").insert(planTurn(await seedSession(host, feeId)));
-    }
-    const fresh = await seedSession(host, another);
-    const { error } = await host.db.from("caddy_turns").insert(planTurn(fresh));
+    const { error } = await host.db
+      .from("caddy_turns")
+      .insert(turnRow(host, sessionId, { kind: "tweak" }));
     expect(error).toBeNull();
   });
 
-  it("cannot be granted by the host it charges", async () => {
-    // No insert policy at all: the trigger is the only author, which is what
-    // makes a credit something that happens *to* a host rather than something
-    // they can decline to record — or mint.
+  it("refuses the action once its own quota is gone", async () => {
+    for (let i = 0; i < CADDY_GRANT_SIZE.redesign; i += 1) {
+      await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
+    }
     const { error } = await host.db
-      .from("caddy_credits")
-      .insert({ entitlement_id: feeId, host: host.userId });
+      .from("caddy_turns")
+      .insert(turnRow(host, sessionId, { kind: "plan" }));
     expectDenied(error);
   });
 
-  it("counts down on screen the way it counts down in Postgres", async () => {
-    // The app and the database answer the same question in two places, and a
-    // number the screen misquotes is a host told they have something they do
-    // not.
-    const before = await adminClient().rpc("caddy_credits_left", { who: host.userId });
-    expect(Number(before.data)).toBe(CADDY_COURSES_PER_FEE);
+  it("never goes negative when a grant expires with spends against it", async () => {
+    // The bug a single signed ledger would have: only grants expire, so an
+    // expired +3 drops out of the sum while its -1 spends remain and the host
+    // ends up owing courses to a fee that is over.
+    await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
+    await adminClient()
+      .from("caddy_grants")
+      .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
+      .eq("host", host.userId);
 
-    await host.db.from("caddy_turns").insert(planTurn(sessionId));
-
-    const after = await adminClient().rpc("caddy_credits_left", { who: host.userId });
-    expect(Number(after.data)).toBe(CADDY_COURSES_PER_FEE - 1);
+    expect(await balance("redesign")).toBe(0);
+    expect(await balance("tweak")).toBe(0);
+    expect(await spendsFor()).toBe(1);
   });
 
-  it("stops offering a fee once its last course is gone", async () => {
-    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
-      await host.db.from("caddy_turns").insert(planTurn(await seedSession(host, feeId)));
+  it("locks an unspent grant once the day is over", async () => {
+    await adminClient()
+      .from("caddy_grants")
+      .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
+      .eq("host", host.userId);
+    const { error } = await host.db
+      .from("caddy_turns")
+      .insert(turnRow(host, sessionId, { kind: "plan" }));
+    expectDenied(error);
+  });
+
+  it("spends the grant nearest expiry first, so none is wasted", async () => {
+    const later = await seedFee(host);
+    await adminClient()
+      .from("caddy_grants")
+      .update({ expires_at: new Date(Date.now() + 48 * HOUR).toISOString() })
+      .eq("entitlement_id", later);
+
+    await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
+    // Read in two hops rather than through an embed: the generated types carry
+    // no relationship for these tables (hand-written until `gen types` is
+    // re-run), and a test should not be the thing that discovers it.
+    const { data: spend } = await adminClient()
+      .from("caddy_spends")
+      .select("grant_id")
+      .eq("host", host.userId)
+      .limit(1)
+      .maybeSingle();
+    const { data: grant } = await adminClient()
+      .from("caddy_grants")
+      .select("entitlement_id")
+      .eq("id", spend!.grant_id)
+      .maybeSingle();
+    expect(grant?.entitlement_id).toBe(feeId);
+  });
+
+  it("cannot be granted or spent by the host it charges", async () => {
+    // Neither table has an insert policy: grants come from fulfilment as
+    // service_role, spends from the trigger as definer.
+    expectDenied(
+      await host.db
+        .from("caddy_grants")
+        .insert({ host: host.userId, quota: "redesign", amount: 99 })
+        .then((r) => r.error),
+    );
+    const { data: grant } = await adminClient()
+      .from("caddy_grants")
+      .select("id")
+      .eq("host", host.userId)
+      .limit(1)
+      .maybeSingle();
+    expectDenied(
+      await host.db
+        .from("caddy_spends")
+        .delete()
+        .eq("grant_id", grant!.id)
+        .then((r) => r.error),
+    );
+  });
+
+  it("quotes the same package size the database grants", async () => {
+    for (const quota of ["redesign", "tweak"] as const) {
+      const { data } = await adminClient().rpc("caddy_grant_size", { quota });
+      expect(Number(data)).toBe(CADDY_GRANT_SIZE[quota]);
     }
-    const { data } = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
-    expect(data).toBeNull();
-  });
-
-  it("keeps the number the app quotes equal to the database's own", async () => {
-    const { data } = await adminClient().rpc("caddy_courses_per_fee");
-    expect(Number(data)).toBe(CADDY_COURSES_PER_FEE);
   });
 });
 
