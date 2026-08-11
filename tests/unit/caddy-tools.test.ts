@@ -85,6 +85,10 @@ describe("the caddy cannot name a pub", () => {
     const allowed = new Set([
       // the only way to say which pub: an id we issued
       "candidateId",
+      // and the same thing in bulk, for routing a set the caddy is weighing
+      // up. Still ids, still ours — a list of them is no more expressive
+      // about a venue than one is.
+      "candidateIds",
       "near",
       // where on the card, and how it is dressed
       "hole",
