@@ -34,6 +34,16 @@ export function haversineKm(
  * a minute. Good enough for a countdown; the caddy tees up on arrival
  * regardless. Returns null without coordinates for both ends.
  */
+/** Minutes per kilometre, as the crow staggers — about 4.8 km/h. One constant,
+ * because two things now convert between distance and time: this estimate, and
+ * the minimum leg the caddy's router spaces a crawl by. */
+export const WALK_MINUTES_PER_KM = 12.5;
+
+/** Minutes back into kilometres, for anyone stating a rule in minutes. */
+export function kmForWalkMinutes(minutes: number): number {
+  return minutes / WALK_MINUTES_PER_KM;
+}
+
 export function estimateWalkMinutes(
   from: { lat: number | null; lng: number | null } | null,
   to: { lat: number | null; lng: number | null } | null,
@@ -46,7 +56,7 @@ export function estimateWalkMinutes(
   )
     return null;
   const km = haversineKm(from.lat, from.lng, to.lat, to.lng);
-  return Math.max(1, Math.round(km * 12.5));
+  return Math.max(1, Math.round(km * WALK_MINUTES_PER_KM));
 }
 
 /**

@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Sparkle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { PendingLabel } from "@/components/ui/pending-label";
@@ -10,15 +11,19 @@ import { Putt } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
 import {
   DEFAULT_HOLES,
+  DEFAULT_STRETCH,
   HOLE_CHOICES,
   NOTE_MAX,
   PARTICULARS,
+  STRETCH_CHOICES,
   VIBES,
   WHERE_MAX,
+  stretchMeaning,
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
-import { askTheCaddy, planCourse } from "@/lib/actions/caddy";
+import { askTheCaddy } from "@/lib/actions/caddy";
+import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
@@ -39,6 +44,9 @@ import { cn } from "@/lib/utils";
 export function CaddyGroup({
   hasPass,
   onCourse,
+  onPatch,
+  onPicked,
+  allowance,
   onSession,
   className,
 }: {
@@ -46,7 +54,16 @@ export function CaddyGroup({
    * its last row changes, because the ask belongs after the investment. */
   hasPass: boolean;
   /** A card arrived. The builder takes it from here. */
-  onCourse: (course: PlannedCourse, changed: number[]) => void;
+  onCourse: (course: PlannedCourse, changed: number[]) => void | Promise<void>;
+  /** The patch, the moment Places answers — several seconds before any hole
+   * exists. The drafting table frames its map on it. */
+  onPatch?: (pins: { id: string; lat: number; lng: number }[]) => void;
+  /** Pubs as the caddy names them, in its own order rather than the walking
+   * order, which is not decided until the card is complete. */
+  onPicked?: (ids: string[]) => void;
+  /** Whether this fee still has a course to give. Absent means yes — a
+   * database that has not caught up says yes, exactly as the pipeline does. */
+  allowance?: { canPlan: boolean; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
   className?: string;
@@ -55,33 +72,115 @@ export function CaddyGroup({
   const [open, setOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
+  // The caddy's own reasoning while it works, trimmed to a line. Narration
+  // only: nothing reads it, and a run where it never arrives is a run that
+  // looks exactly like the old one.
+  const [thinking, setThinking] = useState("");
+  // The tool the caddy is reaching for, named. Outranks the reasoning below.
+  const [doing, setDoing] = useState("");
 
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
   const [vibe, setVibe] = useState<VibeId>("traditional");
   const [particulars, setParticulars] = useState<ParticularId[]>([]);
   const [note, setNote] = useState("");
+  const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
+  const stretchNote = stretchMeaning(stretch);
 
+  /**
+   * The first card, over a stream.
+   *
+   * A route rather than the action, because an action resolves once and the
+   * interesting part of a plan is the twenty seconds before it does: the patch
+   * lands early enough to frame a map on, and the caddy's own reasoning
+   * arrives while it is still reasoning. The tweak below is still an action —
+   * it answers in a couple of seconds and there is nothing to narrate.
+   *
+   * Everything the stream says is optional. A run where every middle event
+   * went missing still ends in a card or an honest failure, which is what
+   * makes it safe to treat the narration as decoration.
+   */
   function plan() {
     run(async () => {
-      const result = await planCourse({
-        where,
-        holes,
-        vibe,
-        particulars,
-        note,
-        startVenueId: null,
-        finishVenueId: null,
-      });
-      if (result.error) return { error: result.error };
-      if (result.course && result.sessionId) {
-        setSessionId(result.sessionId);
-        onSession(result.sessionId);
-        onCourse(result.course, []);
+      setThinking("");
+      setDoing("");
+      const lost = "The caddy lost the ball. Ask again — this one's free.";
+      let failure: { error: string; detail?: string } | null = null;
+      let landed = false;
+
+      let response: Response;
+      try {
+        response = await fetch("/api/caddy/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            where,
+            holes,
+            vibe,
+            particulars,
+            note,
+            stretch,
+            startVenueId: null,
+            finishVenueId: null,
+          }),
+        });
+      } catch {
+        return { error: lost };
       }
-      return {};
+
+      // A refusal decided before the model was ever asked — no fee, a thin
+      // patch, no sign-in — comes back as ordinary JSON rather than as a
+      // stream that opens only to apologise.
+      if (!response.body || !response.headers.get("content-type")?.includes("ndjson")) {
+        const body = await response.json().catch(() => null);
+        return { error: (body as { error?: string } | null)?.error ?? lost };
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const handle = async (event: CaddyEvent) => {
+        if (event.type === "doing") {
+          // A named tool call replaces the reasoning ticker rather than
+          // joining it: "Looking for beer gardens" is the work the host is
+          // paying for, and it should not be buried in a paragraph of prose.
+          setDoing(event.text);
+        } else if (event.type === "thinking") {
+          setThinking((current) => thinkingTail(current + event.text));
+        } else if (event.type === "patch") {
+          onPatch?.(event.pins);
+        } else if (event.type === "picked") {
+          onPicked?.(event.ids);
+        } else if (event.type === "card") {
+          setSessionId(event.sessionId);
+          onSession(event.sessionId);
+          await onCourse(event.course, []);
+          landed = true;
+        } else {
+          failure = { error: event.error, detail: event.detail };
+        }
+      };
+
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          const { events, rest } = decodeEvents(buffer);
+          buffer = rest;
+          for (const event of events) await handle(event);
+          if (done) break;
+        }
+      } catch {
+        // The connection went away mid-plan. If the card had already landed
+        // that is a finished plan with a rough ending, not a failure.
+        if (!landed) return { error: lost };
+      }
+
+      if (failure) return failure;
+      return landed ? {} : { error: lost };
     });
   }
 
@@ -89,8 +188,8 @@ export function CaddyGroup({
     if (!sessionId) return;
     run(async () => {
       const result = await askTheCaddy({ sessionId, ...input });
-      if (result.error) return { error: result.error };
-      if (result.course) onCourse(result.course, result.changed ?? []);
+      if (result.error) return { error: result.error, detail: result.detail };
+      if (result.course) await onCourse(result.course, result.changed ?? []);
       setAsk("");
       return {};
     });
@@ -108,12 +207,38 @@ export function CaddyGroup({
         aria-live="polite"
       >
         <Putt />
+        {/* Three fixed rows, and the heading never moves.
+            It used to be replaced by whatever tool the caddy had reached for,
+            which put "Looking for pubs with a beer garden near Old Street" in
+            an 18px serif and pushed the panel out of shape. The heading is now
+            the one stable thing on the screen and everything that varies sits
+            under it, in its own row, clamped. */}
         <div className="text-center font-serif text-lg leading-tight text-balance">
           {sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch"}
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          {sessionId ? "Won’t be a moment." : "About twenty seconds."}
-        </p>
+        <div className="flex min-h-9 w-full flex-col items-center justify-start gap-1 overflow-hidden">
+          {doing ? (
+            <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
+              {doing}
+            </p>
+          ) : null}
+          {/* What it is actually thinking, where there is any — the end of it,
+              fading rather than jumping. Absent on a tweak and absent if the
+              stream sends none, which is why the heading above still says
+              something on its own. */}
+          {thinking ? (
+            <p
+              aria-live="off"
+              className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+            >
+              {thinking}
+            </p>
+          ) : doing ? null : (
+            <p className="text-[11px] text-muted-foreground">
+              {sessionId ? "Won’t be a moment." : "About twenty seconds."}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -201,6 +326,37 @@ export function CaddyGroup({
     );
   }
 
+  // ——— The fee has its course. Not a wall and not a price: a door to the
+  // thing they already own, and the two free ways on. The drafting table below
+  // is untouched — the manual builder never cost anything and still does not,
+  // which is the sentence this panel exists to make sure nobody misses.
+  if (allowance && !allowance.canPlan && !sessionId) {
+    return (
+      <div
+        className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
+        data-testid="caddy-spent"
+      >
+        <span className="eyebrow text-fairway">The caddy</span>
+        <p className="text-xs text-muted-foreground">
+          Your course is in the book — the caddy plans one to a green fee.
+          Change it as much as you like; tear it out and the caddy will plan
+          you another.
+        </p>
+        {allowance.courseId ? (
+          <Link
+            href={`/courses/${allowance.courseId}`}
+            className={cn(buttonVariants({ variant: "outline", size: "compact" }), "h-10 w-full")}
+          >
+            Open your course
+          </Link>
+        ) : null}
+        <p className="text-[10px] text-muted-foreground">
+          Plotting one by hand below is free, as always.
+        </p>
+      </div>
+    );
+  }
+
   // ——— The brief. One screen, defaults everywhere a default is honest.
   return (
     <div
@@ -268,6 +424,31 @@ export function CaddyGroup({
         </div>
         <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
           {meaning}
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel htmlFor="caddy-stretch">How far apart</FieldLabel>
+        <div
+          className="flex flex-wrap gap-1.5"
+          id="caddy-stretch"
+          role="radiogroup"
+          aria-label="How far apart"
+        >
+          {STRETCH_CHOICES.map((entry) => (
+            <Chip
+              key={entry.id}
+              role="radio"
+              aria-checked={stretch === entry.id}
+              active={stretch === entry.id}
+              onClick={() => setStretch(entry.id)}
+            >
+              {entry.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
+          {stretchNote}
         </p>
       </div>
 

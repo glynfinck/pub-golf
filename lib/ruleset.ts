@@ -45,6 +45,11 @@ export interface RoundRuleset {
    * key stamped after creation rather than at it, and never unstamped. False
    * for every round created before the tariff existed, which is exactly what
    * a free round should read as.
+   *
+   * A receipt rather than a permission. It gated the league until the league
+   * went free; nothing reads it to decide what a table may see now, and if
+   * something ever does again it must be something new, because taking the
+   * league back would be the clawback the covenant rules out.
    */
   members: boolean;
 }

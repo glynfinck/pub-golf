@@ -5,7 +5,15 @@ import { toast } from "sonner";
 import { actionSettled, actionStarted } from "@/lib/action-window";
 import { BUSY_DELAY_MS, busyHoldRemaining } from "@/lib/time";
 
-export type ActionOutcome = { error?: string } | void;
+export type ActionOutcome =
+  | {
+      error?: string;
+      /** A second line under the toast: the technical reason, where one is
+       * safe to show. Actions leave it unset in production — see
+       * `lib/caddy/readiness.ts`, which is what decides that for the caddy. */
+      detail?: string;
+    }
+  | void;
 
 /**
  * The house waiting contract around a server action.
@@ -17,7 +25,9 @@ export type ActionOutcome = { error?: string } | void;
  * `lib/time.ts` beside the shot clock's.
  *
  * A returned `{ error }` toasts hazard-red; success is the caller's to
- * show on screen, not to narrate.
+ * show on screen, not to narrate. An accompanying `detail` becomes the
+ * toast's second line, so a staging failure can say what actually broke
+ * without that sentence ever being written into the player-facing copy.
  */
 export function useAction() {
   const [pending, startTransition] = useTransition();
@@ -46,7 +56,9 @@ export function useAction() {
     startTransition(async () => {
       try {
         const result = await action();
-        if (result && result.error) toast.error(result.error);
+        if (result && result.error) {
+          toast.error(result.error, { description: result.detail });
+        }
       } finally {
         // No catch: a redirecting action throws on purpose and Next needs it.
         actionSettled(Date.now());

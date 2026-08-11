@@ -3,6 +3,7 @@
 import { EllipsisVertical } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { CaddyPennant } from "@/components/course/caddy-pennant";
 import { ManageCourseSheet } from "@/components/course/manage-course-sheet";
 import { Card } from "@/components/ui/card";
 import type { MyCourse } from "@/lib/data/courses";
@@ -18,10 +19,16 @@ export function CoursesList({ courses }: { courses: MyCourse[] }) {
   const [managingId, setManagingId] = useState<string | null>(null);
   const managing = courses.find((course) => course.id === managingId) ?? null;
 
+  // The book is the live courses. Put-away ones are still the host's and are
+  // still one tap from coming back, but they are not what somebody opening
+  // their course book came to look at.
+  const live = courses.filter((course) => !course.archived);
+  const putAway = courses.filter((course) => course.archived);
+
   return (
     <>
       <Card className="gap-0 px-4 py-1">
-        {courses.map((course, index) => (
+        {live.map((course, index) => (
           <div
             key={course.id}
             data-testid="course-row"
@@ -38,7 +45,16 @@ export function CoursesList({ courses }: { courses: MyCourse[] }) {
                 {course.hole_count}
               </span>
               <span className="min-w-0 flex-1">
-                <b className="block truncate text-sm">{course.name}</b>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <b className="truncate text-sm">{course.name}</b>
+                  {/* Beside the name rather than out at the end of the row:
+                      this says something *about the course*, and a mark
+                      floated away from the thing it describes gets read as
+                      another control. */}
+                  {course.byCaddy ? (
+                    <CaddyPennant className="flex shrink-0 items-center" />
+                  ) : null}
+                </span>
                 <span className="block text-[11px] text-muted-foreground">
                   {course.hole_count} holes · par {course.par}
                 </span>
@@ -56,6 +72,41 @@ export function CoursesList({ courses }: { courses: MyCourse[] }) {
           </div>
         ))}
       </Card>
+
+      {/* Put away, not gone. Quiet — a heading and a name each — because this
+          is a drawer somebody opens on purpose, not a second course book. Each
+          one still has its menu, and the menu still says "Bring it back out". */}
+      {putAway.length > 0 ? (
+        <section data-testid="courses-put-away">
+          <h3 className="eyebrow mb-2 text-muted-foreground">Put away</h3>
+          <Card className="gap-0 px-4 py-1">
+            {putAway.map((course, index) => (
+              <div
+                key={course.id}
+                className={cn(
+                  "flex items-center text-muted-foreground",
+                  index > 0 && "border-t border-border",
+                )}
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-1.5 py-1">
+                  <span className="truncate text-sm">{course.name}</span>
+                  {course.byCaddy ? (
+                    <CaddyPennant className="flex shrink-0 items-center opacity-60" />
+                  ) : null}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Manage ${course.name}`}
+                  onClick={() => setManagingId(course.id)}
+                  className="-mr-2 ml-1 flex size-11 shrink-0 items-center justify-center rounded-full hover:bg-secondary"
+                >
+                  <EllipsisVertical size={16} aria-hidden />
+                </button>
+              </div>
+            ))}
+          </Card>
+        </section>
+      ) : null}
 
       <ManageCourseSheet
         course={managing}

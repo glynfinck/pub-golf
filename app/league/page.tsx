@@ -22,14 +22,12 @@ function shortDate(iso: string): string {
 }
 
 /**
- * The order of merit — the first thing a green fee buys, and the reason the
- * members' flag is stamped into a round rather than checked at render time:
- * every round in this table was covered when it teed off, and stays here
- * whatever became of the pass that covered it.
+ * The order of merit — free, and for everybody who has filed a card.
  *
- * Not gated on holding a pass. A league you paid for and can no longer read
- * would be the clawback the covenant rules out; what the fee buys is rounds
- * joining the table, not the table itself.
+ * It was the first thing the green fee bought, and it should not have been.
+ * A league is the game keeping score of itself: standings are what make the
+ * second round mean more than the first, so putting them behind a day pass
+ * charged for the sport instead of for a service. The caddy is the service.
  */
 export default async function LeaguePage() {
   const user = await getSessionUser();
@@ -50,8 +48,8 @@ export default async function LeaguePage() {
 
       {rounds.length === 0 ? (
         <Card className="gap-0 px-4 text-sm text-muted-foreground">
-          Nothing on the table yet. Rounds that tee off on a green fee land
-          here when their cards are filed, and stay for good.
+          Nothing on the table yet. Every round lands here once its card is
+          filed, and stays for good.
         </Card>
       ) : (
         <>

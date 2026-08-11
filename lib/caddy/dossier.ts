@@ -31,13 +31,18 @@ export const REVIEWS_PER_PUB = 2;
 export const EDITORIAL_MAX = 200;
 
 /**
- * The atmosphere facts, exactly as Places (New) names them. Every one of these
- * is the `signal` behind a particular in `lib/caddy/brief.ts`; the pair is
- * proved consistent by a unit test rather than by memory.
+ * The facts, exactly as Places (New) names them.
+ *
+ * Most are the `signal` behind a particular in `lib/caddy/brief.ts`; the pair
+ * is proved consistent by a unit test rather than by memory. `servesBeer` and
+ * `servesWine` are the exception and are here for a different job — they are
+ * what stops the caddy writing a drink the pub does not pour.
  */
 export interface PubFacts {
   outdoorSeating: boolean | null;
   allowsDogs: boolean | null;
+  servesBeer: boolean | null;
+  servesWine: boolean | null;
   servesCocktails: boolean | null;
   liveMusic: boolean | null;
   goodForWatchingSports: boolean | null;
@@ -47,6 +52,8 @@ export interface PubFacts {
 export const EMPTY_FACTS: PubFacts = {
   outdoorSeating: null,
   allowsDogs: null,
+  servesBeer: null,
+  servesWine: null,
   servesCocktails: null,
   liveMusic: null,
   goodForWatchingSports: null,
@@ -144,6 +151,8 @@ export function dossierLine(candidate: CandidateDossier): string {
     `price: ${price(candidate.priceLevel)}`,
     `garden: ${fact(candidate.facts.outdoorSeating)}`,
     `dogs: ${fact(candidate.facts.allowsDogs)}`,
+    `beer: ${fact(candidate.facts.servesBeer)}`,
+    `wine: ${fact(candidate.facts.servesWine)}`,
     `cocktails: ${fact(candidate.facts.servesCocktails)}`,
     `music: ${fact(candidate.facts.liveMusic)}`,
     `sport: ${fact(candidate.facts.goodForWatchingSports)}`,

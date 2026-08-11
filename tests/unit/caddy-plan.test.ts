@@ -8,6 +8,8 @@ import {
   MAX_CANDIDATES,
   type PubSource,
 } from "@/lib/caddy/dossier";
+import { CADDY_TOOLS } from "@/lib/caddy/tools";
+import { HAZARDS } from "@/lib/hazards";
 import {
   briefBlock,
   CADDY_SYSTEM,
@@ -46,6 +48,10 @@ const BRIEF = {
   vibe: "traditional" as const,
   particulars: [] as never[],
   note: "",
+  // Spacing off, so these fixtures exercise ordering and dressing without the
+  // minimum-leg rule reshuffling them. lib/caddy/route.ts owns spacing and
+  // tests/unit/caddy-route.test.ts is where it is proved.
+  stretch: 0,
 };
 
 function plan(ids: string[], over: Record<string, unknown> = {}) {
@@ -201,22 +207,36 @@ describe("parsePlan", () => {
     expect(result.course.name).toBe("The caddy's round");
   });
 
-  it("refuses a plan that moved a pinned tee", () => {
+  it("moves a pinned tee to the front rather than throwing the card away", () => {
+    // This used to refuse. Now the walking order is ours (lib/caddy/route.ts),
+    // so a pin is enforced instead of checked — the pub the host chose is on
+    // the card, and which end it belongs at is something we can fix without
+    // spending another turn of their fee on it.
     const pinned = { ...BRIEF, startVenueId: CANDIDATES[0].venueId };
-    expect(parsePlan(plan(["p2", "p3", "p1"]), CANDIDATES, pinned)).toEqual({
-      ok: false,
-      reason: "pin-moved",
-    });
-    expect(parsePlan(plan(["p1", "p2", "p3"]), CANDIDATES, pinned).ok).toBe(true);
+    const result = parsePlan(plan(["p2", "p3", "p1"]), CANDIDATES, pinned);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.course.holes[0].venue_id).toBe(CANDIDATES[0].venueId);
+    expect(result.course.holes).toHaveLength(3);
   });
 
-  it("refuses a plan that moved a pinned finish", () => {
+  it("moves a pinned finish to the end", () => {
     const pinned = { ...BRIEF, finishVenueId: CANDIDATES[4].venueId };
+    const result = parsePlan(plan(["p5", "p1", "p2"]), CANDIDATES, pinned);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const holes = result.course.holes;
+    expect(holes[holes.length - 1].venue_id).toBe(CANDIDATES[4].venueId);
+  });
+
+  it("still refuses when a pinned pub is not on the card at all", () => {
+    // Enforcing a position is one thing; conjuring the pub is another. If the
+    // caddy simply did not pick the host's tee, that is a real failure.
+    const pinned = { ...BRIEF, startVenueId: CANDIDATES[7].venueId };
     expect(parsePlan(plan(["p1", "p2", "p3"]), CANDIDATES, pinned)).toEqual({
       ok: false,
       reason: "pin-moved",
     });
-    expect(parsePlan(plan(["p1", "p2", "p5"]), CANDIDATES, pinned).ok).toBe(true);
   });
 
   it("answers malformed rather than throwing", () => {
@@ -416,5 +436,119 @@ describe("changedHoles", () => {
 
   it("counts a lengthened card's new holes", () => {
     expect(changedHoles(card(["a"]), card(["a", "b"]))).toEqual([1]);
+  });
+});
+
+describe("schemas a constrained decoder will actually accept", () => {
+  /** Every subschema in a JSON Schema tree. */
+  function subschemas(node: unknown, found: Record<string, unknown>[] = []) {
+    if (typeof node !== "object" || node === null) return found;
+    if (Array.isArray(node)) {
+      node.forEach((item) => subschemas(item, found));
+      return found;
+    }
+    const row = node as Record<string, unknown>;
+    found.push(row);
+    Object.values(row).forEach((value) => subschemas(value, found));
+    return found;
+  }
+
+  const SCHEMAS: [string, unknown][] = [
+    ["planSchema", planSchema(CANDIDATES)],
+    ["CADDY_TOOLS", CADDY_TOOLS.map((tool) => tool.input_schema)],
+  ];
+
+  it.each(SCHEMAS)("%s never pairs an enum with a union type", (_name, schema) => {
+    // The bug this is here for cost an afternoon of round trips. Anthropic's
+    // validator checks each enum value against the declared type and refuses
+    // `{ type: ["string","null"], enum: [...] }` with "Enum value 'water' does
+    // not match declared type" — a 400 before the model ever sees the request.
+    // `enum` alone is the accepted spelling and is strictly stronger.
+    subschemas(schema).forEach((node) => {
+      if (node.enum !== undefined) expect(Array.isArray(node.type)).toBe(false);
+    });
+  });
+
+  it("still constrains the hazard to the house's three, or nothing", () => {
+    const holes = (planSchema(CANDIDATES) as never as {
+      properties: { holes: { items: { properties: Record<string, { enum?: unknown[] }> } } };
+    }).properties.holes.items.properties;
+    expect(holes.hazard.enum).toEqual([...HAZARDS.map((h) => h.id), null]);
+  });
+});
+
+describe("the last hole", () => {
+  /** A card whose every hole carries the given hazard. */
+  function planWithHazard(ids: string[], hazard: string) {
+    return {
+      courseName: "The Test",
+      holes: ids.map((candidateId) => ({
+        candidateId,
+        drink: "Pint",
+        par: 4,
+        hazard,
+        hazardNote: "hold it till the next hole",
+      })),
+    };
+  }
+
+  it("never finishes on water, because nobody leaves the last hole", () => {
+    // Water's relief is deferred until the hole is filed, and the last hole is
+    // the one a group settles into. Stripped here rather than only asked for
+    // in the prompt, because the caddy cannot know which hole ends up last —
+    // the walking order is decided after it answers.
+    const result = parsePlan(planWithHazard(["p1", "p2", "p3"], "water"), CANDIDATES, BRIEF);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const holes = result.course.holes;
+    expect(holes[holes.length - 1].hazard).toBeNull();
+    expect(holes[holes.length - 1].hazard_note).toBeNull();
+    // And only the last one — the earlier water hazards are untouched.
+    expect(holes.slice(0, -1).every((hole) => hole.hazard === "water")).toBe(true);
+  });
+
+  it("lets a hazard that resolves on the drink finish the round", () => {
+    // Bunker and dogleg are both done with by the time the glass is empty, so
+    // they make perfectly good finales and are left alone.
+    HAZARDS.filter((hazard) => hazard.onFinalHole).forEach((hazard) => {
+      const result = parsePlan(
+        planWithHazard(["p1", "p2", "p3"], hazard.id),
+        CANDIDATES,
+        BRIEF,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const holes = result.course.holes;
+      expect(holes[holes.length - 1].hazard).toBe(hazard.id);
+    });
+  });
+
+  it("has exactly one hazard that cannot finish a round", () => {
+    // If a fourth hazard is added, this makes somebody decide which it is.
+    expect(HAZARDS.filter((hazard) => !hazard.onFinalHole).map((h) => h.id)).toEqual([
+      "water",
+    ]);
+  });
+});
+
+describe("the house rules the caddy is given", () => {
+  it("tells it what a bunker's drink has to be", () => {
+    // "Down in one" against a pint of ale is not a forfeit, it is a dare. The
+    // constraint is a property of the hazard rather than a line in the prompt,
+    // so a fourth hazard has to declare whether it constrains the glass.
+    const bunker = HAZARDS.find((hazard) => hazard.id === "bunker");
+    expect(bunker?.drinkRule).toBeTruthy();
+    expect(CADDY_SYSTEM).toContain(bunker!.drinkRule!);
+  });
+
+  it("leaves the glass alone for hazards that are not about the drink", () => {
+    // Water is about the toilet and dogleg is about whose glass you end up
+    // with; neither has any business dictating what is in it.
+    expect(HAZARDS.find((h) => h.id === "water")?.drinkRule).toBeNull();
+    expect(HAZARDS.find((h) => h.id === "dogleg")?.drinkRule).toBeNull();
+  });
+
+  it("names every hazard it expects the caddy to use", () => {
+    HAZARDS.forEach((hazard) => expect(CADDY_SYSTEM).toContain(hazard.id));
   });
 });

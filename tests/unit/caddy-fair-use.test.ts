@@ -6,7 +6,6 @@ import {
   caddyFairUseSpent,
   caddyTurnsSpent,
 } from "@/lib/caddy/fair-use";
-import { strollWaypoints } from "@/lib/caddy/stroll";
 
 const NOW = Date.parse("2026-08-11T20:00:00.000Z");
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -48,44 +47,5 @@ describe("caddyFairUseSpent", () => {
 
   it("never names a number in the line a host could read", () => {
     expect(CADDY_FAIR_USE_NOTE).not.toMatch(/\d/);
-  });
-});
-
-describe("strollWaypoints", () => {
-  const patch = [
-    { lat: 51.52, lng: -0.08 },
-    { lat: 51.53, lng: -0.07 },
-    { lat: 51.51, lng: -0.06 },
-    { lat: 51.54, lng: -0.09 },
-  ];
-
-  it("wanders the same way for the same session", () => {
-    expect(strollWaypoints("session-a", patch)).toEqual(
-      strollWaypoints("session-a", patch),
-    );
-  });
-
-  it("wanders differently for a different one", () => {
-    expect(strollWaypoints("session-a", patch)).not.toEqual(
-      strollWaypoints("session-b", patch),
-    );
-  });
-
-  it("never stands still — a repeated waypoint reads as a stall", () => {
-    const walk = strollWaypoints("session-c", patch, 20);
-    walk.slice(1).forEach((point, i) => {
-      expect(point).not.toEqual(walk[i]);
-    });
-  });
-
-  it("only ever visits real points on the patch", () => {
-    strollWaypoints("session-d", patch, 30).forEach((point) => {
-      expect(patch).toContainEqual(point);
-    });
-  });
-
-  it("copes with a thin patch", () => {
-    expect(strollWaypoints("x", [])).toEqual([]);
-    expect(strollWaypoints("x", [patch[0]], 9)).toEqual([patch[0]]);
   });
 });

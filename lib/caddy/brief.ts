@@ -18,6 +18,44 @@ export const DEFAULT_HOLES = 9;
 export const NOTE_MAX = 120;
 
 /**
+ * How far apart the pubs should be, as the shortest walk between two of them.
+ *
+ * Offered because the obvious routing objective — shortest total walk — is
+ * subtly wrong for a crawl. Given three pubs on one corner it visits all three
+ * back to back, which is the best possible arithmetic and a poor night: the
+ * walk between rounds is the part that paces the evening, and three doors in a
+ * row is one long session wearing a scorecard.
+ *
+ * Minutes rather than metres, because minutes is how a group actually thinks
+ * about the gap between pints, and it is already the unit the drink timer and
+ * the walk estimate speak.
+ */
+export const STRETCH_CHOICES = [
+  { id: 0, label: "Doorstep", meaning: "Whatever's closest, however close." },
+  { id: 3, label: "Short", meaning: "A few minutes between doors." },
+  { id: 5, label: "Steady", meaning: "About five minutes' walk between pubs." },
+  { id: 10, label: "Stretch", meaning: "A proper walk between rounds." },
+] as const;
+
+/** Five minutes: long enough to pace the night, short enough that most patches
+ * can actually answer it. */
+export const DEFAULT_STRETCH = 5;
+
+export function readStretch(value: unknown): number {
+  const asked = Number(value);
+  return STRETCH_CHOICES.some((choice) => choice.id === asked)
+    ? asked
+    : DEFAULT_STRETCH;
+}
+
+export function stretchMeaning(minutes: number): string {
+  return (
+    STRETCH_CHOICES.find((choice) => choice.id === minutes)?.meaning ??
+    STRETCH_CHOICES.find((choice) => choice.id === DEFAULT_STRETCH)!.meaning
+  );
+}
+
+/**
  * The round's character — single-select, because a round has one.
  *
  * `meaning` is the line under the chip on screen *and* the line the caddy
@@ -103,6 +141,8 @@ export interface CaddyBrief {
   particulars: ParticularId[];
   /** One line, the host's own. Fenced before it reaches the model. */
   note: string;
+  /** The shortest walk the host wants between two pubs, in minutes. */
+  stretch: number;
 }
 
 export const WHERE_MAX = 120;
@@ -143,6 +183,7 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     finishVenueId,
     holes,
     vibe: readVibe(input.vibe),
+    stretch: readStretch(input.stretch),
     particulars,
     note: typeof input.note === "string" ? input.note.trim().slice(0, NOTE_MAX) : "",
   };

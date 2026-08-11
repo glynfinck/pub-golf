@@ -5,6 +5,7 @@ import {
   showCaddyDiagnostics,
   shutGates,
 } from "@/lib/caddy/readiness";
+import { caddyAllowance, resumeCaddy } from "@/lib/data/caddy";
 import { getDayPass } from "@/lib/data/billing";
 import { getSessionUser } from "@/lib/data/rounds";
 import { createClient } from "@/lib/supabase/server";
@@ -43,6 +44,14 @@ export default async function NewCoursePage() {
     caddyTablesPresent(),
   ]);
 
+  // What the host was in the middle of, if anything. Asked here rather than
+  // remembered on the client: a refresh used to lose the thread to a card that
+  // was still sitting in the database, and the next plan filed a duplicate
+  // course on top of it (`lib/data/caddy.ts`).
+  const [resumed, allowance] = tablesPresent
+    ? await Promise.all([resumeCaddy(), caddyAllowance()])
+    : [null, { canPlan: true, courseId: null }];
+
   const gateInput = {
     signedIn: user != null,
     anonymous: user?.is_anonymous === true,
@@ -53,7 +62,12 @@ export default async function NewCoursePage() {
 
   return (
     <>
-      <CourseBuilder caddy={ready} hasPass={pass != null} />
+      <CourseBuilder
+        caddy={ready}
+        hasPass={pass != null}
+        resumed={resumed}
+        allowance={allowance}
+      />
       {/* Absence rather than apology stays the rule for players; this is for
           whoever is deploying, and only ever off production. */}
       {!ready && showCaddyDiagnostics(process.env) ? (

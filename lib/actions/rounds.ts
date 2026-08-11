@@ -246,10 +246,16 @@ export async function strikeSeat(
  * host inside a green fee's window, stamps the round covered.
  *
  * Tee-off is the one moment the members' flag is decided, and it is decided
- * once. A pass that runs out, or is refunded, at hole 4 cannot take the
- * league off a table that is already playing; a pass bought at hole 4 cannot
- * add it either. That is the whole point of putting the grant in the ruleset
+ * once. A pass that runs out, or is refunded, at hole 4 cannot change what a
+ * table already playing was teed off under, and a pass bought at hole 4
+ * cannot either. That is the whole point of putting the grant in the ruleset
  * snapshot rather than reading entitlements at render time.
+ *
+ * What the stamp *grants* is now nothing: the league it used to admit a round
+ * to is free for everybody. It is kept, and kept accurate, because it is the
+ * round's own receipt — the honest record of whether a fee was covering the
+ * table when it teed off — and because a receipt written only from the moment
+ * somebody thinks of a use for it is a receipt with a hole in the middle.
  *
  * The check is a definer function rather than a read of `entitlements`
  * because the caddy tees rounds off too, and a day pass is visible to its

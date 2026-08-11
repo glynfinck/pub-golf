@@ -1,3 +1,4 @@
+import { HOLE_PARTS } from "@/lib/house-rules";
 import { HAZARDS, type HazardId } from "@/lib/hazards";
 import type { RulesetPenalty } from "@/lib/ruleset";
 import {
@@ -7,6 +8,7 @@ import {
   HAZARD_NOTE_MAX,
   clampInt,
   clampText,
+  nullableEnum,
   readHazard,
   readRules,
 } from "@/lib/caddy/plan";
@@ -15,6 +17,7 @@ import {
   dossierLine,
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
+import type { RouteTrial } from "@/lib/caddy/route";
 
 /**
  * The caddy's hands: the tools it may call, and what each one does to the
@@ -48,6 +51,38 @@ import {
  * board at that point is a real card and is handed over as one. */
 export const MAX_TOOL_TURNS = 12;
 
+/**
+ * How long the loop may work before it hands over what it has, and how much
+ * room one more turn needs.
+ *
+ * The turn cap alone was not enough. The first real looped plan was killed by
+ * the platform at `maxDuration`, which cost the host nothing on screen and
+ * cost us every token it had already spent — the ledger row is written after
+ * the call returns, and a killed function never returns. A timeout was the one
+ * remaining way to spend money nobody counted.
+ *
+ * The headroom is the interesting half: a turn is a model call with thinking
+ * on plus however long a Places search takes, so beginning one with thirty
+ * seconds left is how you get killed mid-flight and lose the card *and* the
+ * accounting. Better to stop one turn early holding a finished card.
+ */
+export const CADDY_LOOP_MS = 210_000;
+export const TURN_HEADROOM_MS = 45_000;
+
+/**
+ * Is there time for another turn?
+ *
+ * The clock comes in as a number rather than being read in here, which is the
+ * house rule for anything with timing in it: a decision a test can make
+ * without waiting three and a half minutes to watch it.
+ *
+ * Never stops before the first turn. A loop that gave up having done nothing
+ * would hand back an empty board and call it a card.
+ */
+export function outOfLoopTime(turn: number, elapsedMs: number): boolean {
+  return turn > 0 && elapsedMs > CADDY_LOOP_MS - TURN_HEADROOM_MS;
+}
+
 /** A search the caddy runs mid-conversation, and the ceiling on what one is
  * allowed to bring back. Small on purpose: this is a follow-up ("anywhere with
  * a garden?"), not a second gather. */
@@ -60,6 +95,7 @@ export const TOOL_SET = "set_hole";
 export const TOOL_REMOVE = "remove_hole";
 export const TOOL_MOVE = "move_hole";
 export const TOOL_NAME = "name_course";
+export const TOOL_ROUTE = "try_route";
 
 /** One hole as the caddy holds it: an id and its dressing. The venue behind
  * the id is the server's business, which is the whole point. */
@@ -149,17 +185,19 @@ export const CADDY_TOOLS = [
           description:
             "The id of the pub, from the patch or from a search. Only ids you have been given.",
         },
-        drink: { type: "string" },
+        drink: { type: "string", description: HOLE_PARTS.drink },
         par: {
           type: "integer",
-          description: "Swigs the drink should take: 2 a half or a short, 3 a spirit and mixer, 4 a pint, 5 a pint of something heavy.",
+          description: HOLE_PARTS.par,
         },
-        hazard: { type: ["string", "null"], enum: [...HAZARDS.map((h) => h.id), null] },
-        hazardNote: { type: ["string", "null"] },
+        hazard: nullableEnum(HAZARDS.map((h) => h.id)),
+        hazardNote: {
+          type: ["string", "null"],
+          description: HOLE_PARTS.hazardNote,
+        },
         fitNote: {
           type: ["string", "null"],
-          description:
-            "One short line on why this pub suits what was asked, in your own words. Never quote a review.",
+          description: `${HOLE_PARTS.fitNote} One short line, in your own words, and never a quoted review.`,
         },
         localRules: {
           type: "array",
@@ -204,6 +242,24 @@ export const CADDY_TOOLS = [
     },
   },
   {
+    name: TOOL_ROUTE,
+    description:
+      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to try a set you have not committed to, or with nothing to measure what is on the table. This is the same router the finished card goes through, so what it reports is what the group will walk — use it before you hand a card over, and again after you change one.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: [],
+      properties: {
+        candidateIds: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description:
+            "The pubs to try, by id. Leave it out to route the holes already on the table.",
+        },
+      },
+    },
+  },
+  {
     name: TOOL_NAME,
     description: "Name the course.",
     input_schema: {
@@ -213,7 +269,12 @@ export const CADDY_TOOLS = [
       properties: { name: { type: "string" } },
     },
   },
-] as const;
+  // Not `as const`: the SDK's tool parameter is a mutable array of mutable
+  // schemas, and a deeply-readonly literal cannot be handed to it without a
+  // cast that would hide a genuine mismatch. What makes this a stable cached
+  // prefix is that it is a module constant built from other constants, which
+  // is unaffected either way.
+];
 
 /** The four tools that change the draft — the ones this module answers. The
  * other two need a key and a session and belong to the server. */
@@ -282,6 +343,51 @@ export function searchResultBlock(found: CandidateDossier[]): string {
     "",
     ...found.map(dossierLine),
   ].join("\n");
+}
+
+/**
+ * A routed trial, written for the caddy to act on.
+ *
+ * Numbers first and a verdict never. The caddy is the one deciding whether a
+ * fourteen-minute leg is a problem — that depends on the brief, and the brief
+ * is already in front of it. What it cannot work out for itself is what the
+ * router did with its picks, and that is all this says.
+ */
+export function routeTrialBlock(
+  trial: RouteTrial,
+  candidates: CandidateDossier[],
+): string {
+  const byId = candidatesById(candidates);
+  const named = (id: string) => `${id} (${byId.get(id)?.name ?? "?"})`;
+  if (!trial.legs.length) {
+    return "Nothing to route yet — put some pubs on the table first.";
+  }
+  const lines = [
+    "ROUTED",
+    `order: ${trial.order.map(named).join(" → ")}`,
+    `total walk: ${trial.totalMinutes} min`,
+    ...trial.legs.map(
+      (leg) =>
+        `  ${leg.from} → ${leg.to}: ${leg.minutes} min${leg.short ? "  ← under the minimum" : ""}`,
+    ),
+  ];
+  if (trial.shortLegs > 0) {
+    lines.push(
+      `${trial.shortLegs} ${trial.shortLegs === 1 ? "leg is" : "legs are"} shorter than asked for.`,
+    );
+  }
+  if (trial.worstRun >= 2) {
+    // The complaint that started the spacing work, named as what it is.
+    lines.push(
+      `${trial.worstRun + 1} pubs in a row sit almost on top of each other. Spread them out.`,
+    );
+  }
+  if (trial.unplaced.length) {
+    lines.push(
+      `No coordinates for ${trial.unplaced.join(", ")}, so they are not in any of the above.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 // ————————————————— what the caddy may change —————————————————

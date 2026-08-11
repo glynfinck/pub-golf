@@ -1,21 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  addUsage,
+  CADDY_COURSES_PER_FEE,
+  coursesLeftNote,
+} from "@/lib/caddy/credits";
+import {
   CADDY_BUDGET_NOTE,
   CADDY_BUDGET_SHARE,
   CADDY_CONVERSATION_SHARE,
+  MODEL_PRICES,
+  NO_USAGE,
+  PENCE_PER_USD,
+  addUsage,
   caddyBudgetMicroPence,
   conversationCapMicroPence,
   costMicroPence,
-  MODEL_PRICES,
   microPencePerToken,
-  NO_USAGE,
-  PENCE_PER_USD,
   priceOf,
   readUsage,
-  withinBudget,
+  sumUsage,
   type CaddyUsage,
+  withinBudget,
 } from "@/lib/caddy/budget";
 import { TARIFF } from "@/lib/tariff";
 
@@ -206,5 +211,82 @@ describe("CADDY_BUDGET_NOTE", () => {
 
   it("says the table is still theirs", () => {
     expect(CADDY_BUDGET_NOTE).toMatch(/free/i);
+  });
+});
+
+describe("summing a tool loop into one bill", () => {
+  const call = (over: Partial<CaddyUsage> = {}): CaddyUsage => ({
+    input: 100,
+    output: 200,
+    cacheWrite: 0,
+    cacheRead: 1_000,
+    ...over,
+  });
+
+  it("adds every field, so nothing in a loop goes unbilled", () => {
+    expect(addUsage(call(), call({ output: 50 }))).toEqual({
+      input: 200,
+      output: 250,
+      cacheWrite: 0,
+      cacheRead: 2_000,
+    });
+  });
+
+  it("sums an empty loop to nothing rather than to undefined", () => {
+    expect(sumUsage([])).toEqual(NO_USAGE);
+  });
+
+  it("keeps the cache write the first call paid for", () => {
+    // The failure mode this guards: every call after the first is mostly cache
+    // *reads*, an order of magnitude cheaper than the write that seeded them.
+    // A total that kept only the last call's usage would price a twelve-turn
+    // plan as a one-turn one — undercharging, which is the direction that
+    // silently breaks the budget.
+    const loop = [call({ cacheWrite: 20_000, cacheRead: 0 }), call(), call()];
+    const total = sumUsage(loop);
+    expect(total.cacheWrite).toBe(20_000);
+    expect(costMicroPence(total, "claude-sonnet-5")).toBeGreaterThan(
+      costMicroPence(call(), "claude-sonnet-5"),
+    );
+  });
+
+  it("bills a loop as one turn, and that turn costs more than one call", () => {
+    // One plan is one thing the host asked for and stays one ledger row. What
+    // must not happen is the row understating what the loop actually spent.
+    const loop = Array.from({ length: 8 }, () => call());
+    const total = sumUsage(loop);
+    expect(costMicroPence(total, "claude-sonnet-5")).toBe(
+      8 * costMicroPence(call(), "claude-sonnet-5"),
+    );
+  });
+
+  it("leaves a loop of one exactly where a single call already was", () => {
+    expect(sumUsage([call()])).toEqual(call());
+  });
+});
+
+describe("what a fee buys, counted", () => {
+  it("buys more than one course, and not so many it stops meaning anything", () => {
+    // The number is a product decision, not arithmetic — this only holds it
+    // inside the range where it is still a fee for a night out rather than a
+    // subscription. `tests/db` proves it equals the database's own copy.
+    expect(CADDY_COURSES_PER_FEE).toBeGreaterThan(1);
+    expect(CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(10);
+  });
+
+  it("can afford every course it sells", () => {
+    // The credit ceiling and the money ceiling have to agree: selling three
+    // courses on a budget that funds two is a host refused mid-fee by a
+    // number nobody told them about. A plan is roughly a conversation's cap.
+    const perPlan = conversationCapMicroPence();
+    expect(perPlan * CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(
+      caddyBudgetMicroPence(),
+    );
+  });
+
+  it("says how many are left in words, never as a bare digit", () => {
+    expect(coursesLeftNote(0)).toMatch(/no courses left/i);
+    expect(coursesLeftNote(1)).toMatch(/one course left/i);
+    expect(coursesLeftNote(3)).toMatch(/^3 courses left/i);
   });
 });

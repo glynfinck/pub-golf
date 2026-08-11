@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Archive } from "lucide-react";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { ActionRow, ConfirmFrame } from "@/components/ui/manage-sheet";
 import {
@@ -15,7 +16,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useAction } from "@/hooks/use-action";
-import { deleteCourse, duplicateCourse } from "@/lib/actions/courses";
+import { archiveCourse, deleteCourse, duplicateCourse } from "@/lib/actions/courses";
 import type { MyCourse } from "@/lib/data/courses";
 
 /**
@@ -46,6 +47,23 @@ export function ManageCourseSheet({
   function handleOpenChange(next: boolean) {
     if (!next) setMode("menu");
     onOpenChange(next);
+  }
+
+  function putAway() {
+    // Read once, before the await: the sheet closes on success and `course`
+    // goes null with it, so the toast would otherwise be deciding its wording
+    // from a course that is no longer there.
+    const wasArchived = course?.archived === true;
+    run(async () => {
+      const result = await archiveCourse(id, !wasArchived);
+      if (result.error) return result;
+      toast.success(
+        wasArchived ? "Back in the book." : "Put away at the back of the book.",
+      );
+      onOpenChange(false);
+      router.refresh();
+      return {};
+    });
   }
 
   function fileCopy() {
@@ -111,14 +129,38 @@ export function ManageCourseSheet({
                 testId="duplicate-course"
                 onClick={fileCopy}
               />
-              <ActionRow
-                hazard
-                icon={<Trash2 size={17} aria-hidden />}
-                label="Tear out of the book"
-                sub="Rounds already played on it keep their card"
-                testId="delete-course"
-                onClick={() => setMode("delete")}
-              />
+              {/* A course that cost a credit is put away rather than torn
+                  out. Deleting no longer gives the credit back, so losing both
+                  from a button whose whole affordance is "undoable-ish" is not
+                  a trade anybody agreed to — hold-to-confirm is a speed bump,
+                  not a receipt. A hand-plotted course is free to remake and
+                  keeps the bin it always had. */}
+              {course.byCaddy ? (
+                <ActionRow
+                  icon={<Archive size={17} aria-hidden />}
+                  label={course.archived ? "Bring it back out" : "Put it away"}
+                  sub={
+                    course.archived
+                      ? "Back into the book, exactly as you left it"
+                      : "To the back of the book — nothing is lost"
+                  }
+                  disabled={pending}
+                  pending={pending}
+                  busy={busy}
+                  pendingLabel={course.archived ? "Bringing it out" : "Putting it away"}
+                  testId="archive-course"
+                  onClick={putAway}
+                />
+              ) : (
+                <ActionRow
+                  hazard
+                  icon={<Trash2 size={17} aria-hidden />}
+                  label="Tear out of the book"
+                  sub="Rounds already played on it keep their card"
+                  testId="delete-course"
+                  onClick={() => setMode("delete")}
+                />
+              )}
             </>
           ) : (
             <ConfirmFrame

@@ -19,16 +19,23 @@ import { PLACES_FIELD_MASK } from "@/lib/pub-search";
  */
 
 /**
- * The builder's mask plus what the caddy reads the room with. Every field
- * after the first line is the `signal` behind a particular in
- * `lib/caddy/brief.ts` — the pairing is what keeps the preferences menu
- * honest, and a unit test holds it.
+ * The builder's mask plus what the caddy reads the room with.
+ *
+ * Two jobs, and they are worth telling apart. Most of these fields are the
+ * `signal` behind a particular in `lib/caddy/brief.ts` — the pairing keeps the
+ * preferences menu honest, and a unit test holds it. `servesBeer` and
+ * `servesWine` are not chips and never will be; they are here so the caddy can
+ * tell whether the drink it is about to write on a hole is one the place
+ * actually pours. A cocktail bar that serves no beer is a real thing, and
+ * "Pint of bitter" on its hole sends the group to the bar to be told no.
  */
 export const CADDY_FIELD_MASK = [
   PLACES_FIELD_MASK,
   "places.priceLevel",
   "places.outdoorSeating",
   "places.allowsDogs",
+  "places.servesBeer",
+  "places.servesWine",
   "places.servesCocktails",
   "places.liveMusic",
   "places.goodForWatchingSports",
@@ -54,6 +61,8 @@ interface GooglePlace {
   priceLevel?: string;
   outdoorSeating?: boolean;
   allowsDogs?: boolean;
+  servesBeer?: boolean;
+  servesWine?: boolean;
   servesCocktails?: boolean;
   liveMusic?: boolean;
   goodForWatchingSports?: boolean;
@@ -79,6 +88,8 @@ function factsOf(place: GooglePlace): PubFacts {
   return {
     outdoorSeating: read(place.outdoorSeating),
     allowsDogs: read(place.allowsDogs),
+    servesBeer: read(place.servesBeer),
+    servesWine: read(place.servesWine),
     servesCocktails: read(place.servesCocktails),
     liveMusic: read(place.liveMusic),
     goodForWatchingSports: read(place.goodForWatchingSports),
