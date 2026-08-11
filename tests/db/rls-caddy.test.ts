@@ -41,6 +41,15 @@ import { expectDenied } from "./helpers/assert";
  * House rules for this tier, as everywhere: `adminClient()` seeds and reads
  * back, never the subject; and an UPDATE that RLS filters out returns no error
  * and no rows, so a blocked write is proved by re-reading the row.
+ *
+ * On these two tables most of the refusals are *stronger* than that, and it is
+ * worth knowing which is which. `authenticated` is granted `select, insert` on
+ * `caddy_turns` and nothing else, and only `update (completed_at, dossier)` on
+ * `caddy_sessions` — so an edit is refused at the **grant** with 42501 rather
+ * than filtered by a policy. Read the error shape: 42501 is always the grant,
+ * and a policy refusal is silence. Both are asserted below, because a test
+ * that only re-read the row would pass just as happily under either, and they
+ * are different amounts of safety.
  */
 
 /** A green fee the way the webhook writes one, so a session has something to
@@ -250,13 +259,17 @@ describe("caddy turns are append-only, and they are the bill", () => {
       .select("id")
       .single();
     const before = await storedTurn(data!.id);
-    // No update policy at all, so this is filtered rather than refused: no
-    // error, no rows, and the proof is the row itself.
+    // Refused at the *grant*, not by a policy — `authenticated` is granted
+    // only `select, insert` on this table, so there is no UPDATE privilege to
+    // filter. Worth reading the error shape rather than assuming: 42501 is
+    // always the table grant, and a policy refusal returns no rows and no
+    // error at all. This is the stronger of the two, and the row is still the
+    // proof.
     const { error } = await host.db
       .from("caddy_turns")
       .update({ input_tokens: 0, output_tokens: 0 })
       .eq("id", data!.id);
-    expect(error).toBeNull();
+    expectDenied(error);
     expect(await storedTurn(data!.id)).toEqual(before);
   });
 
@@ -266,7 +279,12 @@ describe("caddy turns are append-only, and they are the bill", () => {
       .insert(turnRow(host, sessionId))
       .select("id")
       .single();
-    await host.db.from("caddy_turns").delete().eq("id", data!.id);
+    // Same again: no DELETE grant, so it never reaches a policy. Asserted as
+    // well as re-read, because a test that only re-reads the row would pass
+    // just as happily if the delete had been silently filtered — and those are
+    // different amounts of safety.
+    const { error } = await host.db.from("caddy_turns").delete().eq("id", data!.id);
+    expectDenied(error);
     expect(await storedTurn(data!.id)).not.toBeNull();
   });
 
