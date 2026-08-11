@@ -96,6 +96,21 @@ export function CourseBuilder({
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
+  /**
+   * The row a caddy-planned course was filed into the moment it arrived.
+   *
+   * A course the caddy plans is filed straight away rather than waiting for
+   * the host to tap save. The fee bought an evening's legwork, and legwork
+   * that lives only in a tab is legwork one closed tab from being bought
+   * again — so it belongs to them from the moment it exists, and the day pass
+   * running out cannot take it back.
+   *
+   * It does not put the table into editing mode: `editing` means "opened from
+   * the book", and it is what decides whether the caddy is on this page at
+   * all. A card that filed itself is still a draft being worked on, with the
+   * caddy still sitting beside it.
+   */
+  const [savedId, setSavedId] = useState<string | null>(null);
   const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -206,37 +221,55 @@ export function CourseBuilder({
    * thing once they are on the table. The course name only takes the caddy's
    * suggestion while the host has not written their own.
    */
-  function takeCaddyCourse(planned: PlannedCourse, moved: number[]) {
+  async function takeCaddyCourse(planned: PlannedCourse, moved: number[]) {
     clearUndo();
     // A new card is a new walk: the preview redraws itself rather than
     // swapping one route for another between frames. Hand-edits below do not
     // bump this — replaying the animation every time a pub moves would make
     // the map the loudest thing on the page.
     setDrawKey((current) => current + 1);
-    setHoles(
-      planned.holes.map((hole) => ({
-        id: crypto.randomUUID(),
-        venue_id: hole.venue_id,
-        venue_name: hole.venue_name,
-        address: hole.address,
-        rating: hole.rating,
-        lat: hole.lat,
-        lng: hole.lng,
-        drink: hole.drink,
-        par: hole.par,
-        hazard: hole.hazard,
-        hazard_note: hole.hazard_note,
-        penalties: hole.penalties,
-        walk_minutes_to_next: null,
-      })),
-    );
-    setName((current) => current.trim() || planned.name);
+    const rows = planned.holes.map((hole) => ({
+      id: crypto.randomUUID(),
+      venue_id: hole.venue_id,
+      venue_name: hole.venue_name,
+      address: hole.address,
+      rating: hole.rating,
+      lat: hole.lat,
+      lng: hole.lng,
+      drink: hole.drink,
+      par: hole.par,
+      hazard: hole.hazard,
+      hazard_note: hole.hazard_note,
+      penalties: hole.penalties,
+      walk_minutes_to_next: null,
+    }));
+    const named = name.trim() || planned.name;
+    setHoles(rows);
+    setName(named);
     setChanged(moved);
     setAnnouncement(
       moved.length === 1
         ? `Hole ${moved[0] + 1} is now ${planned.holes[moved[0]]?.venue_name ?? "changed"}.`
         : `The caddy's draft: ${planned.holes.length} holes, par ${planned.holes.reduce((sum, hole) => sum + hole.par, 0)}.`,
     );
+
+    // Filed on arrival, and filed over on every roll and tweak after it, so
+    // there is one course in the book rather than one per ask. The state above
+    // is already set, so the card is on screen while this happens.
+    //
+    // Deliberately quiet, and deliberately not fatal. If it fails the host
+    // loses nothing they can see — the card is in front of them and the save
+    // button still says "Save the course", because `savedId` is what that
+    // wording reads and it stays null. Shouting about it would be an error
+    // message for a step they never asked for.
+    if (editing) return;
+    const draft = draftOf(rows, named);
+    if (savedId) {
+      await updateCourse(savedId, draft);
+      return;
+    }
+    const minted = await createCourse(draft);
+    if (minted.id) setSavedId(minted.id);
   }
 
   function move(index: number, direction: MoveDirection) {
@@ -255,33 +288,42 @@ export function CourseBuilder({
     setHoles((current) => removeHole(current, index));
   }
 
+  /** The card, in the shape the actions want. Two writers now — the save
+   * button and the caddy filing its own card — so it is built in one place. */
+  function draftOf(rows: DraftHole[], courseName: string) {
+    return {
+      name: courseName,
+      holes: rows.map((hole) => ({
+        venue_id: hole.venue_id,
+        venue_name: hole.venue_name,
+        drink: hole.drink,
+        par: hole.par,
+        hazard: hole.hazard,
+        hazard_note: hole.hazard_note,
+        // A rule with no offence on it is a half-typed thought, not a rule.
+        penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
+        lat: hole.lat,
+        lng: hole.lng,
+        walk_minutes_to_next: hole.walk_minutes_to_next,
+      })),
+    };
+  }
+
   function save() {
     run(async () => {
-      const draft = {
-        name,
-        holes: holes.map((hole) => ({
-          venue_id: hole.venue_id,
-          venue_name: hole.venue_name,
-          drink: hole.drink,
-          par: hole.par,
-          hazard: hole.hazard,
-          hazard_note: hole.hazard_note,
-          // A rule with no offence on it is a half-typed thought, not a rule.
-          penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
-          lat: hole.lat,
-          lng: hole.lng,
-          walk_minutes_to_next: hole.walk_minutes_to_next,
-        })),
-      };
-      const result = editing
-        ? await updateCourse(course.id, draft)
+      const draft = draftOf(holes, name);
+      const existing = editing ? course.id : savedId;
+      const result = existing
+        ? await updateCourse(existing, draft)
         : await createCourse(draft);
       if (result.error) return result;
       // The card is filed, so the conversation is over: stamping the session
       // drops the dossier with it. Best-effort — a course that saved is saved,
       // whatever the tidying does.
       if (caddySession) await closeCaddySession(caddySession);
-      toast.success(editing ? "Course refiled." : "Course saved to the book.");
+      toast.success(
+        editing || savedId ? "Course refiled." : "Course saved to the book.",
+      );
       router.push("/courses");
     });
   }
@@ -307,6 +349,10 @@ export function CourseBuilder({
   }
 
   const par = holes.reduce((sum, hole) => sum + hole.par, 0);
+  // In the book by either door: opened from it, or filed there on arrival by
+  // the caddy. Only the save button's wording turns on this — `editing` still
+  // means "opened from the book", and still decides whether the caddy is here.
+  const filed = editing || savedId !== null;
 
   // Where the open picker is aimed, right now. A target whose hole has since
   // left the card resolves to nothing and the picker quietly closes with it.
@@ -535,20 +581,30 @@ export function CourseBuilder({
         </div>
       ) : null}
 
+      {/* Already in the book, and said so plainly. A caddy-planned course
+          files itself the moment it lands, so the button below is a way out
+          of the drafting table rather than the thing that saves the work —
+          and a host who closes the tab has lost nothing. */}
+      {filed ? (
+        <p className="text-center text-[11px] text-muted-foreground">
+          In your book already — every edit here is saved when you leave.
+        </p>
+      ) : null}
+
       <Button
         onClick={save}
         disabled={pending || !name.trim() || holes.length === 0}
-        className="mt-auto"
+        className={filed ? undefined : "mt-auto"}
       >
         <PendingLabel
           pending={pending}
           busy={busy}
           label={
-            editing
+            filed
               ? `Save changes · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`
               : `Save the course · ${holes.length} ${holes.length === 1 ? "hole" : "holes"}`
           }
-          pendingLabel={editing ? "Refiling the course" : "Filing the course"}
+          pendingLabel={filed ? "Refiling the course" : "Filing the course"}
         />
       </Button>
 

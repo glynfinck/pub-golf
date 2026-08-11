@@ -49,7 +49,7 @@ export function CaddyGroup({
    * its last row changes, because the ask belongs after the investment. */
   hasPass: boolean;
   /** A card arrived. The builder takes it from here. */
-  onCourse: (course: PlannedCourse, changed: number[]) => void;
+  onCourse: (course: PlannedCourse, changed: number[]) => void | Promise<void>;
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
   className?: string;
@@ -85,7 +85,7 @@ export function CaddyGroup({
       if (result.course && result.sessionId) {
         setSessionId(result.sessionId);
         onSession(result.sessionId);
-        onCourse(result.course, []);
+        await onCourse(result.course, []);
       }
       return {};
     });
@@ -96,7 +96,7 @@ export function CaddyGroup({
     run(async () => {
       const result = await askTheCaddy({ sessionId, ...input });
       if (result.error) return { error: result.error, detail: result.detail };
-      if (result.course) onCourse(result.course, result.changed ?? []);
+      if (result.course) await onCourse(result.course, result.changed ?? []);
       setAsk("");
       return {};
     });
