@@ -13,6 +13,7 @@ import { caddyEnabled } from "@/lib/caddy/credentials";
 import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
   buildCandidates,
+  EMPTY_FACTS,
   type CandidateDossier,
   type PubSource,
 } from "@/lib/caddy/dossier";
@@ -166,14 +167,7 @@ async function pinCoords(
         lat: venue.lat,
         lng: venue.lng,
         priceLevel: null,
-        facts: {
-          outdoorSeating: null,
-          allowsDogs: null,
-          servesCocktails: null,
-          liveMusic: null,
-          goodForWatchingSports: null,
-          goodForGroups: null,
-        },
+        facts: { ...EMPTY_FACTS },
         editorial: null,
         reviews: [],
       } satisfies PubSource,

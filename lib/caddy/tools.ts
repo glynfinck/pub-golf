@@ -1,3 +1,4 @@
+import { HOLE_PARTS } from "@/lib/house-rules";
 import { HAZARDS, type HazardId } from "@/lib/hazards";
 import type { RulesetPenalty } from "@/lib/ruleset";
 import {
@@ -150,17 +151,19 @@ export const CADDY_TOOLS = [
           description:
             "The id of the pub, from the patch or from a search. Only ids you have been given.",
         },
-        drink: { type: "string" },
+        drink: { type: "string", description: HOLE_PARTS.drink },
         par: {
           type: "integer",
-          description: "Swigs the drink should take: 2 a half or a short, 3 a spirit and mixer, 4 a pint, 5 a pint of something heavy.",
+          description: HOLE_PARTS.par,
         },
         hazard: nullableEnum(HAZARDS.map((h) => h.id)),
-        hazardNote: { type: ["string", "null"] },
+        hazardNote: {
+          type: ["string", "null"],
+          description: HOLE_PARTS.hazardNote,
+        },
         fitNote: {
           type: ["string", "null"],
-          description:
-            "One short line on why this pub suits what was asked, in your own words. Never quote a review.",
+          description: `${HOLE_PARTS.fitNote} One short line, in your own words, and never a quoted review.`,
         },
         localRules: {
           type: "array",

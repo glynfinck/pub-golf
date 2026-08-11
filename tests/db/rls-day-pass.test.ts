@@ -54,9 +54,15 @@ function teeOff(actor: Actor, round: SeededRound, ruleset: Json) {
 /**
  * The green fee is a day pass, and what a round keeps of it is one boolean
  * in its own ruleset snapshot — stamped at tee-off, checked once, never
- * again. Which makes that boolean the thing worth attacking: it is a free
- * league to anyone who can set it, and a stolen one to anyone who can unset
- * it. The whole defence is `guard_round_members`, and this is its suite.
+ * again. Which makes that boolean the thing worth attacking: it is a paid
+ * receipt to anyone who can set it, and a shredded one to anyone who can
+ * unset it. The whole defence is `guard_round_members`, and this is its
+ * suite.
+ *
+ * The stamp granted the league until the league went free, and the suite is
+ * unchanged by that: what is guarded is whether the record is true, which is
+ * a question the flag has to keep answering whether or not anything is
+ * currently reading it.
  *
  * House rule for this tier throughout: an UPDATE the guard refuses raises,
  * but an UPDATE a *policy* filters returns no error and no rows — so every
@@ -213,7 +219,7 @@ describe("the green fee day pass", () => {
   describe("a round is born uncovered", () => {
     it("refuses the flag at creation, pass or no pass", async () => {
       // The doc picked tee-off as the moment, and creation is the one place
-      // a host writes their own ruleset — so a free league would be one
+      // a host writes their own ruleset — so a forged receipt would be one
       // POST away if this were allowed.
       await seedDayPass(host, 12 * HOUR);
       const { error } = await host.db
@@ -245,7 +251,8 @@ describe("the green fee day pass", () => {
     it("survives the pass running out mid-round", async () => {
       // The pass is the only thing that expires. This is the asymmetry the
       // whole design rests on: a slow crawl over the day boundary, or a
-      // refund, can never take the league off a table already playing.
+      // refund, can never change what a table already playing teed off
+      // under.
       await adminClient()
         .from("entitlements")
         .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
@@ -317,7 +324,7 @@ describe("the green fee day pass", () => {
 
     it("cannot be reached by forging the pass itself", async () => {
       // Belt and braces on 20260821: entitlements has no write policy at
-      // all, so the shortest route to a free league is closed too.
+      // all, so the shortest route to a forged pass is closed too.
       const { error } = await host.db.from("entitlements").insert({
         user_id: host.userId,
         kind: "green_fee",

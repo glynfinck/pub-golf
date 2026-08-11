@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { LeagueRound } from "@/lib/league";
 
 /**
- * How many covered rounds the viewer has, and nothing else.
+ * How many finished rounds the viewer has, and nothing else.
  *
  * The Clubhouse needs to know whether there is a league to link to, not what
  * is in it — and scoring every round to answer that would make the first
@@ -22,29 +22,27 @@ export async function countLeagueRounds(): Promise<number> {
     .select("rounds!inner(ruleset, status)")
     .eq("profile_id", user.id);
 
-  return (data ?? []).filter(
-    (seat) =>
-      seat.rounds.status === "finished" && readRuleset(seat.rounds.ruleset).members,
-  ).length;
+  return (data ?? []).filter((seat) => seat.rounds.status === "finished").length;
 }
 
 /**
- * Every covered round on the viewer's own card, scored.
+ * Every finished round on the viewer's own card, scored.
  *
- * "Covered" is the members' flag in the round's ruleset snapshot — stamped
- * at tee-off, never unstamped — so a round that was covered when it teed off
- * stays in the league forever, whatever became of the pass that granted it.
- * That is the whole reason the grant lives in the snapshot rather than in a
- * live entitlement lookup.
+ * Every one of them, now. The league used to admit only rounds teed off under
+ * a day pass, and the reason for dropping that is not generosity — it is that
+ * a league is the game keeping score of itself. Standings are what makes a
+ * second round mean something, so gating them charged for the sport rather
+ * than for a service, and the twenty-four-hour window made it worse: a table
+ * that played on Friday and again a fortnight later had two rounds and no
+ * table to put them on unless somebody paid twice.
+ *
+ * Rounds already stamped `members` keep their stamp — it is a receipt for a
+ * pass that was held, and it is still written at tee-off — but nothing reads
+ * it to decide who gets in here any more.
  *
  * Read as the caller, so RLS is doing the work: these are rounds the viewer
- * is seated in, and nothing else is visible to ask about. That also settles
- * who the league is for — the whole table, not only the host who paid, which
- * is what "one payment covers the whole table" has to mean on screen.
- *
- * The flag is read through `readRuleset` rather than filtered in PostgREST:
- * the ruleset is only ever read through that one door, and a jsonb operator
- * in a query string is exactly the inline re-cast that rule exists to stop.
+ * is seated in, and nothing else is visible to ask about. That settles who the
+ * league is for — everyone at the table, host and guests alike.
  */
 export async function getLeagueRounds(): Promise<LeagueRound[]> {
   const supabase = await createClient();
@@ -62,8 +60,7 @@ export async function getLeagueRounds(): Promise<LeagueRound[]> {
 
   const played = (seats ?? [])
     .map((seat) => seat.rounds)
-    .filter((round) => round.status === "finished")
-    .filter((round) => readRuleset(round.ruleset).members);
+    .filter((round) => round.status === "finished");
   if (played.length === 0) return [];
 
   const ids = played.map((round) => round.id);

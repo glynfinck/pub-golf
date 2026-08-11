@@ -125,22 +125,43 @@ round keeps is `members` in its own ruleset snapshot, stamped by
 while `holds_day_pass(rounds.host)` — a definer function, because the caddy
 tees rounds off too and a round-less entitlement is visible to its buyer
 alone. Covered stays covered: a pass that expires or is refunded mid-round
-cannot take the league off a table already playing, and un-stamping raises
-42501. A round is born uncovered — the INSERT half refuses the flag
-outright, so posting your own ruleset at the create endpoint buys nothing.
-Tee-off falls back to an unstamped update if the guard refuses, because a
-green fee is allowed to buy nothing and never allowed to stop a group
-getting started. `tests/db/rls-day-pass.test.ts` is the adversarial suite.
+cannot change what a table already playing was teed off under, and
+un-stamping raises 42501. A round is born uncovered — the INSERT half
+refuses the flag outright, so posting your own ruleset at the create
+endpoint buys nothing. Tee-off falls back to an unstamped update if the
+guard refuses, because a green fee is allowed to buy nothing and never
+allowed to stop a group getting started.
+`tests/db/rls-day-pass.test.ts` is the adversarial suite.
 
-The first extra is **the league** (`/league`): the order of merit across
-every covered round on the viewer's card, ranked on the *average* to par
-rather than the total, because a league ranking on the total would punish
-turning up. It is not gated on holding a pass — a league you paid for and
-could no longer read is the clawback the covenant rules out. The
-members' options group lists what exists and nothing else
-(`GREEN_FEE_EXTRAS`); the printed pack, the colours and the curated course
-packs join it the day they ship, and until then this list does not mention
-them. With no `STRIPE_SECRET_KEY` the group is not on the page at all.
+The stamp is now a **receipt rather than a permission**. It admitted a
+round to the league until the league went free; nothing reads it to decide
+what a table may see. It is still written and still guarded, because a
+flag that says "a fee was covering this" is forgeable the moment it is
+not, and because a receipt started only once somebody thinks of a use for
+it has a hole in the middle.
+
+### Why the league is free
+
+The league (`/league`) was the first extra and should not have been one. A
+league is the game keeping score of itself: standings are what make the
+second round mean more than the first, so charging for them priced the
+sport rather than the service. The twenty-four-hour window made it sharper
+— a table that played on Friday and again a fortnight later had two rounds
+and nowhere to put them unless somebody paid twice, which is the one shape
+of pricing that punishes the behaviour the product wants most.
+
+So it is free, for everyone, across every finished round on the viewer's
+card, ranked on the *average* to par rather than the total because a
+league ranking on the total would punish turning up. Moving an extra off
+the paid list is the one direction the covenant allows: "what's free stays
+free" forbids the reverse and never this.
+
+What the fee buys instead is **the caddy** — an evening's legwork done for
+you in twenty seconds, which is a service rendered rather than a part of
+the game withheld. It is the whole of `GREEN_FEE_EXTRAS` today; the
+printed pack, the colours and the curated course packs join it the day
+they ship, and until then this list does not mention them. With no
+`STRIPE_SECRET_KEY` the group is not on the page at all.
 
 Phase one's other half — the funnel — is in as `20260822000000`, and it
 is deliberately the smallest thing that works: no events table, no
@@ -176,11 +197,11 @@ Stripe's own dashboard is where tips are counted, against
 ## What we sell
 
 - **The green fee** (core): ~£4, one-time, host pays — and it is a **day
-  pass**, which is what a green fee means in real golf: every round the
-  buyer hosts that tees off within 24 hours of purchase gets the extras —
-  the league (multi-round standings), the printed pack (A4 card + trophy
-  card), colours/crest on the recap, curated course packs. All *new*
-  features; the free game is untouched. The day window is the
+  pass**, which is what a green fee means in real golf: 24 hours of the
+  caddy planning courses for you, and of whatever else joins the list —
+  the printed pack (A4 card + trophy card), colours/crest on the recap,
+  curated course packs. All *new* features; the free game is untouched,
+  and the league left this list on purpose (see "Why the league is free"). The day window is the
   mistake-forgiveness design: a misconfigured round can be abandoned and
   remade freely inside the window, so a fee is never burned by a setup
   error and no refund email ever needs writing. Once a round tees off
@@ -207,8 +228,8 @@ Stripe's own dashboard is where tips are counted, against
   user-visible states and the most rules for the least warmth.)
 - **The honesty box** (ships first): pay-what-you-feel tip (£3/£5/£10) on
   the results screen. Its product is the willingness-to-pay signal.
-- **The season ticket** (later): ~£19/year, every green fee included plus
-  the league archive. Offered *only* to hosts with 2+ paid green fees.
+- **The season ticket** (later): ~£19/year, every green fee included.
+  Offered *only* to hosts with 2+ paid green fees.
   Annual, not monthly. Cancel promise stated in the pitch.
 - **The society game** (opportunistic): concierge branded events for
   corporates/stags, £49–99, manual until enquiries repeat.

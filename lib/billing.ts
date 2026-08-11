@@ -63,11 +63,19 @@ export function dayPassLive(
  * exists, never what is planned. That is the covenant's "money only ever
  * buys something real" as a rule about this array: the printed pack and the
  * table's colours join it on the day they ship, not before.
+ *
+ * The league used to be on this list and is now free for everyone. Taking a
+ * paid extra *off* the list is the one direction the covenant allows — "what's
+ * free stays free" forbids the reverse, never this — and it was the right way
+ * round: a league is the game keeping score of itself, so charging for it
+ * priced the sport rather than the service. What the fee buys is the caddy
+ * doing an evening's legwork, which is a thing done *for* you rather than a
+ * part of the game withheld from you.
  */
 export const GREEN_FEE_EXTRAS = [
   {
-    title: "The league",
-    detail: "standings across every round you host",
+    title: "The caddy",
+    detail: "your night's course, planned in twenty seconds",
   },
 ] as const;
 

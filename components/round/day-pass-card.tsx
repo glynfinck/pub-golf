@@ -27,17 +27,17 @@ export function DayPassCard({ pass }: { pass: DayPass }) {
         />
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        Every round you tee off while the pass runs joins the league, and
-        stays there for good. Extras for a new day take a new fee.
+        The caddy is on duty until then — have it plan as many courses as you
+        like, and they are yours to keep afterwards. A new day takes a new fee.
       </p>
       <Link
-        href="/league"
+        href="/courses/new"
         className={cn(
           buttonVariants({ variant: "outline" }),
           "mt-3 w-full",
         )}
       >
-        The league
+        Plan a course
       </Link>
     </Card>
   );
