@@ -13,6 +13,7 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
+import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 
 /**
@@ -31,18 +32,11 @@ import type { CandidateDossier } from "@/lib/caddy/dossier";
  * it is the economics.
  */
 
-/** No key, no caddy — the maps-key pattern. Nothing on screen mentions the
- * caddy at all when this is false, rather than offering something that cannot
- * work. */
-export function caddyEnabled(apiKey: string | undefined): boolean {
-  return typeof apiKey === "string" && apiKey.trim().length > 0;
-}
-
-/** The model, and why. A small, well-scoped structured-output task: a card of
- * up to eighteen holes from forty dossiers. Effort `medium` is the starting
- * point the spec settled on, worth a sweep once there are real briefs to sweep
- * against. */
-const MODEL = "claude-opus-5";
+/** Effort, and why. A small, well-scoped structured-output task: a card of up
+ * to eighteen holes from forty dossiers. `medium` is the starting point the
+ * spec settled on, worth a sweep once there are real briefs to sweep against.
+ * The model itself comes off the credentials, because its id depends on which
+ * door the request goes through. */
 const EFFORT = "medium";
 /** Generous enough for adaptive thinking plus eighteen dressed holes. Thinking
  * is on by default on this model and `max_tokens` caps thinking and answer
@@ -78,15 +72,21 @@ export type CaddyOutcome =
  * failure here is a line on screen and none of them counts against the host.
  */
 export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!caddyEnabled(apiKey)) return { ok: false, reason: "unavailable" };
+  // Read per call, never at module load: a Vercel OIDC token rotates, and a
+  // credential captured once at cold start goes stale under the deploy.
+  const credentials = caddyCredentials(process.env);
+  if (!credentials) return { ok: false, reason: "unavailable" };
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({
+    apiKey: credentials.apiKey ?? null,
+    authToken: credentials.authToken,
+    ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
+  });
   const messages = buildMessages(input);
 
   try {
     const response = await client.messages.create({
-      model: MODEL,
+      model: credentials.model,
       max_tokens: MAX_TOKENS,
       system: CADDY_SYSTEM,
       output_config: {

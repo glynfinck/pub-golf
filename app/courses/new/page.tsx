@@ -1,6 +1,6 @@
 import { CourseBuilder } from "@/components/course/course-builder";
 import { billingEnabled } from "@/lib/billing";
-import { caddyEnabled } from "@/lib/caddy/client";
+import { caddyEnabled } from "@/lib/caddy/credentials";
 import { getDayPass } from "@/lib/data/billing";
 import { getSessionUser } from "@/lib/data/rounds";
 
@@ -16,7 +16,7 @@ export default async function NewCoursePage() {
       // uses. Guests never cross the payment boundary, so no price is ever
       // rendered on their screen even though they can reach this table.
       caddy={
-        caddyEnabled(process.env.ANTHROPIC_API_KEY) &&
+        caddyEnabled(process.env) &&
         billingEnabled(process.env.STRIPE_SECRET_KEY) &&
         user != null &&
         !user.is_anonymous

@@ -3,7 +3,8 @@
 import { headers } from "next/headers";
 
 import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
-import { askCaddy, caddyEnabled, type CaddyTurnRecord } from "@/lib/caddy/client";
+import { askCaddy, type CaddyTurnRecord } from "@/lib/caddy/client";
+import { caddyEnabled } from "@/lib/caddy/credentials";
 import {
   buildCandidates,
   type CandidateDossier,
@@ -177,7 +178,7 @@ async function pinCoords(
  * again, which is why a re-roll costs one model call and no Places quota.
  */
 export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
-  if (!caddyEnabled(process.env.ANTHROPIC_API_KEY)) return { error: NO_CADDY };
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey) return { error: NO_CADDY };
 
@@ -262,7 +263,7 @@ export async function askTheCaddy(input: {
   holeNumber?: number | null;
   roll?: boolean;
 }): Promise<CaddyResult> {
-  if (!caddyEnabled(process.env.ANTHROPIC_API_KEY)) return { error: NO_CADDY };
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
 
   const session = await host();
   if (!session) return { error: "Planning a course takes a sign-in." };
