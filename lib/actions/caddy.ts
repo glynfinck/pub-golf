@@ -4,6 +4,7 @@ import {
   askTheCaddy as askTheCaddyRun,
   closeCaddySession as closeCaddySessionRun,
   planCourse as planCourseRun,
+  rememberCaddyCourse as rememberCaddyCourseRun,
   type CaddyResult,
 } from "@/lib/caddy/run";
 
@@ -37,6 +38,15 @@ export async function askTheCaddy(input: {
   roll?: boolean;
 }): Promise<CaddyResult> {
   return askTheCaddyRun(input);
+}
+
+/** Record which course a caddy session filed, so a refresh does not file a
+ * second one. */
+export async function rememberCaddyCourse(
+  sessionId: string,
+  courseId: string,
+): Promise<void> {
+  return rememberCaddyCourseRun(sessionId, courseId);
 }
 
 /** The session is finished: stamp it and drop the dossier. */

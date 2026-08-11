@@ -545,6 +545,33 @@ export async function runTurn(input: {
   };
 }
 
+/**
+ * Remember which course this session filed.
+ *
+ * Called by the drafting table the moment a caddy card writes itself into the
+ * book, and it is the whole of the fix for the duplicate-course bug: a
+ * refreshed table asks the server which course it already has rather than
+ * minting another. One-way — the guard trigger in 20260827 refuses a second
+ * value, because the only job this link has is preventing a duplicate and a
+ * movable version of it would be a way to make one.
+ *
+ * Best-effort and silent. Failing to record the link costs a host a duplicate
+ * course at worst; an error toast about bookkeeping they never asked for costs
+ * them the card they are looking at.
+ */
+export async function rememberCaddyCourse(
+  sessionId: string,
+  courseId: string,
+): Promise<void> {
+  const session = await host();
+  if (!session) return;
+  await session.supabase
+    .from("caddy_sessions")
+    .update({ course_id: courseId })
+    .eq("id", sessionId)
+    .is("course_id", null);
+}
+
 /** The session is finished: stamp it and drop the dossier. Google's atmosphere
  * facts and review snippets are read for the length of one conversation and
  * are not ours to keep — what survives is the course the host saved and the

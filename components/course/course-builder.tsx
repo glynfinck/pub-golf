@@ -36,7 +36,8 @@ import {
   replacePub,
   type DraftHole,
 } from "@/lib/course-draft";
-import { closeCaddySession } from "@/lib/actions/caddy";
+import type { ResumedCaddy } from "@/lib/data/caddy";
+import { closeCaddySession, rememberCaddyCourse } from "@/lib/actions/caddy";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 
@@ -63,6 +64,32 @@ type PickTarget =
   | { mode: "replace"; id: string };
 
 /**
+ * A caddy's card, as rows for the table.
+ *
+ * Shared by the card that has just arrived and the card being picked back up
+ * after a refresh, which have to produce byte-identical holes — a resumed
+ * table that dressed a hole even slightly differently would file that
+ * difference over the host's course the next time anything saved.
+ */
+function draftFromPlan(planned: PlannedCourse): DraftHole[] {
+  return planned.holes.map((hole) => ({
+    id: crypto.randomUUID(),
+    venue_id: hole.venue_id,
+    venue_name: hole.venue_name,
+    address: hole.address,
+    rating: hole.rating,
+    lat: hole.lat,
+    lng: hole.lng,
+    drink: hole.drink,
+    par: hole.par,
+    hazard: hole.hazard,
+    hazard_note: hole.hazard_note,
+    penalties: hole.penalties,
+    walk_minutes_to_next: null,
+  }));
+}
+
+/**
  * The drafting table, shared by /courses/new and /courses/[id]: search
  * Google for the pubs, dress each hole with par and drink, save. The map
  * sheet shows the patch when the browser has a Maps key; the Maps app
@@ -79,8 +106,14 @@ export function CourseBuilder({
   course,
   caddy = false,
   hasPass = false,
+  resumed = null,
 }: {
   course?: CourseBuilderCourse;
+  /** A caddy conversation this host walked away from, found again by the
+   * server. The table opens on the card it had rather than on a blank sheet,
+   * and — the part that matters — knows which course it already filed, so the
+   * next card writes over that one instead of minting a second. */
+  resumed?: ResumedCaddy | null;
   /** The caddy is on duty: a key, billing on, and a signed-in host. False and
    * the group never renders — the maps-key pattern, so an unconfigured deploy
    * shows the builder exactly as it has always been. */
@@ -90,12 +123,16 @@ export function CourseBuilder({
   const editing = course !== undefined;
   const router = useRouter();
   const { run, pending, busy } = useAction();
-  const [name, setName] = useState(course?.name ?? "");
-  const [holes, setHoles] = useState<DraftHole[]>(course?.holes ?? []);
+  const [name, setName] = useState(course?.name ?? resumed?.course.name ?? "");
+  const [holes, setHoles] = useState<DraftHole[]>(
+    course?.holes ?? (resumed ? draftFromPlan(resumed.course) : []),
+  );
   // The caddy's session, while one is on the table. Saving closes it, which is
   // what drops the dossier — Google's atmosphere facts are read for the length
   // of one conversation and are not ours to keep.
-  const [caddySession, setCaddySession] = useState<string | null>(null);
+  const [caddySession, setCaddySession] = useState<string | null>(
+    resumed?.sessionId ?? null,
+  );
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
@@ -123,7 +160,7 @@ export function CourseBuilder({
    * all. A card that filed itself is still a draft being worked on, with the
    * caddy still sitting beside it.
    */
-  const [savedId, setSavedId] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(resumed?.courseId ?? null);
   const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -241,21 +278,7 @@ export function CourseBuilder({
     // bump this — replaying the animation every time a pub moves would make
     // the map the loudest thing on the page.
     setDrawKey((current) => current + 1);
-    const rows = planned.holes.map((hole) => ({
-      id: crypto.randomUUID(),
-      venue_id: hole.venue_id,
-      venue_name: hole.venue_name,
-      address: hole.address,
-      rating: hole.rating,
-      lat: hole.lat,
-      lng: hole.lng,
-      drink: hole.drink,
-      par: hole.par,
-      hazard: hole.hazard,
-      hazard_note: hole.hazard_note,
-      penalties: hole.penalties,
-      walk_minutes_to_next: null,
-    }));
+    const rows = draftFromPlan(planned);
     const named = name.trim() || planned.name;
     // The card is the route now; the patch behind it has done its job.
     setPatch(null);
@@ -284,7 +307,13 @@ export function CourseBuilder({
       return;
     }
     const minted = await createCourse(draft);
-    if (minted.id) setSavedId(minted.id);
+    if (!minted.id) return;
+    setSavedId(minted.id);
+    // And tell the session which course it filed, so a refresh finds it rather
+    // than minting a second one. Best-effort: a link that fails to record
+    // costs a duplicate at worst, and an error about bookkeeping the host
+    // never asked for costs them the card they are looking at.
+    if (caddySession) await rememberCaddyCourse(caddySession, minted.id);
   }
 
   function move(index: number, direction: MoveDirection) {

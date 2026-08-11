@@ -337,6 +337,105 @@ describe("caddy turns are append-only, and they are the bill", () => {
   });
 });
 
+describe("the course a session filed", () => {
+  let host: Actor;
+  let other: Actor;
+  let sessionId: string;
+
+  /** A course the way the builder files one, minus the holes nobody reads
+   * here. */
+  async function seedCourse(owner: Actor, name = "The Shoreditch Nine") {
+    const { data, error } = await adminClient()
+      .from("courses")
+      .insert({ owner: owner.userId, name })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function storedCourseLink(id: string) {
+    const { data, error } = await adminClient()
+      .from("caddy_sessions")
+      .select("course_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.course_id ?? null;
+  }
+
+  beforeEach(async () => {
+    [host, other] = await Promise.all([
+      signedInUser("Filing Host"),
+      signedInUser("Filing Other"),
+    ]);
+    sessionId = await seedSession(host, await seedFee(host));
+  });
+
+  it("lets a host record which course their session filed", async () => {
+    const courseId = await seedCourse(host);
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: courseId })
+      .eq("id", sessionId);
+    expect(error).toBeNull();
+    expect(await storedCourseLink(sessionId)).toBe(courseId);
+  });
+
+  it("keeps the first course it filed, and refuses a second", async () => {
+    // One-way, like the bug report's issue stamp. The only job this link has
+    // is stopping a duplicate course, and a movable version of it would be a
+    // way to make one.
+    const first = await seedCourse(host, "The First");
+    const second = await seedCourse(host, "The Second");
+    await host.db.from("caddy_sessions").update({ course_id: first }).eq("id", sessionId);
+
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: second })
+      .eq("id", sessionId);
+    expectDenied(error);
+    expect(await storedCourseLink(sessionId)).toBe(first);
+  });
+
+  it("will not let a stranger point somebody else's session at a course", async () => {
+    const courseId = await seedCourse(other);
+    // Filtered rather than refused: the update policy is `host = auth.uid()`,
+    // and a policy that matches nothing is silence. The row is the proof.
+    const { error } = await other.db
+      .from("caddy_sessions")
+      .update({ course_id: courseId })
+      .eq("id", sessionId);
+    expect(error).toBeNull();
+    expect(await storedCourseLink(sessionId)).toBeNull();
+  });
+
+  it("keeps the conversation when the course is torn out of the book", async () => {
+    // `set null`, never a cascade. Tearing a course out is not ending the
+    // conversation, and the host should keep the dossier they are working
+    // against — the same asymmetry the entitlement link keeps.
+    const courseId = await seedCourse(host);
+    await host.db.from("caddy_sessions").update({ course_id: courseId }).eq("id", sessionId);
+    await adminClient().from("courses").delete().eq("id", courseId);
+
+    expect(await storedSession(sessionId)).not.toBeNull();
+    expect(await storedCourseLink(sessionId)).toBeNull();
+  });
+
+  it("still lets the session be closed afterwards", async () => {
+    // The guard is about `course_id` alone; it must not block the stamp that
+    // ends a session and drops its dossier.
+    const courseId = await seedCourse(host);
+    await host.db.from("caddy_sessions").update({ course_id: courseId }).eq("id", sessionId);
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ completed_at: new Date().toISOString(), dossier: [] })
+      .eq("id", sessionId);
+    expect(error).toBeNull();
+    expect((await storedSession(sessionId))?.completed_at).not.toBeNull();
+  });
+});
+
 describe("the ceilings hold in Postgres", () => {
   let host: Actor;
   let sessionId: string;

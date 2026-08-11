@@ -168,6 +168,7 @@ export type Database = {
         Row: {
           brief: Json
           completed_at: string | null
+          course_id: string | null
           created_at: string
           dossier: Json
           entitlement_id: string | null
@@ -177,6 +178,7 @@ export type Database = {
         Insert: {
           brief?: Json
           completed_at?: string | null
+          course_id?: string | null
           created_at?: string
           dossier?: Json
           entitlement_id?: string | null
@@ -186,6 +188,7 @@ export type Database = {
         Update: {
           brief?: Json
           completed_at?: string | null
+          course_id?: string | null
           created_at?: string
           dossier?: Json
           entitlement_id?: string | null
@@ -193,6 +196,13 @@ export type Database = {
           id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "caddy_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "caddy_sessions_entitlement_id_fkey"
             columns: ["entitlement_id"]
