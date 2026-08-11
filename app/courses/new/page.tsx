@@ -5,6 +5,7 @@ import {
   showCaddyDiagnostics,
   shutGates,
 } from "@/lib/caddy/readiness";
+import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
 import { caddyAllowance, resumeCaddy } from "@/lib/data/caddy";
 import { getDayPass } from "@/lib/data/billing";
 import { getSessionUser } from "@/lib/data/rounds";
@@ -50,7 +51,7 @@ export default async function NewCoursePage() {
   // course on top of it (`lib/data/caddy.ts`).
   const [resumed, allowance] = tablesPresent
     ? await Promise.all([resumeCaddy(), caddyAllowance()])
-    : [null, { canPlan: true, courseId: null }];
+    : [null, { canPlan: true, left: CADDY_COURSES_PER_FEE, courseId: null }];
 
   const gateInput = {
     signedIn: user != null,

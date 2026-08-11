@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Sparkle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { FieldLabel, Input } from "@/components/ui/input";
+import { CaddyUsage } from "@/components/course/caddy-usage";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { Putt } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
@@ -63,7 +71,7 @@ export function CaddyGroup({
   onPicked?: (ids: string[]) => void;
   /** Whether this fee still has a course to give. Absent means yes — a
    * database that has not caught up says yes, exactly as the pipeline does. */
-  allowance?: { canPlan: boolean; courseId: string | null };
+  allowance?: { canPlan: boolean; left: number; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
   className?: string;
@@ -78,6 +86,18 @@ export function CaddyGroup({
   const [thinking, setThinking] = useState("");
   // The tool the caddy is reaching for, named. Outranks the reasoning below.
   const [doing, setDoing] = useState("");
+  /**
+   * A refusal that means "you already have what you paid for".
+   *
+   * Held rather than thrown at a toast, because a toast is the wrong shape for
+   * this: it is gone in four seconds, it says nothing about what to do next,
+   * and it reads as breakage. Being out of courses is not breakage — the host
+   * has three of them in the book — so it gets a sheet with the way to them.
+   */
+  const [spent, setSpent] = useState<string | null>(null);
+  // Read back inside the streaming closure, which cannot see a state update it
+  // made a moment ago.
+  const spentRef = useRef(false);
 
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
@@ -106,6 +126,7 @@ export function CaddyGroup({
     run(async () => {
       setThinking("");
       setDoing("");
+      spentRef.current = false;
       const lost = "The caddy lost the ball. Ask again — this one's free.";
       let failure: { error: string; detail?: string } | null = null;
       let landed = false;
@@ -134,8 +155,15 @@ export function CaddyGroup({
       // patch, no sign-in — comes back as ordinary JSON rather than as a
       // stream that opens only to apologise.
       if (!response.body || !response.headers.get("content-type")?.includes("ndjson")) {
-        const body = await response.json().catch(() => null);
-        return { error: (body as { error?: string } | null)?.error ?? lost };
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string; spent?: boolean }
+          | null;
+        if (body?.spent && body.error) {
+          spentRef.current = true;
+          setSpent(body.error);
+          return {};
+        }
+        return { error: body?.error ?? lost };
       }
 
       const reader = response.body.getReader();
@@ -159,6 +187,9 @@ export function CaddyGroup({
           onSession(event.sessionId);
           await onCourse(event.course, []);
           landed = true;
+        } else if (event.spent) {
+          spentRef.current = true;
+          setSpent(event.error);
         } else {
           failure = { error: event.error, detail: event.detail };
         }
@@ -180,7 +211,8 @@ export function CaddyGroup({
       }
 
       if (failure) return failure;
-      return landed ? {} : { error: lost };
+      // A spent fee is a finished run, not a failed one — the sheet says so.
+      return landed || spentRef.current ? {} : { error: lost };
     });
   }
 
@@ -194,6 +226,49 @@ export function CaddyGroup({
       return {};
     });
   }
+
+  /**
+   * The sheet a spent fee gets instead of an error.
+   *
+   * Rendered beside every face the group can wear rather than replacing one,
+   * because the refusal can arrive from the brief screen *or* mid-plan and it
+   * should look the same either way. Two doors and no price: the course they
+   * have, and the table below that never cost anything.
+   */
+  const spentSheet = (
+    <Sheet open={spent !== null} onOpenChange={(open) => !open && setSpent(null)}>
+      <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
+        <SheetHeader className="pb-0 text-center">
+          <SheetTitle className="eyebrow text-center text-fairway">
+            The caddy
+          </SheetTitle>
+          <SheetDescription className="font-serif text-xl text-foreground not-italic">
+            Your courses are in the book
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-col gap-2 px-4 pb-6">
+          <p className="text-center text-xs text-muted-foreground">{spent}</p>
+          {allowance?.courseId ? (
+            <Link
+              href={`/courses/${allowance.courseId}`}
+              className={cn(buttonVariants(), "mt-1 w-full")}
+            >
+              Open the latest one
+            </Link>
+          ) : null}
+          <Link
+            href="/courses"
+            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+          >
+            See the whole book
+          </Link>
+          <p className="text-center text-[10px] text-muted-foreground">
+            Changing them is free, and so is plotting one by hand.
+          </p>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
 
   // ——— The wait. Narrated, never spun: the line names the stage the
   // pipeline is actually in, and the Putt is the house's own busy animation.
@@ -250,6 +325,7 @@ export function CaddyGroup({
       <div
         className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
       >
+        {spentSheet}
         <span className="eyebrow text-fairway">The caddy</span>
         <div>
           <FieldLabel htmlFor="caddy-ask">Tell the caddy</FieldLabel>
@@ -336,11 +412,14 @@ export function CaddyGroup({
         className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
         data-testid="caddy-spent"
       >
-        <span className="eyebrow text-fairway">The caddy</span>
+        {spentSheet}
+        <div className="flex items-center justify-between gap-2">
+          <span className="eyebrow text-fairway">The caddy</span>
+          <CaddyUsage left={0} />
+        </div>
         <p className="text-xs text-muted-foreground">
-          Your course is in the book — the caddy plans one to a green fee.
-          Change it as much as you like; tear it out and the caddy will plan
-          you another.
+          Your courses are in the book — the caddy plans three to a green fee.
+          Change them as much as you like, whenever you like.
         </p>
         {allowance.courseId ? (
           <Link
@@ -364,18 +443,27 @@ export function CaddyGroup({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="eyebrow text-fairway">Let the caddy plan it</span>
-        <span
-          className={cn(
-            "rounded-md border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] uppercase",
-            hasPass ? "border-fairway text-fairway" : "border-marker text-marker",
-          )}
-        >
-          {hasPass ? "Covered" : `Green fee · ${GREEN_FEE_PRICE}`}
-        </span>
+        {/* "Covered" was the whole of what a host could see, and it went on
+            saying Covered after the last course had been planned. A pass has
+            two dimensions and this badge only ever showed one — so once there
+            is a fee, what it says is what is left on it. */}
+        {hasPass && allowance ? (
+          <CaddyUsage left={allowance.left} />
+        ) : (
+          <span
+            className={cn(
+              "rounded-md border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] uppercase",
+              hasPass ? "border-fairway text-fairway" : "border-marker text-marker",
+            )}
+          >
+            {hasPass ? "Covered" : `Green fee · ${GREEN_FEE_PRICE}`}
+          </span>
+        )}
       </div>
       <div className="font-serif text-lg leading-tight text-balance">
         Your round, planned in twenty seconds
       </div>
+      {spentSheet}
 
       <div>
         <FieldLabel htmlFor="caddy-where">Where</FieldLabel>

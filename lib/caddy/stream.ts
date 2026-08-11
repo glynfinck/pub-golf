@@ -43,7 +43,7 @@ export type CaddyEvent =
   | { type: "card"; course: PlannedCourse; sessionId: string }
   /** The end of a bad one. `error` is the line the host reads; `detail` is
    * for the staging note and the log, and is never shown to a player. */
-  | { type: "failed"; error: string; detail?: string };
+  | { type: "failed"; error: string; detail?: string; spent?: boolean };
 
 /** One event, as a line on the wire. */
 export function encodeEvent(event: CaddyEvent): string {

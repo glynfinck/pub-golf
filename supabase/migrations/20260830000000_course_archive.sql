@@ -9,7 +9,7 @@
 --
 -- So a course that cost something goes to the back of the book instead of into
 -- the bin, and can be brought forward again. The row survives, which also
--- keeps the accounting honest: `caddy_credits` can still point at the session
+-- keeps the accounting honest: `caddy_spends` can still point at the session
 -- that spent it, and "what did this fee produce" stays answerable.
 --
 -- One column, nullable, additive. Code that has never heard of it sees every

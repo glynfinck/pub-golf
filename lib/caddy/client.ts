@@ -14,7 +14,13 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
-import { addUsage, NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
+import {
+  addUsage,
+  costMicroPence,
+  NO_USAGE,
+  readUsage,
+  type CaddyUsage,
+} from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { dispatchTool } from "@/lib/caddy/session";
@@ -427,6 +433,10 @@ export async function askCaddyLooped(
   deps: {
     search: (query: string) => Promise<CandidateDossier[]>;
     pins: WalkPins;
+    /** A runaway ceiling in micropence, set far above any honest plan. Not a
+     * budget: a plan is bounded by its turns, and this exists to catch a loop
+     * that has gone wrong rather than one that was expensive. */
+    breaker: number;
   },
   narrate: (update: { thinking?: string; doing?: string }) => void,
 ): Promise<CaddyOutcome> {
@@ -446,6 +456,25 @@ export async function askCaddyLooped(
       if (outOfLoopTime(turn, Date.now() - startedAt)) {
         console.warn(
           `[caddy] loop stopped on the clock after ${turn} turns with ${board.holes.length} holes`,
+        );
+        break;
+      }
+      // A circuit breaker, not a budget — and the distinction is the whole
+      // point. This was briefly a cap that truncated a plan to fit its share
+      // of the fee, which looks like generosity and is the opposite: a host
+      // who paid for a re-design and got a four-turn card that was never
+      // route-checked has been quietly handed a lesser product and cannot
+      // tell. Work is bounded in *turns*, which is an honest bound the caddy
+      // is told about; what a turn costs is ours to absorb, because absorbing
+      // variance is what a fixed price is for.
+      //
+      // So this fires only on a runaway — far above any plan that has ever
+      // been honest — and when it fires it shouts, because it means something
+      // is wrong rather than that somebody was unlucky.
+      const spentSoFar = costMicroPence(usage, call.model);
+      if (turn > 0 && spentSoFar >= deps.breaker) {
+        console.error(
+          `[caddy] RUNAWAY: loop broke after ${turn} turns and ${spentSoFar} micropence (breaker ${deps.breaker}) with ${board.holes.length} holes — investigate`,
         );
         break;
       }

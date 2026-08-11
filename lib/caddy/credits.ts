@@ -25,7 +25,25 @@
  * test — a number the screen misquotes is a host told they have something they
  * do not.
  */
-export const CADDY_COURSES_PER_FEE = 3;
+export const CADDY_QUOTAS = ["redesign", "tweak"] as const;
+export type CaddyQuota = (typeof CADDY_QUOTAS)[number];
+
+/**
+ * What one green fee grants of each quota. Mirrored from
+ * `public.caddy_grant_size()` and proved equal by a db test.
+ *
+ * Re-designs are the countable thing a host buys and the only number that
+ * helps at the point of sale. Tweaks are set where a real evening never
+ * reaches them: the allowance exists so a runaway script meets something, not
+ * so a fussy host does — which is why one is shown and the other is not.
+ */
+export const CADDY_GRANT_SIZE: Record<CaddyQuota, number> = {
+  redesign: 3,
+  tweak: 60,
+};
+
+/** The countable one, for the copy that names it. */
+export const CADDY_COURSES_PER_FEE = CADDY_GRANT_SIZE.redesign;
 
 /**
  * The line for a host who has spent every course on the fee they hold.
