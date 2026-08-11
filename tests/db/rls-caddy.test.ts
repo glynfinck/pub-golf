@@ -671,3 +671,200 @@ describe("the ceilings hold in Postgres", () => {
     expect(Number(data)).toBe(CADDY_FAIR_USE_PER_DAY);
   });
 });
+
+describe("the ledger is not the host's to write", () => {
+  let host: Actor;
+  let other: Actor;
+  let feeId: string;
+  let grantId: string;
+
+  beforeEach(async () => {
+    [host, other] = await Promise.all([
+      signedInUser("Wallet Host"),
+      signedInUser("Wallet Stranger"),
+    ]);
+    feeId = await seedFee(host);
+    const { data } = await adminClient()
+      .from("caddy_grants")
+      .select("id")
+      .eq("host", host.userId)
+      .eq("quota", "redesign")
+      .limit(1)
+      .maybeSingle();
+    grantId = data!.id;
+  });
+
+  async function grantAmount() {
+    const { data } = await adminClient()
+      .from("caddy_grants")
+      .select("amount, expires_at")
+      .eq("id", grantId)
+      .maybeSingle();
+    return data;
+  }
+
+  /**
+   * The whole matrix, because a single hole is the whole hole.
+   *
+   * Every one of these is refused at the **grant**, not by a policy —
+   * `authenticated` holds `select` on both tables and nothing else, so there
+   * is no write privilege for a policy to filter. That is the stronger of the
+   * two refusals and the error shape says which you got: 42501 is always the
+   * table grant, and a policy refusal is silence.
+   */
+  it("refuses every write a host could attempt on their own ledger", async () => {
+    // Thunks, not promises: a PostgREST builder is thenable but not a Promise,
+    // and building them all up front would fire every write before the first
+    // assertion had a chance to fail.
+    const attempts: [string, () => PromiseLike<{ error: unknown }>][] = [
+      [
+        "mint a grant",
+        () =>
+          host.db
+            .from("caddy_grants")
+            .insert({ host: host.userId, quota: "redesign", amount: 999 }),
+      ],
+      [
+        // The obvious attack, and the one nothing covered until now: not
+        // forging a row, just editing the number on the row you were given.
+        "raise the amount on a grant",
+        () =>
+          host.db.from("caddy_grants").update({ amount: 999 }).eq("id", grantId),
+      ],
+      [
+        "push a grant's expiry out",
+        () =>
+          host.db
+            .from("caddy_grants")
+            .update({ expires_at: new Date(Date.now() + 500 * HOUR).toISOString() })
+            .eq("id", grantId),
+      ],
+      [
+        "delete a grant",
+        () => host.db.from("caddy_grants").delete().eq("id", grantId),
+      ],
+      [
+        "un-spend by deleting a spend",
+        () =>
+          host.db.from("caddy_spends").delete().eq("host", host.userId),
+      ],
+      [
+        "move a spend onto somebody else's grant",
+        () =>
+          host.db.from("caddy_spends").update({ grant_id: grantId }).eq("host", host.userId),
+      ],
+      [
+        "insert a spend against nothing",
+        () =>
+          host.db
+            .from("caddy_spends")
+            .insert({ grant_id: grantId, host: host.userId }),
+      ],
+    ];
+
+    for (const [what, attempt] of attempts) {
+      const { error } = (await attempt()) as { error: { code?: string } | null };
+      expect(error, `should have refused: ${what}`).not.toBeNull();
+      expect(["42501", "23503"], what).toContain(error?.code);
+    }
+
+    // And the row is untouched, which is the only proof that counts.
+    expect(await grantAmount()).toMatchObject({ amount: CADDY_GRANT_SIZE.redesign });
+  });
+
+  it("will not let a host mint grants by forging the purchase behind them", async () => {
+    // The new attack surface the package trigger creates: grants are written
+    // by a trigger on `entitlements`, so an insert there would mint them.
+    // `entitlements` has no write policy at all — this asserts the *pairing*,
+    // because that is where somebody would look once they knew the trigger
+    // existed.
+    const { error } = await host.db.from("entitlements").insert({
+      user_id: host.userId,
+      kind: "green_fee",
+      stripe_event_id: `evt_forged_${randomUUID()}`,
+    });
+    expectDenied(error);
+
+    const { count } = await adminClient()
+      .from("caddy_grants")
+      .select("id", { count: "exact", head: true })
+      .eq("host", host.userId);
+    // Exactly the one package the seeded fee bought: one grant per quota.
+    expect(count).toBe(2);
+  });
+
+  it("shows a host their own ledger and nobody else's", async () => {
+    const mine = await host.db.from("caddy_grants").select("id");
+    expect(mine.data?.length).toBe(2);
+
+    const theirs = await other.db.from("caddy_grants").select("id").eq("id", grantId);
+    expect(theirs.error).toBeNull();
+    expect(theirs.data).toEqual([]);
+  });
+
+  it("refuses a signed-out reader at the gate, not with an empty list", async () => {
+    expectDenied(await visitor().from("caddy_grants").select("id").then((r) => r.error));
+    expectDenied(await visitor().from("caddy_spends").select("id").then((r) => r.error));
+  });
+
+  it("drains the quota across delete-and-try-again, which is the point", async () => {
+    // The narrative this design exists for: plan Shoreditch, delete it, decide
+    // on Soho, plan again, delete, again — and be stopped. Deleting the course
+    // gives nothing back, because the caddy did the work and we paid for it.
+    // The holdings design this replaced refunded here, which made the quota
+    // unbounded for anybody patient.
+    for (let round = 0; round < CADDY_GRANT_SIZE.redesign; round += 1) {
+      const session = await seedSession(host, feeId);
+      const { error } = await host.db
+        .from("caddy_turns")
+        .insert(turnRow(host, session, { kind: "plan" }));
+      expect(error, `re-design ${round + 1} should be allowed`).toBeNull();
+
+      // The host files it, looks at it, dislikes the area, tears it out.
+      const { data: course } = await adminClient()
+        .from("courses")
+        .insert({ owner: host.userId, name: `Attempt ${round + 1}` })
+        .select("id")
+        .single();
+      await host.db
+        .from("caddy_sessions")
+        .update({ course_id: course!.id })
+        .eq("id", session);
+      await adminClient().from("courses").delete().eq("id", course!.id);
+    }
+
+    const lastTry = await seedSession(host, feeId);
+    expectDenied(
+      await host.db
+        .from("caddy_turns")
+        .insert(turnRow(host, lastTry, { kind: "plan" }))
+        .then((r) => r.error),
+    );
+
+    // And the tweaks were never touched by any of it — separate quota, and the
+    // whole reason there are two.
+    const { data: tweaks } = await adminClient().rpc("caddy_balance", {
+      who: host.userId,
+      quota: "tweak",
+    });
+    expect(Number(tweaks)).toBe(CADDY_GRANT_SIZE.tweak);
+  });
+
+  it("counts tweaks down alongside, without touching the re-designs", async () => {
+    const session = await seedSession(host, feeId);
+    await host.db.from("caddy_turns").insert(turnRow(host, session, { kind: "plan" }));
+    for (let i = 0; i < 5; i += 1) {
+      await host.db.from("caddy_turns").insert(turnRow(host, session, { kind: "tweak" }));
+    }
+    const redesigns = await adminClient().rpc("caddy_balance", {
+      who: host.userId,
+      quota: "redesign",
+    });
+    const tweaks = await adminClient().rpc("caddy_balance", {
+      who: host.userId,
+      quota: "tweak",
+    });
+    expect(Number(redesigns.data)).toBe(CADDY_GRANT_SIZE.redesign - 1);
+    expect(Number(tweaks.data)).toBe(CADDY_GRANT_SIZE.tweak - 5);
+  });
+});
