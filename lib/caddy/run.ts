@@ -142,7 +142,32 @@ async function liveFee(
     who: userId,
     quota: "redesign",
   });
-  if (!error) return data ? { id: data as string } : null;
+  if (!error) {
+    if (!data) return null;
+    // `caddy_next_grant` answers with a **grant** id, where its predecessor
+    // `caddy_unspent_fee` answered with an entitlement id. The rename hid the
+    // type change and this function kept handing the result on as
+    // `entitlement_id`, which is a foreign key to `entitlements` — so the
+    // session insert died on the constraint and the host read "the caddy
+    // isn't on duty here", the same sentence a missing API key gives.
+    //
+    // It hid for a while because it needs a grant to exist before it can
+    // return the wrong kind of id: with an empty ledger the null path ran
+    // instead, and everything looked fine right up until somebody held a fee
+    // that had actually granted something.
+    //
+    // The session records which *purchase* it is working under, so resolve the
+    // grant back to the entitlement that minted it.
+    const { data: grant } = await supabase
+      .from("caddy_grants")
+      .select("entitlement_id")
+      .eq("id", data as string)
+      .maybeSingle();
+    // A grant with no purchase behind it would be a comped one. There is a
+    // live allowance either way, so the session opens; it simply records no
+    // purchase, which `caddy_sessions.entitlement_id` is nullable for.
+    return { id: grant?.entitlement_id ?? null };
+  }
 
   // The allowance function is not on this database yet.
   //
