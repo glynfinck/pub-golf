@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CalendarDays, Minus, Plus, X } from "lucide-react";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
@@ -93,6 +94,7 @@ export function NewRoundForm({
   /** A table half set when the host stepped out to pay. */
   draft?: NewRoundDraft | null;
 }) {
+  const router = useRouter();
   const { run, pending, busy } = useAction();
   const [name, setName] = useState(draft?.name ?? "The Invitational XXX");
   const [holes, setHoles] = useState(draft?.holes ?? 9);
@@ -325,6 +327,57 @@ export function NewRoundForm({
                 ))}
               </div>
             </div>
+
+            {/* The first tee. An empty book is never a dead end — the
+                Invitational above is a real card and always has been — but a
+                host who wants their own local round has nothing here yet, and
+                a blank scorecard is a better answer than silence. The table is
+                parked on the way out, so they come back to the round they were
+                setting rather than to a blank form. */}
+            {courses.length === 0 ? (
+              <div className="engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow text-fairway">Your own card</span>
+                  <span className="rounded-md border border-border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] text-muted-foreground uppercase">
+                    Nothing in the book
+                  </span>
+                </div>
+                <div aria-hidden className="flex flex-col">
+                  {[1, 2, 3].map((number) => (
+                    <div
+                      key={number}
+                      className="flex items-baseline gap-2 border-b border-dotted border-border py-1 last:border-b-0"
+                    >
+                      <span className="tabular font-mono text-[11px] text-marker opacity-60">
+                        {number}
+                      </span>
+                      <span className="leader flex-1" />
+                      <span className="font-mono text-[10px] text-muted-foreground opacity-60">
+                        par —
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Play the Invitational above, or make a card on your own local
+                  pubs — it keeps for next time.
+                </p>
+                <Button
+                  variant="outline"
+                  size="compact"
+                  className="h-11 w-full"
+                  onClick={() => {
+                    park();
+                    router.push("/courses/new");
+                  }}
+                >
+                  Plot a course
+                </Button>
+                <p className="text-center text-[10px] text-muted-foreground">
+                  We&apos;ll keep this round set up while you do.
+                </p>
+              </div>
+            ) : null}
 
             {selectedCourse ? (
               <p className="text-xs text-muted-foreground">

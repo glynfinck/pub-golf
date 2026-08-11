@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Copy, Plus } from "lucide-react";
+import { Copy, Map as MapIcon, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
+import { CaddyGroup } from "@/components/course/caddy-group";
 import { HoleEditor, type MoveDirection } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { PubMapSheet } from "@/components/course/pub-map-sheet";
@@ -31,6 +32,8 @@ import {
   replacePub,
   type DraftHole,
 } from "@/lib/course-draft";
+import { closeCaddySession } from "@/lib/actions/caddy";
+import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 
 /** A saved course back on the drafting table (lib/data/courses loads it). */
@@ -68,12 +71,28 @@ type PickTarget =
  * and a hole can walk up and down the running order. Nothing here has to be
  * deleted to be changed.
  */
-export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
+export function CourseBuilder({
+  course,
+  caddy = false,
+  hasPass = false,
+}: {
+  course?: CourseBuilderCourse;
+  /** The caddy is on duty: a key, billing on, and a signed-in host. False and
+   * the group never renders — the maps-key pattern, so an unconfigured deploy
+   * shows the builder exactly as it has always been. */
+  caddy?: boolean;
+  hasPass?: boolean;
+}) {
   const editing = course !== undefined;
   const router = useRouter();
   const { run, pending, busy } = useAction();
   const [name, setName] = useState(course?.name ?? "");
   const [holes, setHoles] = useState<DraftHole[]>(course?.holes ?? []);
+  // The caddy's session, while one is on the table. Saving closes it, which is
+  // what drops the dossier — Google's atmosphere facts are read for the length
+  // of one conversation and are not ours to keep.
+  const [caddySession, setCaddySession] = useState<string | null>(null);
+  const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [mapQuery, setMapQuery] = useState("");
@@ -175,6 +194,42 @@ export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
     setMapOpen(false);
   }
 
+  /**
+   * A card off the caddy, onto the drafting table.
+   *
+   * It lands as an ordinary draft — every edit the builder offers is live on
+   * it, because a caddy-planned course and a hand-plotted one are the same
+   * thing once they are on the table. The course name only takes the caddy's
+   * suggestion while the host has not written their own.
+   */
+  function takeCaddyCourse(planned: PlannedCourse, moved: number[]) {
+    clearUndo();
+    setHoles(
+      planned.holes.map((hole) => ({
+        id: crypto.randomUUID(),
+        venue_id: hole.venue_id,
+        venue_name: hole.venue_name,
+        address: hole.address,
+        rating: hole.rating,
+        lat: hole.lat,
+        lng: hole.lng,
+        drink: hole.drink,
+        par: hole.par,
+        hazard: hole.hazard,
+        hazard_note: hole.hazard_note,
+        penalties: hole.penalties,
+        walk_minutes_to_next: null,
+      })),
+    );
+    setName((current) => current.trim() || planned.name);
+    setChanged(moved);
+    setAnnouncement(
+      moved.length === 1
+        ? `Hole ${moved[0] + 1} is now ${planned.holes[moved[0]]?.venue_name ?? "changed"}.`
+        : `The caddy's draft: ${planned.holes.length} holes, par ${planned.holes.reduce((sum, hole) => sum + hole.par, 0)}.`,
+    );
+  }
+
   function move(index: number, direction: MoveDirection) {
     const to = direction === "up" ? index - 1 : index + 1;
     if (to < 0 || to >= holes.length) return;
@@ -213,6 +268,10 @@ export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
         ? await updateCourse(course.id, draft)
         : await createCourse(draft);
       if (result.error) return result;
+      // The card is filed, so the conversation is over: stamping the session
+      // drops the dossier with it. Best-effort — a course that saved is saved,
+      // whatever the tidying does.
+      if (caddySession) await closeCaddySession(caddySession);
       toast.success(editing ? "Course refiled." : "Course saved to the book.");
       router.push("/courses");
     });
@@ -294,6 +353,17 @@ export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
           placeholder="The Soho Quick Six"
         />
       </div>
+
+      {/* The caddy: one group above the free search, and nothing at all when
+          it is off duty. Everything below it is the builder as it has always
+          been — the fee buys the planning, never the table. */}
+      {caddy && !editing ? (
+        <CaddyGroup
+          hasPass={hasPass}
+          onCourse={takeCaddyCourse}
+          onSession={setCaddySession}
+        />
+      ) : null}
 
       <PlaceSearch
         onAdd={addPub}
@@ -385,8 +455,17 @@ export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
                 hole={hole}
                 number={index + 1}
                 total={holes.length}
+                // The caddy answered an ask: the hole that moved says so for a
+                // beat, and every other hole holds still. Stillness is the
+                // message — the caddy kept your card.
+                className={
+                  changed.includes(index)
+                    ? "rounded-xl ring-2 ring-marker/60"
+                    : undefined
+                }
                 onChange={(patch) => {
                   clearUndo();
+                  setChanged([]);
                   setHoles((current) =>
                     current.map((h, i) => (i === index ? { ...h, ...patch } : h)),
                   );
@@ -404,9 +483,28 @@ export function CourseBuilder({ course }: { course?: CourseBuilderCourse }) {
       })}
 
       {holes.length > 0 ? (
-        <p className="text-center text-[11px] text-muted-foreground">
-          Par {par} · walking times measured between pubs automatically.
-        </p>
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-center text-[11px] text-muted-foreground">
+            Par {par} · walking times measured between pubs automatically.
+          </p>
+          {/* The map has always drawn the course — numbered pins in playing
+              order, joined by the walk. It was only ever reachable from the
+              search field, so the card now says so out loud once there is a
+              route worth looking at. Free, like the rest of the table. */}
+          {MAPS_BROWSER_KEY && holes.length > 1 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPicking(null);
+                setMapQuery("");
+                setMapOpen(true);
+              }}
+              className="flex min-h-11 items-center gap-1.5 text-xs font-semibold text-fairway"
+            >
+              <MapIcon size={14} aria-hidden /> See the course on the map
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       <Button

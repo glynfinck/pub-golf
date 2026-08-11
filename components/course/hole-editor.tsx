@@ -49,6 +49,7 @@ export function HoleEditor({
   onMove,
   onReplace,
   registerMoveButton,
+  className,
 }: {
   hole: DraftHole;
   number: number;
@@ -64,13 +65,16 @@ export function HoleEditor({
     direction: MoveDirection,
     node: HTMLButtonElement | null,
   ) => void;
+  /** The builder marks a hole the caddy just moved, so the change is visible
+   * without every other hole having to animate to prove it didn't. */
+  className?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const first = number === 1;
   const last = number === total;
 
   return (
-    <Card className="gap-2.5 px-4 py-3.5">
+    <Card className={cn("gap-2.5 px-4 py-3.5", className)}>
       <div className="flex items-start gap-2.5">
         <span className="tabular flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-marker font-serif text-marker">
           {number}
