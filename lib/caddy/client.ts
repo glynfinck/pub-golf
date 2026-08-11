@@ -16,7 +16,11 @@ import type { CaddyBrief } from "@/lib/caddy/brief";
 import { NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
-import { describeFailure, isPermanentFailure } from "@/lib/caddy/failure";
+import {
+  describeFailure,
+  FAILURE_LOG_MAX,
+  isPermanentFailure,
+} from "@/lib/caddy/failure";
 
 /**
  * The caddy's own hand — the one place in the app that talks to a model.
@@ -151,7 +155,12 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
     // saw one line, the log had nothing, and the only way forward was to
     // redeploy with logging. Once was enough.
     const detail = describeFailure(cause);
-    console.error(`[caddy] ${credentials.via} ${model} failed: ${detail}`);
+    // The log gets the whole thing; the screen gets the short form. A vendor
+    // nests the sentence that matters — which field it actually rejected —
+    // well past where a toast would stop.
+    console.error(
+      `[caddy] ${credentials.via} ${model} failed: ${describeFailure(cause, FAILURE_LOG_MAX)}`,
+    );
     // A 401/403/404 is the deploy being wrong, not the night being unlucky —
     // it will answer identically for ever. Saying so is the difference between
     // an honest line and one that has a paying host tapping a dead button.

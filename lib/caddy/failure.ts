@@ -41,10 +41,22 @@ export function redactSecrets(text: string): string {
   return SECRETS.reduce((clean, pattern) => clean.replace(pattern, REDACTED), text);
 }
 
-/** How long a failure line may be. Long enough for a status, a vendor message
- * and a request id; short enough to sit under the staging note without becoming
- * the page. */
+/** How long a failure line may be *on screen*. Long enough for a status, a
+ * vendor message and a request id; short enough to sit under the staging note
+ * without becoming the page. */
 export const FAILURE_DETAIL_MAX = 300;
+
+/**
+ * How much of it reaches the log, which is a different question and wants a
+ * different answer.
+ *
+ * The screen has a layout to protect and a reader who wants the gist. A log
+ * line has neither, and truncating one costs real time: a gateway 400 arrived
+ * with its actual complaint nested inside `providerMetadata`, past the 300th
+ * character, so the log said "Bad Request" four times and named nothing. A cap
+ * that hides the reason defeats the point of having kept it.
+ */
+export const FAILURE_LOG_MAX = 4_000;
 
 interface ApiErrorish {
   status?: unknown;
@@ -93,7 +105,7 @@ export function isPermanentFailure(cause: unknown): boolean {
  * still produces something rather than nothing: "no detail" is the outcome this
  * module exists to prevent.
  */
-export function describeFailure(cause: unknown): string {
+export function describeFailure(cause: unknown, max = FAILURE_DETAIL_MAX): string {
   if (cause == null) return "no error object";
 
   const parts: string[] = [];
@@ -123,5 +135,5 @@ export function describeFailure(cause: unknown): string {
   }
 
   const line = parts.filter(Boolean).join(" · ") || "unrecognised error";
-  return redactSecrets(line).slice(0, FAILURE_DETAIL_MAX);
+  return redactSecrets(line).slice(0, max);
 }
