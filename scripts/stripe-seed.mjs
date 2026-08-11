@@ -37,12 +37,15 @@ const PRICES = [
     product: { name: "The green fee", metadata: { kind: "green_fee" } },
     metadata: { kind: "green_fee" },
     currency: "gbp",
-    unit_amount: 400,
+    // Kept in step with TARIFF.greenFee.amounts in lib/tariff.ts by hand —
+    // this script cannot import TS. tests/sandbox is what catches them
+    // drifting apart, and it asserts every currency, not just the base one.
+    unit_amount: 1200,
     currency_options: {
-      usd: { unit_amount: 500, tax_behavior: "inclusive" },
-      eur: { unit_amount: 500, tax_behavior: "inclusive" },
-      cad: { unit_amount: 700, tax_behavior: "inclusive" },
-      aud: { unit_amount: 800, tax_behavior: "inclusive" },
+      usd: { unit_amount: 1500, tax_behavior: "inclusive" },
+      eur: { unit_amount: 1500, tax_behavior: "inclusive" },
+      cad: { unit_amount: 2100, tax_behavior: "inclusive" },
+      aud: { unit_amount: 2400, tax_behavior: "inclusive" },
     },
   },
   {
@@ -73,21 +76,52 @@ const PRICES = [
   },
 ];
 
+const productOf = (price) =>
+  typeof price.product === "string" ? price.product : price.product.id;
+
+/**
+ * Does the price on the account still say what the board says?
+ *
+ * This script used to answer "is there one?" and stop there, which was fine
+ * while the tariff had never moved. The first time it did, the seeder said
+ * "already seeded" and left the old amount standing — the board and the till
+ * disagreeing, silently, on the one number a host is asked to trust.
+ *
+ * Every currency, not just the base one: a fee that moved in sterling and not
+ * in euros is the kind of thing nobody notices until somebody in Dublin pays
+ * last year's price. The two specs are different shapes — the green fee is a
+ * fixed amount, the honesty box a range — so each is compared on whichever it
+ * carries rather than on a union of both.
+ */
+function onBoard(price, spec) {
+  const same = (option, want) =>
+    want.unit_amount !== undefined
+      ? option?.unit_amount === want.unit_amount
+      : option?.custom_unit_amount?.minimum === want.custom_unit_amount.minimum &&
+        option?.custom_unit_amount?.preset === want.custom_unit_amount.preset;
+
+  return (
+    same(price, spec) &&
+    Object.entries(spec.currency_options).every(([currency, want]) =>
+      same(price.currency_options?.[currency], want),
+    )
+  );
+}
+
 for (const spec of PRICES) {
   const { data } = await stripe.prices.list({
     lookup_keys: [spec.lookup_key],
     limit: 1,
+    // Stripe omits currency_options unless asked for them, and a comparison
+    // that cannot see them would call a half-moved tariff current.
+    expand: ["data.currency_options"],
   });
   const existing = data[0];
 
-  if (existing) {
-    const productId =
-      typeof existing.product === "string"
-        ? existing.product
-        : existing.product.id;
-    const product = await stripe.products.retrieve(productId);
+  if (existing && onBoard(existing, spec)) {
+    const product = await stripe.products.retrieve(productOf(existing));
     if (!product.tax_code) {
-      await stripe.products.update(productId, { tax_code: TAX_CODE });
+      await stripe.products.update(product.id, { tax_code: TAX_CODE });
       console.log(`stripe-seed: ${spec.lookup_key} — patched missing tax code.`);
     } else {
       console.log(`stripe-seed: ${spec.lookup_key} — already seeded.`);
@@ -99,9 +133,34 @@ for (const spec of PRICES) {
   const price = await stripe.prices.create({
     ...priceSpec,
     tax_behavior: "inclusive",
-    product_data: { ...product, tax_code: TAX_CODE },
+    // A Price's amount is immutable, so moving the board means minting a new
+    // one and walking the lookup key across. `transfer_lookup_key` does both
+    // in one call, which matters: the app resolves `green_fee` at checkout, so
+    // any window where the key belongs to nothing is a window where nobody can
+    // pay. The product is reused rather than recreated — it is the same thing
+    // being sold, and a second product would split the reporting for no gain.
+    ...(existing
+      ? { product: productOf(existing), transfer_lookup_key: true }
+      : { product_data: { ...product, tax_code: TAX_CODE } }),
   });
-  console.log(`stripe-seed: ${spec.lookup_key} — created ${price.id}.`);
+
+  if (!existing) {
+    console.log(`stripe-seed: ${spec.lookup_key} — created ${price.id}.`);
+    continue;
+  }
+
+  // The old price is its product's `default_price` until something says
+  // otherwise, and Stripe refuses to archive a default. Move the pointer
+  // first, or the reprice half-lands: new price live, old one still on the
+  // board beside it.
+  await stripe.products.update(productOf(existing), { default_price: price.id });
+
+  // Archived, never deleted. Sessions already paid still point at it, and a
+  // receipt resolving to nothing is worse than one quoting the old price.
+  await stripe.prices.update(existing.id, { active: false });
+  console.log(
+    `stripe-seed: ${spec.lookup_key} — repriced ${existing.id} → ${price.id}.`,
+  );
 }
 
 console.log("stripe-seed: the sandbox tariff matches the board.");

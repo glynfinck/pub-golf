@@ -13,7 +13,12 @@ export const TARIFF = {
     lookupKey: GREEN_FEE_LOOKUP_KEY,
     productName: "The green fee",
     taxCode: "txcd_10103000",
-    amounts: { gbp: 400, usd: 500, eur: 500, cad: 700, aud: 800 },
+    // Tripled from the launch price when the caddy shipped: the fee stopped
+    // being a day of small extras and became a night planned for you. The
+    // ladder is the launch one scaled by exactly 3, which keeps whatever
+    // reasoning set the original spreads and lands every currency on a round
+    // number — a bar board has no 14.99 on it.
+    amounts: { gbp: 1200, usd: 1500, eur: 1500, cad: 2100, aud: 2400 },
   },
   honestyBox: {
     lookupKey: "honesty_box",
