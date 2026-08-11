@@ -214,23 +214,27 @@ export function planSchema(
 
 // ————————————————— what we accept —————————————————
 
-function clampInt(value: unknown, min: number, max: number, fallback: number) {
+/* Exported so `lib/caddy/tools.ts` clamps a tool call's dressing to exactly the
+ * bounds a whole-card answer is clamped to. Two paths now reach a hole — the
+ * structured card and a `set_hole` call — and the moment they disagree, one of
+ * them is a way to write something `createCourse` will refuse. */
+export function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 }
 
-function clampText(value: unknown, max: number): string {
+export function clampText(value: unknown, max: number): string {
   return typeof value === "string" ? neutralise(value, max) : "";
 }
 
-function readHazard(value: unknown): HazardId | null {
+export function readHazard(value: unknown): HazardId | null {
   return HAZARDS.some((hazard) => hazard.id === value)
     ? (value as HazardId)
     : null;
 }
 
-function readRules(value: unknown): RulesetPenalty[] {
+export function readRules(value: unknown): RulesetPenalty[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((entry) => {
