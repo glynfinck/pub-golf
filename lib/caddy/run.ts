@@ -10,6 +10,7 @@ import {
 } from "@/lib/caddy/budget";
 import {
   askCaddy,
+  askCaddyLooped,
   askCaddyStreamed,
   type CaddyTurnRecord,
 } from "@/lib/caddy/client";
@@ -387,6 +388,46 @@ async function spentToday(
 }
 
 /**
+ * What the loop needs from the outside world, assembled where the keys are.
+ *
+ * `dispatchTool` deliberately has no key and no client, so going back to
+ * Google arrives as a function. This is that function, plus the brief's own
+ * walking constraints so a trial routes exactly the way the finished card
+ * will — a trial that disagreed with the real router would be worse than none,
+ * because the caddy would be optimising against a walk nobody takes.
+ *
+ * A failed search answers empty rather than throwing. Google being slow is not
+ * a reason to lose a plan the host has already paid for; the caddy reads
+ * "nothing came back" and carries on with the patch it has.
+ */
+function midConversation(brief: CaddyBrief) {
+  return {
+    pins: { minLegMinutes: brief.stretch },
+    search: async (query: string): Promise<CandidateDossier[]> => {
+      const key = process.env.GOOGLE_PLACES_API_KEY;
+      if (!key) return [];
+      try {
+        const supabase = await createClient();
+        const found = await gatherPubs({
+          key,
+          where: query,
+          start: null,
+          finish: null,
+          ipBias: null,
+          language: null,
+        });
+        // Through the same cache the first gather used, so a pub the caddy
+        // finds mid-conversation has a real `venues` row and real coordinates
+        // before it can ever be put on a hole.
+        return buildCandidates(await cachePubs(supabase, found));
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+
+/**
  * One turn: ask, and keep what it cost whether or not a card arrived.
  *
  * The only place a model is called for money. `narrate` is what makes it a
@@ -408,7 +449,12 @@ export async function runTurn(input: {
   holeNumber?: number | null;
   /** Present on a streamed turn: the caddy's reasoning and the answer as it
    * is written. Narration only — nothing here reaches the card. */
-  narrate?: (update: { thinking?: string; answer?: string }) => void;
+  narrate?: (update: {
+    thinking?: string;
+    answer?: string;
+    /** A tool call, named for the host. */
+    doing?: string;
+  }) => void;
 }): Promise<CaddyResult> {
   // Asked before the call, so a host at the ceiling is told plainly instead of
   // being charged for a turn that Postgres is about to refuse.
@@ -424,8 +470,20 @@ export async function runTurn(input: {
     holeNumber: input.holeNumber,
     roll: input.kind === "roll",
   };
+  /**
+   * Which caddy answers.
+   *
+   * A first plan gets the tool loop: it is the turn where getting it right
+   * first time is worth several passes, because every revision it saves is a
+   * revision the host never has to ask for — and cheaper than the conversation
+   * it replaces. A roll or a tweak does not: the patch is already read, the
+   * host has said exactly what they want changed, and a loop there would spend
+   * a plan's worth of tokens re-deciding things nobody questioned.
+   */
   const outcome = input.narrate
-    ? await askCaddyStreamed(ask, input.narrate)
+    ? input.kind === "plan"
+      ? await askCaddyLooped(ask, midConversation(input.brief), input.narrate)
+      : await askCaddyStreamed(ask, input.narrate)
     : await askCaddy(ask);
 
   /** The ledger line. Written for a failure too — the vendor billed us for it

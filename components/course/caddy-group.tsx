@@ -71,6 +71,8 @@ export function CaddyGroup({
   // only: nothing reads it, and a run where it never arrives is a run that
   // looks exactly like the old one.
   const [thinking, setThinking] = useState("");
+  // The tool the caddy is reaching for, named. Outranks the reasoning below.
+  const [doing, setDoing] = useState("");
 
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
@@ -98,6 +100,7 @@ export function CaddyGroup({
   function plan() {
     run(async () => {
       setThinking("");
+      setDoing("");
       const lost = "The caddy lost the ball. Ask again — this one's free.";
       let failure: { error: string; detail?: string } | null = null;
       let landed = false;
@@ -135,7 +138,12 @@ export function CaddyGroup({
       let buffer = "";
 
       const handle = async (event: CaddyEvent) => {
-        if (event.type === "thinking") {
+        if (event.type === "doing") {
+          // A named tool call replaces the reasoning ticker rather than
+          // joining it: "Looking for beer gardens" is the work the host is
+          // paying for, and it should not be buried in a paragraph of prose.
+          setDoing(event.text);
+        } else if (event.type === "thinking") {
           setThinking((current) => thinkingTail(current + event.text));
         } else if (event.type === "patch") {
           onPatch?.(event.pins);
@@ -195,7 +203,7 @@ export function CaddyGroup({
       >
         <Putt />
         <div className="text-center font-serif text-lg leading-tight text-balance">
-          {sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch"}
+          {doing || (sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch")}
         </div>
         {/* What it is actually thinking, where there is any. One line, the
             end of it, and it fades in rather than jumping — a window on the

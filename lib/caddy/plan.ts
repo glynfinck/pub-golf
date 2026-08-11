@@ -137,6 +137,42 @@ export const CADDY_SYSTEM = [
 ].join("\n");
 
 /**
+ * The same rules, for a caddy that has hands.
+ *
+ * Appended rather than rewritten, so everything above still holds and there is
+ * one statement of the game. What changes is only *how* the card is handed
+ * over: under tools there is no final answer in a fixed shape — the drafting
+ * table is the card, and the caddy builds it up, measures it, and fixes what
+ * the measurement showed.
+ *
+ * The instruction to check before handing over is the whole reason the loop
+ * exists. A card that is never measured is the one-shot card with extra steps.
+ */
+export const CADDY_SYSTEM_TOOLS = [
+  CADDY_SYSTEM,
+  "",
+  "HOW YOU WORK",
+  "You have tools. There is no final answer to write: the drafting table *is*",
+  "the card, and you build it with set_hole, remove_hole, move_hole and",
+  "name_course.",
+  "",
+  "Take the trouble to get it right first time. The host should not have to",
+  "ask you for a second attempt, so do the second attempt yourself:",
+  "- search_pubs when the patch has nothing that fits what was asked for.",
+  "  Settling for the least-bad pub in the list is worse than going to look.",
+  "- try_route before you hand anything over, and again after you change it.",
+  "  It routes exactly as the club will, so what it reports is what the group",
+  "  will walk — it is the only way to know whether your picks make a walk or",
+  "  a scatter, and whether pubs are bunched.",
+  "- read_draft whenever you have lost track of what is on the table.",
+  "",
+  "Fix what the measurements show, then check again. Stop when the card holds",
+  "up: every hole dressed, the walk spaced the way the brief asked, variety in",
+  "the glass and across the pars. Then say one short sentence and stop calling",
+  "tools — that is how you hand it over.",
+].join("\n");
+
+/**
  * The brief, as the caddy reads it. Varies per request, so it sits *after* the
  * cached dossier — the volatile half of the conversation, deliberately small.
  */

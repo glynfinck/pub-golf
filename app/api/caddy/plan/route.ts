@@ -96,7 +96,8 @@ export async function POST(request: Request) {
         ...opened,
         history: [],
         kind: "plan",
-        narrate: ({ thinking, answer: chunk }) => {
+        narrate: ({ thinking, answer: chunk, doing }) => {
+          if (doing) say({ type: "doing", text: doing });
           if (thinking) say({ type: "thinking", text: thinking });
           if (!chunk) return;
           answer += chunk;

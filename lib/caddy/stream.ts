@@ -30,6 +30,10 @@ export type CaddyEvent =
    * raw chain of thought — and never load-bearing: it is a window, and a
    * window that stays dark costs nothing but the view. */
   | { type: "thinking"; text: string }
+  /** What the caddy is doing right now, in four words — "Looking for beer
+   * gardens", "Walking the route". Better narration than raw reasoning: it is
+   * the work the host is paying for, named. */
+  | { type: "doing"; text: string }
   /** Pubs chosen so far, by candidate id, in the order the caddy named them.
    * Not the walking order — that is decided after the answer is complete
    * (`lib/caddy/route.ts`), which is exactly why these land as pins and the

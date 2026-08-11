@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import {
   CADDY_SYSTEM,
+  CADDY_SYSTEM_TOOLS,
   askBlock,
   briefBlock,
   parsePlan,
@@ -13,9 +14,16 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
-import { NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
+import { addUsage, NO_USAGE, readUsage, type CaddyUsage } from "@/lib/caddy/budget";
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
+import { dispatchTool } from "@/lib/caddy/session";
+import type { WalkPins } from "@/lib/caddy/route";
+import {
+  CADDY_TOOLS,
+  MAX_TOOL_TURNS,
+  type CaddyBoard,
+} from "@/lib/caddy/tools";
 import {
   describeFailure,
   FAILURE_LOG_MAX,
@@ -378,4 +386,122 @@ function asWire(course: PlannedCourse, candidates: CandidateDossier[]) {
       }))
       .filter((hole) => hole.candidateId !== undefined),
   };
+}
+
+/**
+ * Ask the caddy, and let it do the work properly.
+ *
+ * The looped plan: search when the patch is thin, route what it has picked,
+ * read what the routing said, fix it, route again. The point is not that the
+ * host can revise more easily — it is that they should not have to. Every
+ * revision this saves is a revision they never see, and it is cheaper than the
+ * conversation it replaces: a tweak costs a cached prefix plus fresh output,
+ * so a plan that lands first time beats one that takes four rounds to.
+ *
+ * Three things are different from `askCaddy`, and each of them follows from
+ * the board being the card:
+ *
+ *   **No `output_config.format`.** There is no final answer in a fixed shape.
+ *   That resolves the tension the tools raised rather than dodging it: the
+ *   constrained decoder used to make "never invent a pub" unrepresentable, and
+ *   now `applyDraftTool` refuses an unknown id instead — as a sentence the
+ *   caddy reads and corrects, rather than as a broken card.
+ *
+ *   **One bill, many calls.** Usage is summed across the loop, because one
+ *   plan is one thing the host asked for and stays one `caddy_turns` row.
+ *
+ *   **The dossier grows.** A search adds real pubs mid-conversation, and the
+ *   additions have to reach `parsePlan` or the caddy would be offered pubs and
+ *   then refused for using them. They ride in tool results rather than in the
+ *   prefix, so the cached block is still byte-identical every turn.
+ *
+ * Running out of turns is not a failure. Whatever is on the table is a real
+ * card — every hole on it went through the same reducer — so it is handed over
+ * as one.
+ */
+export async function askCaddyLooped(
+  input: CaddyAsk,
+  deps: {
+    search: (query: string) => Promise<CandidateDossier[]>;
+    pins: WalkPins;
+  },
+  narrate: (update: { thinking?: string; doing?: string }) => void,
+): Promise<CaddyOutcome> {
+  const call = openCall();
+  if (!call) return unavailable();
+
+  const messages = buildMessages(input);
+  let board: CaddyBoard = { name: "", holes: [] };
+  let candidates = input.candidates;
+  let usage: CaddyUsage = { ...NO_USAGE };
+
+  try {
+    for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
+      const response = await call.client.messages.create({
+        model: call.model,
+        max_tokens: MAX_TOKENS,
+        system: CADDY_SYSTEM_TOOLS,
+        thinking: THINKING_SHOWN,
+        output_config: { effort: EFFORT },
+        tools: CADDY_TOOLS,
+        messages,
+      });
+      usage = addUsage(usage, readUsage(response.usage));
+
+      response.content.forEach((block) => {
+        if (block.type === "thinking" && block.thinking) narrate({ thinking: block.thinking });
+      });
+
+      // Nothing more to do: the caddy has stopped reaching for tools, which is
+      // how it says the card is finished.
+      if (response.stop_reason !== "tool_use") break;
+
+      messages.push({ role: "assistant", content: response.content });
+      const results: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of response.content) {
+        if (block.type !== "tool_use") continue;
+        const answered = await dispatchTool(block.name, block.input, {
+          board,
+          candidates,
+          pins: deps.pins,
+          search: deps.search,
+        });
+        board = answered.board;
+        if (answered.added.length) candidates = [...candidates, ...answered.added];
+        if (answered.narration) narrate({ doing: answered.narration });
+        results.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: answered.reply,
+        });
+      }
+      messages.push({ role: "user", content: results });
+    }
+  } catch (cause) {
+    // Tokens already spent are still owed, so the usage so far goes back with
+    // the failure rather than being written off — unlike a call that never
+    // reached the model at all.
+    return { ...lostBall(cause, call, "loop "), usage };
+  }
+
+  // The board, through the one parser. Everything the single-shot plan gets —
+  // the walking order, water off the last hole, a short for a bunker, the
+  // pinned-tee check — is applied here and nowhere else.
+  const parsed = parsePlan(
+    {
+      courseName: board.name,
+      holes: board.holes.map((hole) => ({
+        candidateId: hole.candidateId,
+        drink: hole.drink,
+        par: hole.par,
+        hazard: hole.hazard,
+        hazardNote: hole.hazardNote,
+        fitNote: hole.fitNote,
+        localRules: hole.localRules,
+      })),
+    },
+    candidates,
+    input.brief,
+  );
+  return { ...parsed, usage, model: call.model };
 }

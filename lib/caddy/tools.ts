@@ -237,7 +237,12 @@ export const CADDY_TOOLS = [
       properties: { name: { type: "string" } },
     },
   },
-] as const;
+  // Not `as const`: the SDK's tool parameter is a mutable array of mutable
+  // schemas, and a deeply-readonly literal cannot be handed to it without a
+  // cast that would hide a genuine mismatch. What makes this a stable cached
+  // prefix is that it is a module constant built from other constants, which
+  // is unaffected either way.
+];
 
 /** The four tools that change the draft — the ones this module answers. The
  * other two need a key and a session and belong to the server. */
