@@ -14,6 +14,8 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
+import { buildRouteGraph, targetKmFor } from "@/lib/caddy/route-graph";
+import { DEFAULT_DRINK, DEFAULT_PAR } from "@/lib/course-draft";
 import {
   addUsage,
   costMicroPence,
@@ -539,6 +541,32 @@ export async function askCaddyLooped(
   // The board, through the one parser. Everything the single-shot plan gets —
   // the walking order, water off the last hole, a short for a bunker, the
   // pinned-tee check — is applied here and nowhere else.
+  // A loop that ran out of time before it drafted anything used to return an
+  // empty board, which the caller reads as a failure — so the host paid for a
+  // full plan (29.20p on the run that prompted this) and got a sentence. The
+  // work was real; it was spent searching rather than drafting, and refusing
+  // to hand over anything is the one outcome nobody wants.
+  //
+  // So a board with no holes falls back to the route the graph already worked
+  // out before the model was even called. It is the honest floor of this
+  // feature: a real walk over real pubs, in a sensible order, wearing default
+  // dress. Merely good beats nothing, absolutely.
+  //
+  // A *fallback* rather than a seed, deliberately. Seeding the live board
+  // would put holes in front of the model that it did not choose and would
+  // have to reason about removing, which changes every successful plan to
+  // rescue the failing ones. This changes only the runs that would otherwise
+  // have delivered nothing.
+  if (board.holes.length === 0) {
+    const rescue = fallbackBoard(candidates, input.brief);
+    if (rescue.holes.length > 0) {
+      console.warn(
+        `[caddy] loop drafted nothing; handing over the precomputed route with ${rescue.holes.length} holes`,
+      );
+      board = rescue;
+    }
+  }
+
   const parsed = parsePlan(
     {
       courseName: board.name,
@@ -556,4 +584,53 @@ export async function askCaddyLooped(
     input.brief,
   );
   return { ...parsed, usage, model: call.model };
+}
+
+/**
+ * The floor: the best precomputed route, dressed with house defaults.
+ *
+ * Everything here is already decided by the time it is called — the graph
+ * chose the stops before the model ran, and the drink and par are the same
+ * ones the manual builder starts a hole with. Nothing is invented, least of
+ * all a pub: every stop is a candidate id.
+ *
+ * The course goes unnamed. `parsePlan` gives an unnamed course the house
+ * fallback, and a name made up here would be the one part of this that the
+ * caddy is supposed to write.
+ */
+function fallbackBoard(
+  candidates: CandidateDossier[],
+  brief: CaddyAsk["brief"],
+): CaddyBoard {
+  const graph = buildRouteGraph(candidates, {
+    holes: brief.holes,
+    startId: candidateIdFor(candidates, brief.startVenueId),
+    finishId: candidateIdFor(candidates, brief.finishVenueId),
+    targetKm: targetKmFor(brief.stretch, brief.holes),
+  });
+  const best = graph.routes[0];
+  if (!best) return { name: "", holes: [] };
+  return {
+    name: "",
+    holes: best.stops.map((candidateId: string) => ({
+      candidateId,
+      drink: DEFAULT_DRINK,
+      par: DEFAULT_PAR,
+      hazard: null,
+      hazardNote: null,
+      fitNote: null,
+      // No local rules on a fallback hole: a house rule is a judgement about
+      // the pub, and this board is geometry rather than judgement.
+      localRules: [],
+    })),
+  };
+}
+
+/** A pinned tee is a `venues` id; the graph speaks candidate ids. */
+function candidateIdFor(
+  candidates: CandidateDossier[],
+  venueId: string | null,
+): string | null {
+  if (!venueId) return null;
+  return candidates.find((c) => c.venueId === venueId)?.id ?? null;
 }

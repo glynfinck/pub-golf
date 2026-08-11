@@ -30,7 +30,7 @@ import {
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
-import { askTheCaddy } from "@/lib/actions/caddy";
+import { askTheCaddy, collectCaddyCard } from "@/lib/actions/caddy";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
@@ -207,13 +207,52 @@ export function CaddyGroup({
       } catch {
         // The connection went away mid-plan. If the card had already landed
         // that is a finished plan with a rough ending, not a failure.
-        if (!landed) return { error: lost };
+        if (!landed) return await collect(lost);
       }
 
-      if (failure) return failure;
+      // Cast rather than read straight through: `failure` is only ever
+      // assigned inside the stream callback, so TypeScript's flow analysis
+      // still believes it is null here and narrows the guard to `never`. The
+      // old code got away with returning it because `never` is assignable to
+      // anything; reading a property off it does not.
+      const failed = failure as { error: string; detail?: string } | null;
+      if (failed) return landed ? failed : await collect(failed.error, failed.detail);
       // A spent fee is a finished run, not a failed one — the sheet says so.
-      return landed || spentRef.current ? {} : { error: lost };
+      return landed || spentRef.current ? {} : await collect(lost);
     });
+  }
+
+  /**
+   * Ask before apologising.
+   *
+   * The card is written to `caddy_turns` before a byte of it is streamed, so a
+   * plan whose connection dies on the way back has still produced one. It is in
+   * Postgres, already paid for, while the host reads a timeout — which happened
+   * for real: a 32.21p plan filed nine holes and the browser showed an error.
+   *
+   * So every path that was about to return a failure checks first. If a card is
+   * there it is put on the table and the run counts as finished; the host never
+   * learns the stream broke, which is the correct amount to tell them about our
+   * plumbing.
+   */
+  async function collect(
+    error: string,
+    detail?: string,
+  ): Promise<{ error?: string; detail?: string }> {
+    try {
+      const rescued = await collectCaddyCard();
+      if (!rescued.course) return { error, detail };
+      if (rescued.sessionId) {
+        setSessionId(rescued.sessionId);
+        onSession(rescued.sessionId);
+      }
+      await onCourse(rescued.course, []);
+      return {};
+    } catch {
+      // The rescue is best-effort by definition. If it cannot run, the host
+      // gets the failure they were always going to get.
+      return { error, detail };
+    }
   }
 
   function say(input: { ask?: string; roll?: boolean }) {

@@ -1,5 +1,8 @@
 "use server";
 
+import { resumeCaddy } from "@/lib/data/caddy";
+import type { PlannedCourse } from "@/lib/caddy/plan";
+
 import {
   askTheCaddy as askTheCaddyRun,
   closeCaddySession as closeCaddySessionRun,
@@ -60,4 +63,26 @@ export async function rememberCaddyCourse(
 /** The session is finished: stamp it and drop the dossier. */
 export async function closeCaddySession(sessionId: string): Promise<void> {
   return closeCaddySessionRun(sessionId);
+}
+
+/**
+ * Did a card land after all?
+ *
+ * The card is written to `caddy_turns` before anything is streamed, so a plan
+ * whose connection dies on the way back has still produced one — it is sitting
+ * in Postgres, paid for, while the host reads an error. That happened for real:
+ * a 32.21p plan finished, filed a nine-hole card, and the browser showed a
+ * timeout.
+ *
+ * So the failure path asks before it apologises. Reads the host's own most
+ * recent session through RLS, which is what makes "theirs" unambiguous without
+ * naming a user.
+ */
+export async function collectCaddyCard(): Promise<{
+  sessionId?: string;
+  course?: PlannedCourse;
+}> {
+  const resumed = await resumeCaddy();
+  if (!resumed) return {};
+  return { sessionId: resumed.sessionId, course: resumed.course };
 }
