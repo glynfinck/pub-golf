@@ -15,6 +15,7 @@ import { useDrawIn } from "@/hooks/use-draw-in";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
+  patchFrame,
   previewFrame,
   walkRoute,
   type PreviewFrame,
@@ -38,6 +39,19 @@ function drawMs(holes: number): number {
 }
 
 /**
+ * The patch, while the caddy is still working it.
+ *
+ * `pins` is every pub it may choose from; `picked` is the ones it has named so
+ * far, in its own order rather than the walking order — that is not decided
+ * until the answer is complete, which is exactly why these arrive as pins and
+ * the numbers arrive with the card.
+ */
+export interface LivePatch {
+  pins: { id: string; lat: number; lng: number }[];
+  picked: string[];
+}
+
+/**
  * The walk, on a real map, at the top of the drafting table.
  *
  * A card is a list, and a list cannot answer the question every round of
@@ -50,7 +64,9 @@ function drawMs(holes: number): number {
  *   **Only the holes.** The sheet also plots search results as pint pins,
  *   because that is where you pick pubs. Here there is nothing to pick, so a
  *   candidate pin would be noise on a map whose whole job is the shape of the
- *   card. Numbered rings and the walking line, and nothing else.
+ *   card. Numbered rings and the walking line, and nothing else — with one
+ *   exception, `live`, which is the minutes while the caddy is still choosing
+ *   and there is no card to show yet.
  *
  *   **Static.** No dragging, no zooming, no controls, no keyboard focus. It is
  *   a picture of the route, and a map that moves under a thumb scrolling past
@@ -66,11 +82,16 @@ function drawMs(holes: number): number {
  */
 export function RoutePreview({
   stops,
+  live,
   onOpen,
   drawKey = 0,
   className,
 }: {
   stops: PreviewStop[];
+  /** Present while a plan is being made. The map frames the patch and lights
+   * pubs up as they are chosen; when the card lands this goes and the walk
+   * draws over the same ground without the map moving. */
+  live?: LivePatch | null;
   /** Tapping the preview opens the real map sheet. Absent and it stays a
    * picture — the preview never pretends to be tappable when it is not. */
   onOpen?: () => void;
@@ -89,9 +110,13 @@ export function RoutePreview({
   const { resolvedTheme } = useTheme();
   const [mapsFailed, setMapsFailed] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
-  const frame = previewFrame(stops);
+  const route = previewFrame(stops);
+  // The card wins the moment there is one: a route is what the host came for,
+  // and the patch behind it has done its job.
+  const patch = route ? null : (live?.pins.length ? patchFrame(live.pins) : null);
+  const frame = route ?? patch;
 
-  // Fewer than two positioned holes is not a route; no key is not a map.
+  // Nothing to frame is not a map, and neither is no key.
   if (!frame || !MAPS_BROWSER_KEY || mapsFailed) return null;
 
   const dark = resolvedTheme === "dark";
@@ -117,15 +142,19 @@ export function RoutePreview({
           keyboardShortcuts={false}
           clickableIcons={false}
         >
-          {/* Remounted whenever the caddy hands over a card, which is what
-              replays the walk. The map itself stays put — remounting *that*
-              would reload the tiles and flash. */}
-          <WalkedLine
-            key={drawKey}
-            frame={frame}
-            dark={dark}
-            animate={drawKey > 0 && !reducedMotion}
-          />
+          {route ? (
+            /* Remounted whenever the caddy hands over a card, which is what
+               replays the walk. The map itself stays put — remounting *that*
+               would reload the tiles and flash. */
+            <WalkedLine
+              key={drawKey}
+              frame={route}
+              dark={dark}
+              animate={drawKey > 0 && !reducedMotion}
+            />
+          ) : (
+            <PatchPins live={live!} picked={new Set(live!.picked)} />
+          )}
         </Map>
       </APIProvider>
       {/* The way in. A real button over an inert map, rather than handlers on
@@ -211,6 +240,39 @@ function WalkedLine({
           </div>
         </AdvancedMarker>
       ))}
+    </>
+  );
+}
+
+/**
+ * The patch, mid-decision: every candidate faint, the chosen ones lit.
+ *
+ * No numbers and no line, because neither exists yet — the caddy has named
+ * pubs and the club has not routed them. Showing a walk here would be showing
+ * a decision that has not been taken.
+ */
+function PatchPins({ live, picked }: { live: LivePatch; picked: Set<string> }) {
+  return (
+    <>
+      {live.pins.map((pin) => {
+        const chosen = picked.has(pin.id);
+        return (
+          <AdvancedMarker
+            key={pin.id}
+            position={{ lat: pin.lat, lng: pin.lng }}
+            anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+          >
+            <div
+              className={cn(
+                "rounded-full transition-all duration-500",
+                chosen
+                  ? "size-3.5 bg-fairway ring-2 ring-background"
+                  : "size-1.5 bg-muted-foreground/40",
+              )}
+            />
+          </AdvancedMarker>
+        );
+      })}
     </>
   );
 }

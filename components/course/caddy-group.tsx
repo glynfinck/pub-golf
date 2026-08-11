@@ -21,7 +21,8 @@ import {
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
-import { askTheCaddy, planCourse } from "@/lib/actions/caddy";
+import { askTheCaddy } from "@/lib/actions/caddy";
+import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,8 @@ import { cn } from "@/lib/utils";
 export function CaddyGroup({
   hasPass,
   onCourse,
+  onPatch,
+  onPicked,
   onSession,
   className,
 }: {
@@ -50,6 +53,12 @@ export function CaddyGroup({
   hasPass: boolean;
   /** A card arrived. The builder takes it from here. */
   onCourse: (course: PlannedCourse, changed: number[]) => void | Promise<void>;
+  /** The patch, the moment Places answers — several seconds before any hole
+   * exists. The drafting table frames its map on it. */
+  onPatch?: (pins: { id: string; lat: number; lng: number }[]) => void;
+  /** Pubs as the caddy names them, in its own order rather than the walking
+   * order, which is not decided until the card is complete. */
+  onPicked?: (ids: string[]) => void;
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
   className?: string;
@@ -58,6 +67,10 @@ export function CaddyGroup({
   const [open, setOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
+  // The caddy's own reasoning while it works, trimmed to a line. Narration
+  // only: nothing reads it, and a run where it never arrives is a run that
+  // looks exactly like the old one.
+  const [thinking, setThinking] = useState("");
 
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
@@ -69,25 +82,92 @@ export function CaddyGroup({
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
   const stretchNote = stretchMeaning(stretch);
 
+  /**
+   * The first card, over a stream.
+   *
+   * A route rather than the action, because an action resolves once and the
+   * interesting part of a plan is the twenty seconds before it does: the patch
+   * lands early enough to frame a map on, and the caddy's own reasoning
+   * arrives while it is still reasoning. The tweak below is still an action —
+   * it answers in a couple of seconds and there is nothing to narrate.
+   *
+   * Everything the stream says is optional. A run where every middle event
+   * went missing still ends in a card or an honest failure, which is what
+   * makes it safe to treat the narration as decoration.
+   */
   function plan() {
     run(async () => {
-      const result = await planCourse({
-        where,
-        holes,
-        vibe,
-        particulars,
-        note,
-        stretch,
-        startVenueId: null,
-        finishVenueId: null,
-      });
-      if (result.error) return { error: result.error, detail: result.detail };
-      if (result.course && result.sessionId) {
-        setSessionId(result.sessionId);
-        onSession(result.sessionId);
-        await onCourse(result.course, []);
+      setThinking("");
+      const lost = "The caddy lost the ball. Ask again — this one's free.";
+      let failure: { error: string; detail?: string } | null = null;
+      let landed = false;
+
+      let response: Response;
+      try {
+        response = await fetch("/api/caddy/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            where,
+            holes,
+            vibe,
+            particulars,
+            note,
+            stretch,
+            startVenueId: null,
+            finishVenueId: null,
+          }),
+        });
+      } catch {
+        return { error: lost };
       }
-      return {};
+
+      // A refusal decided before the model was ever asked — no fee, a thin
+      // patch, no sign-in — comes back as ordinary JSON rather than as a
+      // stream that opens only to apologise.
+      if (!response.body || !response.headers.get("content-type")?.includes("ndjson")) {
+        const body = await response.json().catch(() => null);
+        return { error: (body as { error?: string } | null)?.error ?? lost };
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const handle = async (event: CaddyEvent) => {
+        if (event.type === "thinking") {
+          setThinking((current) => thinkingTail(current + event.text));
+        } else if (event.type === "patch") {
+          onPatch?.(event.pins);
+        } else if (event.type === "picked") {
+          onPicked?.(event.ids);
+        } else if (event.type === "card") {
+          setSessionId(event.sessionId);
+          onSession(event.sessionId);
+          await onCourse(event.course, []);
+          landed = true;
+        } else {
+          failure = { error: event.error, detail: event.detail };
+        }
+      };
+
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          const { events, rest } = decodeEvents(buffer);
+          buffer = rest;
+          for (const event of events) await handle(event);
+          if (done) break;
+        }
+      } catch {
+        // The connection went away mid-plan. If the card had already landed
+        // that is a finished plan with a rough ending, not a failure.
+        if (!landed) return { error: lost };
+      }
+
+      if (failure) return failure;
+      return landed ? {} : { error: lost };
     });
   }
 
@@ -117,9 +197,23 @@ export function CaddyGroup({
         <div className="text-center font-serif text-lg leading-tight text-balance">
           {sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch"}
         </div>
-        <p className="text-[11px] text-muted-foreground">
-          {sessionId ? "Won’t be a moment." : "About twenty seconds."}
-        </p>
+        {/* What it is actually thinking, where there is any. One line, the
+            end of it, and it fades in rather than jumping — a window on the
+            work, not a log. Absent on a tweak and absent if the stream never
+            sends any, which is why the line above still says something on
+            its own. */}
+        {thinking ? (
+          <p
+            aria-live="off"
+            className="animate-in fade-in line-clamp-3 text-center text-[11px] text-balance text-muted-foreground/80 italic"
+          >
+            {thinking}
+          </p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            {sessionId ? "Won’t be a moment." : "About twenty seconds."}
+          </p>
+        )}
       </div>
     );
   }

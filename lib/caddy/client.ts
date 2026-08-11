@@ -71,6 +71,22 @@ const EFFORT = "high";
 const THINKING = { type: "adaptive" } as const;
 
 /**
+ * The same thinking, with the summary turned on, for the streamed plan.
+ *
+ * `display` defaults to `"omitted"`, which returns the blocks with their text
+ * empty — right for a call nobody watches, and exactly wrong for one whose
+ * whole point is that somebody is watching. `"summarized"` is the only setting
+ * that returns readable text at all on this family; the raw chain of thought
+ * is never returned by any of them.
+ *
+ * It changes nothing about the answer and nothing about the bill: thinking
+ * happens and is billed the same under every setting. What it buys is the
+ * difference between twenty seconds of spinner and twenty seconds of somebody
+ * visibly working.
+ */
+const THINKING_SHOWN = { type: "adaptive", display: "summarized" } as const;
+
+/**
  * Room for the thinking *and* the answer, which is one budget rather than two.
  *
  * `max_tokens` caps them together, so a limit sized for eighteen dressed holes
@@ -200,6 +216,93 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
     // an honest line and one that has a paying host tapping a dead button.
     const reason = isPermanentFailure(cause) ? "misconfigured" : "unavailable";
     return { ok: false, reason, usage: { ...NO_USAGE }, model, detail };
+  }
+}
+
+/**
+ * Ask the caddy, and narrate the wait.
+ *
+ * The same request as `askCaddy` — same system rules, same cached dossier,
+ * same schema — with `stream` on and the thinking summary asked for. The
+ * caller is handed the reasoning and the half-written answer as they arrive;
+ * what it does with them is its business, and dropping every one of them would
+ * still leave a correct card at the end.
+ *
+ * Failure behaves exactly as it does in `askCaddy`, and for the same reason:
+ * a vendor's error is "the caddy lost the ball", it costs the host nothing,
+ * and the reason goes to the log rather than to the screen. The one difference
+ * is that a stream can fail *after* tokens have been spent, so usage is read
+ * off the final message whenever there is one to read.
+ */
+export async function askCaddyStreamed(
+  input: CaddyAsk,
+  narrate: (update: { thinking?: string; answer?: string }) => void,
+): Promise<CaddyOutcome> {
+  const credentials = caddyCredentials(process.env);
+  if (!credentials) {
+    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model: "" };
+  }
+  const model = credentials.model;
+  const client = new Anthropic({
+    apiKey: credentials.apiKey ?? null,
+    authToken: credentials.authToken,
+    ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
+  });
+
+  try {
+    const stream = client.messages.stream({
+      model,
+      max_tokens: MAX_TOKENS,
+      system: CADDY_SYSTEM,
+      thinking: THINKING_SHOWN,
+      output_config: {
+        effort: EFFORT,
+        format: { type: "json_schema", schema: planSchema(input.candidates) },
+      },
+      messages: buildMessages(input),
+    });
+
+    // Two deltas matter and the rest are structure. `thinking` is the window;
+    // `text` is the answer being written, which the caller reads picks out of.
+    stream.on("streamEvent", (event) => {
+      if (event.type !== "content_block_delta") return;
+      if (event.delta.type === "thinking_delta") {
+        narrate({ thinking: event.delta.thinking });
+      } else if (event.delta.type === "text_delta") {
+        narrate({ answer: event.delta.text });
+      }
+    });
+
+    const response = await stream.finalMessage();
+    const usage = readUsage(response.usage);
+    const spent = <T extends { ok: boolean }>(outcome: T) => ({ ...outcome, usage, model });
+
+    if (response.stop_reason === "refusal") {
+      return spent({ ok: false as const, reason: "malformed" as const });
+    }
+    const text = response.content
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("");
+    if (!text.trim()) return spent({ ok: false as const, reason: "malformed" as const });
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return spent({ ok: false as const, reason: "malformed" as const });
+    }
+    return spent(parsePlan(payload, input.candidates, input.brief));
+  } catch (cause) {
+    console.error(
+      `[caddy] ${credentials.via} ${model} stream failed: ${describeFailure(cause, FAILURE_LOG_MAX)}`,
+    );
+    return {
+      ok: false,
+      reason: isPermanentFailure(cause) ? "misconfigured" : "unavailable",
+      usage: { ...NO_USAGE },
+      model,
+      detail: describeFailure(cause),
+    };
   }
 }
 

@@ -78,6 +78,22 @@ export const MAX_ASPECT = 2.6;
 export const MIN_SPAN_DEG = 0.0036;
 
 /**
+ * Frame a cloud of points that is not a route — the patch, while the caddy is
+ * still choosing from it.
+ *
+ * Same box, same landscape rule, same minimum span; only the contents differ,
+ * because these are candidates rather than holes and there is no walk between
+ * them yet. Sharing the framing is what makes the handover invisible: the map
+ * settles on the neighbourhood while the caddy reads it and does not move
+ * again when the card arrives.
+ */
+export function patchFrame(
+  pins: { lat: number; lng: number }[],
+): PreviewFrame | null {
+  return previewFrame(pins);
+}
+
+/**
  * Work out what the preview should show, or return null if there is nothing
  * worth showing.
  *

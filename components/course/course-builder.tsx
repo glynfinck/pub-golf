@@ -7,7 +7,10 @@ import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
-import { RoutePreview } from "@/components/course/route-preview";
+import {
+  RoutePreview,
+  type LivePatch,
+} from "@/components/course/route-preview";
 import { HoleEditor, type MoveDirection } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { PubMapSheet } from "@/components/course/pub-map-sheet";
@@ -96,6 +99,16 @@ export function CourseBuilder({
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
+  /**
+   * The patch the caddy is working, while it is still working it.
+   *
+   * Lives here rather than in the caddy's own group because the map it feeds
+   * is up at the top of the page — the point of it is that the neighbourhood
+   * is on screen a good few seconds before any hole is, so the card does not
+   * arrive into an empty rectangle. Cleared when the card lands, at which
+   * point the route takes the same frame over.
+   */
+  const [patch, setPatch] = useState<LivePatch | null>(null);
   /**
    * The row a caddy-planned course was filed into the moment it arrived.
    *
@@ -244,6 +257,8 @@ export function CourseBuilder({
       walk_minutes_to_next: null,
     }));
     const named = name.trim() || planned.name;
+    // The card is the route now; the patch behind it has done its job.
+    setPatch(null);
     setHoles(rows);
     setName(named);
     setChanged(moved);
@@ -406,6 +421,7 @@ export function CourseBuilder({
           between. */}
       <RoutePreview
         stops={holes}
+        live={patch}
         drawKey={drawKey}
         onOpen={
           MAPS_BROWSER_KEY
@@ -436,6 +452,12 @@ export function CourseBuilder({
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
+          onPatch={(pins) => setPatch({ pins, picked: [] })}
+          onPicked={(ids) =>
+            setPatch((current) =>
+              current ? { ...current, picked: [...current.picked, ...ids] } : current,
+            )
+          }
         />
       ) : null}
 
