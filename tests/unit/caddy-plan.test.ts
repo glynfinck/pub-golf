@@ -203,22 +203,36 @@ describe("parsePlan", () => {
     expect(result.course.name).toBe("The caddy's round");
   });
 
-  it("refuses a plan that moved a pinned tee", () => {
+  it("moves a pinned tee to the front rather than throwing the card away", () => {
+    // This used to refuse. Now the walking order is ours (lib/caddy/route.ts),
+    // so a pin is enforced instead of checked — the pub the host chose is on
+    // the card, and which end it belongs at is something we can fix without
+    // spending another turn of their fee on it.
     const pinned = { ...BRIEF, startVenueId: CANDIDATES[0].venueId };
-    expect(parsePlan(plan(["p2", "p3", "p1"]), CANDIDATES, pinned)).toEqual({
-      ok: false,
-      reason: "pin-moved",
-    });
-    expect(parsePlan(plan(["p1", "p2", "p3"]), CANDIDATES, pinned).ok).toBe(true);
+    const result = parsePlan(plan(["p2", "p3", "p1"]), CANDIDATES, pinned);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.course.holes[0].venue_id).toBe(CANDIDATES[0].venueId);
+    expect(result.course.holes).toHaveLength(3);
   });
 
-  it("refuses a plan that moved a pinned finish", () => {
+  it("moves a pinned finish to the end", () => {
     const pinned = { ...BRIEF, finishVenueId: CANDIDATES[4].venueId };
+    const result = parsePlan(plan(["p5", "p1", "p2"]), CANDIDATES, pinned);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const holes = result.course.holes;
+    expect(holes[holes.length - 1].venue_id).toBe(CANDIDATES[4].venueId);
+  });
+
+  it("still refuses when a pinned pub is not on the card at all", () => {
+    // Enforcing a position is one thing; conjuring the pub is another. If the
+    // caddy simply did not pick the host's tee, that is a real failure.
+    const pinned = { ...BRIEF, startVenueId: CANDIDATES[7].venueId };
     expect(parsePlan(plan(["p1", "p2", "p3"]), CANDIDATES, pinned)).toEqual({
       ok: false,
       reason: "pin-moved",
     });
-    expect(parsePlan(plan(["p1", "p2", "p5"]), CANDIDATES, pinned).ok).toBe(true);
   });
 
   it("answers malformed rather than throwing", () => {

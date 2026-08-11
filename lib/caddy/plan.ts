@@ -10,6 +10,7 @@ import {
   type CaddyBrief,
 } from "@/lib/caddy/brief";
 import { HAZARDS, type HazardId } from "@/lib/hazards";
+import { orderWalk } from "@/lib/caddy/route";
 import { MAX_LOCAL_RULES } from "@/lib/rules";
 import type { RulesetPenalty } from "@/lib/ruleset";
 
@@ -320,21 +321,40 @@ export function parsePlan(
   // for nine and nine is what the fee is being judged on.
   if (holes.length < brief.holes) return { ok: false, reason: "short" };
 
-  // Pins are verified, not trusted. A plan that moved the host's own tee is
-  // refused rather than silently re-routed.
-  if (brief.startVenueId && holes[0].venue_id !== brief.startVenueId) {
+  // The walk is ours, not the model's. It chose which pubs; the order is
+  // geometry and comes out of `orderWalk`, which honours the pins by
+  // construction and can only ever shorten the walk it was given.
+  //
+  // This also softens what a pin means, deliberately. It used to be checked —
+  // a plan that put the host's tee anywhere but first was thrown away whole.
+  // Now it is *enforced*: the pinned pub is on the card, and which end it
+  // belongs at is exactly the sort of thing we can fix without spending
+  // another turn on the host's fee.
+  const ordered = orderWalk(holes, {
+    first: brief.startVenueId
+      ? holes.findIndex((hole) => hole.venue_id === brief.startVenueId)
+      : null,
+    last: brief.finishVenueId
+      ? holes.findIndex((hole) => hole.venue_id === brief.finishVenueId)
+      : null,
+  });
+
+  // Kept as an assertion on our own output rather than on the model's. If this
+  // ever fires the router has a bug, and refusing the card is the right way to
+  // find out — a group sent to the wrong first pub is worse than no card.
+  if (brief.startVenueId && ordered[0].venue_id !== brief.startVenueId) {
     return { ok: false, reason: "pin-moved" };
   }
   if (
     brief.finishVenueId &&
-    holes[holes.length - 1].venue_id !== brief.finishVenueId
+    ordered[ordered.length - 1].venue_id !== brief.finishVenueId
   ) {
     return { ok: false, reason: "pin-moved" };
   }
 
   const name =
     clampText(payload.courseName, COURSE_NAME_MAX) || "The caddy's round";
-  return { ok: true, course: { name, holes } };
+  return { ok: true, course: { name, holes: ordered } };
 }
 
 /** The line a refusal earns on screen. None of these spend anything. */
