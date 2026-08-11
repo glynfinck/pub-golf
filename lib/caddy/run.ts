@@ -127,8 +127,48 @@ async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data } = await supabase.rpc("caddy_unspent_fee", { who: userId });
-  return data ? { id: data as string } : null;
+  const { data, error } = await supabase.rpc("caddy_unspent_fee", { who: userId });
+  if (!error) return data ? { id: data as string } : null;
+
+  // The allowance function is not on this database yet.
+  //
+  // Vercel and Supabase deploy independently and neither waits for the other,
+  // so there is always a window where new code is talking to the old schema —
+  // DEPLOYMENT.md calls this expand/contract and asks for "code that tolerates
+  // both". Without this branch that window is not a degraded caddy, it is a
+  // paying host being told their course is already in the book when they have
+  // none, which is the single worst thing this feature could say to somebody
+  // who has just paid.
+  //
+  // So fall back to what the question meant before the allowance existed: any
+  // live fee. A host mid-deploy gets the old generosity for a minute or two
+  // rather than a lie, and the ceiling starts applying the moment the
+  // migration lands. Only for a genuinely missing function — any other error
+  // is a real refusal and is left alone.
+  if (!missingFunction(error)) return null;
+  const { data: any_fee } = await supabase
+    .from("entitlements")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("kind", "green_fee")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order("expires_at", { ascending: true, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  return any_fee ?? null;
+}
+
+/**
+ * Is this error "that function does not exist here yet"?
+ *
+ * Two codes for one condition, from two layers, exactly as the caddy tables'
+ * own presence check already has to handle: `42883` is Postgres saying the
+ * function is undefined, `PGRST202` is PostgREST saying it is not in its
+ * schema cache. Checking only the Postgres one would miss it on every modern
+ * stack — which is the deploy this exists to survive.
+ */
+function missingFunction(error: { code?: string } | null): boolean {
+  return error?.code === "42883" || error?.code === "PGRST202";
 }
 
 /** The `venues` rows for a gather, upserted exactly as the builder's own
