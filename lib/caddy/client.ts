@@ -38,16 +38,49 @@ import {
  * it is the economics.
  */
 
-/** Effort, and why. A small, well-scoped structured-output task: a card of up
- * to eighteen holes from forty dossiers. `medium` is the starting point the
- * spec settled on, worth a sweep once there are real briefs to sweep against.
- * The model itself comes off the credentials, because its id depends on which
- * door the request goes through. */
-const EFFORT = "medium";
-/** Generous enough for adaptive thinking plus eighteen dressed holes. Thinking
- * is on by default on this model and `max_tokens` caps thinking and answer
- * together, so a tight budget here truncates the card rather than the reasoning. */
-const MAX_TOKENS = 8_000;
+/**
+ * Effort, and why `high`.
+ *
+ * `high` is this model's own default and the documented setting for most
+ * intelligence-sensitive work; `medium` is a cost step-down. The caddy is not
+ * a lookup — it reads forty dossiers with their review snippets and editorial
+ * lines and decides which nine pubs make a good night out of them, which is
+ * exactly the judgment the extra thinking buys. The budget has room for it
+ * (`lib/caddy/budget.ts`): a plan is pence against an allowance in pounds.
+ *
+ * Worth a sweep once there are real briefs to sweep against — `xhigh` is
+ * documented as the setting for the hardest agentic work and would be the next
+ * thing to try when the tool loop lands.
+ */
+const EFFORT = "high";
+
+/**
+ * Thinking, stated rather than inherited.
+ *
+ * Adaptive thinking is already what this model does when the field is omitted,
+ * so this changes nothing today — it is here because *which* model is running
+ * is an environment variable (`CADDY_MODEL`), and the default is not uniform
+ * across the family: on Opus 4.8 and 4.7 an omitted `thinking` means no
+ * thinking at all. Leaving it implicit means a one-word env change could
+ * silently turn the caddy's reasoning off.
+ *
+ * `display` is left at its default, which returns the blocks with their text
+ * empty. Nothing here reads the reasoning — the card is the output — and
+ * asking for a summary would be tokens spent on something nobody looks at.
+ */
+const THINKING = { type: "adaptive" } as const;
+
+/**
+ * Room for the thinking *and* the answer, which is one budget rather than two.
+ *
+ * `max_tokens` caps them together, so a limit sized for eighteen dressed holes
+ * alone gets spent on reasoning first and truncates the card — the failure
+ * looks like a short card rather than like a budget problem. Sixteen thousand
+ * is the house guidance for a non-streaming call: enough headroom for a long
+ * think, still inside the SDK's HTTP timeout, and far above what the answer
+ * itself needs.
+ */
+const MAX_TOKENS = 16_000;
 
 /** One turn of the conversation, as the transcript remembers it. */
 export interface CaddyTurnRecord {
@@ -112,6 +145,7 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
       model,
       max_tokens: MAX_TOKENS,
       system: CADDY_SYSTEM,
+      thinking: THINKING,
       output_config: {
         effort: EFFORT,
         format: {

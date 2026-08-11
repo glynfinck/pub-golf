@@ -100,7 +100,10 @@ export const CADDY_SYSTEM = [
   "- Par is how many swigs the drink should take: 2 is a half or a short,",
   "  3 is a spirit and mixer, 4 is a pint, 5 is a pint of something heavy.",
   "- Hazards are the house's three and mean what the club says they mean:",
-  ...HAZARDS.map((hazard) => `  ${hazard.id} — ${hazard.meaning}`),
+  ...HAZARDS.flatMap((hazard) => [
+    `  ${hazard.id} — ${hazard.meaning}`,
+    ...(hazard.drinkRule ? [`    On this hazard the drink must be ${hazard.drinkRule}.`] : []),
+  ]),
   "  Use them on perhaps a third of holes, never on the first.",
   "- A local rule is a small extra forfeit for that pub only. Most holes have",
   "  none.",

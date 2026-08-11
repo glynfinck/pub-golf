@@ -38,6 +38,19 @@ export interface Hazard {
    * decided after it answers (`lib/caddy/route.ts`).
    */
   onFinalHole: boolean;
+  /**
+   * What the drink on this hole has to be, if the hazard constrains it.
+   *
+   * Bunker is "down in one", and a hazard is only a forfeit if the drink can
+   * actually be downed — set it against a pint of ale and it stops being a
+   * challenge and becomes either a dare or a joke, depending on the group. So
+   * a bunker wants a short: something a swig or two finishes.
+   *
+   * Water and dogleg say nothing about what is in the glass — water is about
+   * the toilet and dogleg is about whose glass you end up with — so both leave
+   * the drink to the caddy.
+   */
+  drinkRule: string | null;
 }
 
 export const HAZARDS: Hazard[] = [
@@ -48,6 +61,7 @@ export const HAZARDS: Hazard[] = [
       "The toilet is out of bounds until the hole is filed — hold it, or take the penalty.",
     offence: "Using the toilet on a water hazard",
     onFinalHole: false,
+    drinkRule: null,
   },
   {
     id: "bunker",
@@ -56,6 +70,8 @@ export const HAZARDS: Hazard[] = [
       "Down in one. Every swig after the first is another stroke on your card — a bunker is a hole you get out of, not one you sip.",
     offence: "Not down in one",
     onFinalHole: true,
+    drinkRule:
+      "a short or a half — something that can genuinely go down in one, never a pint of ale",
   },
   {
     id: "dogleg",
@@ -64,6 +80,7 @@ export const HAZARDS: Hazard[] = [
       "You do not drink what you ordered. Everyone hands their glass to the player on their left, and plays whatever arrives.",
     offence: "Drinking before the pass is complete",
     onFinalHole: true,
+    drinkRule: null,
   },
 ];
 

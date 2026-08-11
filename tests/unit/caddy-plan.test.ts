@@ -530,3 +530,25 @@ describe("the last hole", () => {
     ]);
   });
 });
+
+describe("the house rules the caddy is given", () => {
+  it("tells it what a bunker's drink has to be", () => {
+    // "Down in one" against a pint of ale is not a forfeit, it is a dare. The
+    // constraint is a property of the hazard rather than a line in the prompt,
+    // so a fourth hazard has to declare whether it constrains the glass.
+    const bunker = HAZARDS.find((hazard) => hazard.id === "bunker");
+    expect(bunker?.drinkRule).toBeTruthy();
+    expect(CADDY_SYSTEM).toContain(bunker!.drinkRule!);
+  });
+
+  it("leaves the glass alone for hazards that are not about the drink", () => {
+    // Water is about the toilet and dogleg is about whose glass you end up
+    // with; neither has any business dictating what is in it.
+    expect(HAZARDS.find((h) => h.id === "water")?.drinkRule).toBeNull();
+    expect(HAZARDS.find((h) => h.id === "dogleg")?.drinkRule).toBeNull();
+  });
+
+  it("names every hazard it expects the caddy to use", () => {
+    HAZARDS.forEach((hazard) => expect(CADDY_SYSTEM).toContain(hazard.id));
+  });
+});

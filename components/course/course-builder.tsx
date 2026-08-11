@@ -350,7 +350,18 @@ export function CourseBuilder({
           away, so the answer sits here and changes as the card does. Renders
           nothing until there are two pubs with coordinates to draw a leg
           between. */}
-      <RoutePreview stops={holes} />
+      <RoutePreview
+        stops={holes}
+        onOpen={
+          MAPS_BROWSER_KEY
+            ? () => {
+                setPicking(null);
+                setMapQuery("");
+                setMapOpen(true);
+              }
+            : undefined
+        }
+      />
 
       <div>
         <FieldLabel htmlFor="course-name">Course name</FieldLabel>

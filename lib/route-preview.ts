@@ -1,33 +1,23 @@
 /**
- * The route as a shape, projected for drawing.
+ * How to frame the route preview: what it covers, and what shape the box is.
  *
- * A card is a list until you see it on a map, and going to the map is a sheet
- * away — so the drafting table carries a small always-visible drawing of the
- * walk instead. This module is the arithmetic behind it: latitude and longitude
- * in, coordinates in a viewBox out. Pure, because that is the half worth
- * testing; the component that draws it is a few lines of SVG.
+ * The preview is a real map (`components/course/route-preview.tsx`) rather than
+ * a diagram, so this module does not project anything — Google does that. What
+ * is left is the part a map cannot decide for itself: which corner of the world
+ * to fit, and how tall the frame should be.
  *
- * Deliberately not a map. No tiles, no basemap, no browser key, nothing loaded
- * from Google — which also means it can never disagree with Google's terms
- * about where Places results may be drawn, since it draws no Places results.
- * It shows only the pubs the host has actually chosen, numbered in walking
- * order. What it gives up is streets; what it answers is "does this look like a
- * walk or a scatter", which is the question the list cannot answer.
+ * The height is the interesting half. A crawl up one street is long and thin; a
+ * wander round a quarter is square. Forcing both into one fixed box wastes most
+ * of it on the thin one and crops the square one, so the frame takes the
+ * route's own aspect ratio, clamped at both ends so it is never a hairline or a
+ * skyscraper.
  *
- * Two pieces of arithmetic earn their place:
- *
- * **Longitude has to be squashed.** A degree of longitude is a degree of
- * latitude times the cosine of where you are — about 62% of it in London. Plot
- * raw lng against lat and every route comes out stretched east–west, so a
- * straight walk up a street reads as a diagonal. The projection corrects for it
- * at the route's own mean latitude, which is exact enough over the couple of
- * kilometres a crawl covers.
- *
- * **The frame follows the route.** A walk up one street is long and thin; a
- * wander round a quarter is square. Fitting both into a fixed rectangle wastes
- * most of it and shrinks the pins, so the viewBox takes the route's own aspect
- * ratio — clamped, so a perfectly straight crawl does not become a hairline and
- * a north–south one does not become a skyscraper.
+ * That calculation has one trap in it, which this branch has now walked into
+ * three times: **a lat/lng grid is not isotropic.** A degree of longitude is a
+ * degree of latitude times the cosine of where you are — about 62% of it in
+ * London — so a route spanning equal *degrees* each way is markedly taller than
+ * it is wide *on the ground*. Take the raw degree spans as an aspect ratio and
+ * every east–west crawl gets a frame too tall for it.
  */
 
 export interface PreviewStop {
@@ -35,104 +25,101 @@ export interface PreviewStop {
   lng: number | null;
 }
 
-export interface PreviewPoint {
-  x: number;
-  y: number;
-  /** Where this stop sits in the card, so the pin can be numbered. Counts from
-   * 1 and counts *every* hole, including any the projection had to skip. */
+/** A hole that can actually be drawn: a position, and its number on the card. */
+export interface PreviewHole {
+  lat: number;
+  lng: number;
+  /** Counts from 1, and counts *every* hole — including any with no position,
+   * which are absent from the map. A gap is honest; renumbering is not. */
   hole: number;
 }
 
-export interface RoutePreview {
-  /** viewBox width. Fixed — the height is what varies. */
-  width: number;
-  height: number;
-  points: PreviewPoint[];
+export interface PreviewFrame {
+  /** What the map should fit, in the shape `defaultBounds` wants. */
+  bounds: { north: number; south: number; east: number; west: number };
+  /** width ÷ height, for the frame's `aspect-ratio`. */
+  aspect: number;
+  holes: PreviewHole[];
+  /** The number of the final hole, so it can be marked as the finish. */
+  lastHole: number;
 }
-
-/** The viewBox is unitless; the component scales it to whatever width it has.
- * A hundred is a round number to reason about padding in. */
-export const PREVIEW_WIDTH = 100;
-
-/** Room for a pin at the edge of the frame, so a hole on the boundary is not
- * clipped in half. Roughly the pin radius the component draws. */
-export const PREVIEW_PADDING = 9;
-
-/** How tall the frame may get relative to its width. A wide route is capped so
- * a dead-straight east–west crawl keeps enough height to read as a line rather
- * than a rule; a tall one is capped so the preview never dominates the screen
- * it is a preview on. */
-export const MIN_ASPECT = 0.42;
-export const MAX_ASPECT = 1.25;
 
 /**
- * Project a card into a frame, or return null if there is nothing to draw.
+ * How wide the frame may get relative to its height — and note that both ends
+ * are above 1, so the preview is *always* a landscape strip.
  *
- * Stops without coordinates are skipped rather than guessed at — a pub added by
- * name has no position, and inventing one would draw a route that is not the
- * route. Their hole numbers are simply absent from the drawing, which is honest
- * and reads as a gap rather than as a lie.
+ * That is a deliberate override of the route's own shape rather than a
+ * reflection of it. A north–south crawl really is taller than it is wide, and
+ * letting the frame say so would put a portrait map at the top of a phone
+ * screen and push the card it previews below the fold. The preview's job is to
+ * be glanced at on the way past; a tall one stops being a preview and starts
+ * being the page. So a tall route is shown in a wide window, zoomed out enough
+ * to hold it, which is also fine because this is not the map you navigate by —
+ * tapping it opens the sheet that is.
  */
-export function projectRoute(stops: PreviewStop[]): RoutePreview | null {
-  const placed = stops
-    .map((stop, index) => ({ stop, hole: index + 1 }))
-    .filter(
-      (entry): entry is { stop: { lat: number; lng: number }; hole: number } =>
-        entry.stop.lat != null && entry.stop.lng != null,
-    );
-  // One pin is not a route. Two is the shortest thing worth drawing.
-  if (placed.length < 2) return null;
+export const MIN_ASPECT = 1.6;
+export const MAX_ASPECT = 2.6;
 
-  const lats = placed.map((entry) => entry.stop.lat);
-  const lngs = placed.map((entry) => entry.stop.lng);
-  const meanLat = lats.reduce((a, b) => a + b, 0) / lats.length;
-  // The squash. cos of the mean latitude is exact enough across a crawl.
+/**
+ * A minimum span, in degrees of latitude, so a tight cluster is framed as a
+ * neighbourhood rather than as a rooftop. Roughly 400 metres.
+ *
+ * Generous on purpose: a preview does not need detail, and a little too far
+ * out reads as context while a little too close reads as a mistake.
+ */
+export const MIN_SPAN_DEG = 0.0036;
+
+/**
+ * Work out what the preview should show, or return null if there is nothing
+ * worth showing.
+ *
+ * Holes without coordinates are skipped rather than guessed at — a pub added by
+ * name has no position, and inventing one would draw a route that is not the
+ * route. Fewer than two positioned holes is not a walk, and the preview renders
+ * nothing at all rather than an empty frame.
+ */
+export function previewFrame(stops: PreviewStop[]): PreviewFrame | null {
+  const holes: PreviewHole[] = [];
+  stops.forEach((stop, index) => {
+    if (stop.lat != null && stop.lng != null) {
+      holes.push({ lat: stop.lat, lng: stop.lng, hole: index + 1 });
+    }
+  });
+  if (holes.length < 2) return null;
+
+  const lats = holes.map((hole) => hole.lat);
+  const lngs = holes.map((hole) => hole.lng);
+  let north = Math.max(...lats);
+  let south = Math.min(...lats);
+  let east = Math.max(...lngs);
+  let west = Math.min(...lngs);
+
+  // A pinch of room around a route that barely spans anything, so a tight
+  // cluster is framed as a street rather than as a rooftop.
+  const padTo = (low: number, high: number): [number, number] => {
+    const short = MIN_SPAN_DEG - (high - low);
+    if (short <= 0) return [low, high];
+    const half = short / 2;
+    return [low - half, high + half];
+  };
+  [south, north] = padTo(south, north);
+  [west, east] = padTo(west, east);
+
+  // Degrees into something proportional to metres before taking a ratio.
+  const meanLat = (north + south) / 2;
   const squash = Math.cos((meanLat * Math.PI) / 180);
+  const groundWidth = (east - west) * squash;
+  const groundHeight = north - south;
 
-  const xs = lngs.map((lng) => lng * squash);
-  const ys = lats;
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = maxX - minX;
-  const spanY = maxY - minY;
+  const aspect = Math.min(
+    MAX_ASPECT,
+    Math.max(MIN_ASPECT, groundWidth / (groundHeight || groundWidth || 1)),
+  );
 
-  // Every pub on one spot, or a perfectly straight line in one axis. Guarded
-  // rather than divided by: the result is a legible line, not a NaN.
-  const safeSpanX = spanX || spanY || 1;
-  const safeSpanY = spanY || spanX || 1;
-
-  const aspect = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, safeSpanY / safeSpanX));
-  const height = PREVIEW_WIDTH * aspect;
-
-  const innerW = PREVIEW_WIDTH - PREVIEW_PADDING * 2;
-  const innerH = height - PREVIEW_PADDING * 2;
-  // One scale for both axes, so the shape is never distorted to fill the frame
-  // — a route that doubles back must look like it doubles back.
-  const scale = Math.min(innerW / safeSpanX, innerH / safeSpanY);
-  // Whatever the single scale did not use becomes even margin, so the walk sits
-  // centred rather than jammed against the padding.
-  const usedW = safeSpanX * scale;
-  const usedH = safeSpanY * scale;
-  const offsetX = (PREVIEW_WIDTH - usedW) / 2;
-  const offsetY = (height - usedH) / 2;
-
-  const points = placed.map((entry, i) => ({
-    x: offsetX + (xs[i] - minX) * scale,
-    // Screen y grows downward and latitude grows north, so this flips.
-    y: offsetY + (maxY - ys[i]) * scale,
-    hole: entry.hole,
-  }));
-
-  return { width: PREVIEW_WIDTH, height, points };
-}
-
-/** The walking line, as an SVG path. Straight legs on purpose — this is a
- * diagram of the order, not a claim about which streets you take. */
-export function routePath(points: PreviewPoint[]): string {
-  if (!points.length) return "";
-  return points
-    .map((point, i) => `${i === 0 ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(" ");
+  return {
+    bounds: { north, south, east, west },
+    aspect,
+    holes,
+    lastHole: holes[holes.length - 1].hole,
+  };
 }
