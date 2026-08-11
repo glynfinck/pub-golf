@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_FAIR_USE_PER_DAY } from "@/lib/caddy/fair-use";
+import { CADDY_TOPUP_LOOKUP_KEYS, CADDY_TOPUPS } from "@/lib/billing";
 import { CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import { caddyBudgetMicroPence, MODEL_PRICES } from "@/lib/caddy/budget";
 import {
@@ -598,6 +599,58 @@ describe("the ledger: granted, spent, and expired", () => {
       const { data } = await adminClient().rpc("caddy_grant_size", { quota });
       expect(Number(data)).toBe(CADDY_GRANT_SIZE[quota]);
     }
+  });
+
+  it("quotes the same top-up sizes the database grants", async () => {
+    // Three places hold these numbers — lib/billing.ts, caddy_topup_size, and
+    // the Stripe price a host actually pays. This proves the first two agree;
+    // the sandbox tier proves the third does.
+    for (const kind of CADDY_TOPUP_LOOKUP_KEYS) {
+      for (const quota of ["redesign", "tweak"] as const) {
+        const { data } = await adminClient().rpc("caddy_topup_size", { kind, quota });
+        expect(Number(data), `${kind} / ${quota}`).toBe(CADDY_TOPUPS[kind][quota]);
+      }
+    }
+  });
+
+  it("grants a top-up that never expires, and one a fee cannot outlive", async () => {
+    // The whole design in one assertion. A fee's grants carry the pass's
+    // expiry; a top-up's carry none, because cost is incurred at redemption
+    // and an unredeemed round costs nothing to hold.
+    const buyer = await signedInUser("Top-up Buyer");
+    const { data: bought } = await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: buyer.userId,
+        kind: "caddy_topup_3",
+        stripe_event_id: `evt_topup_${randomUUID()}`,
+        // No expiry, which is the entire design: a bought round outlives the
+        // night it was bought on.
+        expires_at: null,
+      })
+      .select("id")
+      .single();
+
+    const { data: grants } = await adminClient()
+      .from("caddy_grants")
+      .select("quota, amount, expires_at, reason")
+      .eq("entitlement_id", bought!.id);
+
+    expect(grants).toHaveLength(2);
+    for (const grant of grants ?? []) {
+      expect(grant.expires_at, "a bought round must not expire").toBeNull();
+      expect(grant.reason).toBe("caddy_topup_3");
+      expect(grant.amount).toBe(
+        CADDY_TOPUPS.caddy_topup_3[grant.quota as "redesign" | "tweak"],
+      );
+    }
+
+    // And it counts: the balance sees it with no fee anywhere in sight.
+    const { data: balance } = await adminClient().rpc("caddy_balance", {
+      who: buyer.userId,
+      quota: "redesign",
+    });
+    expect(Number(balance)).toBe(CADDY_TOPUPS.caddy_topup_3.redesign);
   });
 });
 

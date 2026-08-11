@@ -100,20 +100,70 @@ Spend order already handles the mix correctly and needs no change:
 before a durable top-up does. A host who buys a pack and then buys a fee gets
 the fee's rounds first, which is what they would choose themselves.
 
-Because packs persist, volume is worth pricing again:
+Because packs persist, volume is worth pricing — but only just. Two rungs, not
+three:
 
 | Top-up | Grants | Price | Per round | vs the fee's £3 | Cost | Margin |
 |---|---|---|---|---|---|---|
-| Another round | 1 re-design + 10 tweaks | £4 | £4.00 | +33% | 47p | 82% |
-| A few more | 3 re-designs + 30 tweaks | £11 | £3.67 | +22% | £1.41 | 84% |
-| The full card | 8 re-designs + 80 tweaks | £24 | £3.00 | level | £3.76 | 82% |
+| **Another round** | 1 re-design + 10 tweaks | **£5** | £5.00 | +67% | 47p | 85% |
+| **A few more rounds** | 3 re-designs + 30 tweaks | **£12** | £4.00 | +33% | £1.41 | 85% |
 
-Never below the fee's £3, so the bundle stays the best rate anyone can get.
-Stripe's fixed 20p is why the floor is £4 and why there is no £1 rung.
+Priced well clear of the fee's rate rather than just above it. An earlier draft
+opened at £4 — a third over the fee's £3 — and that is too close: a top-up
+barely dearer than the bundle makes the bundle look like a rounding error
+rather than the deal. At £5 and £4 a round the fee is obviously the thing to
+buy, and a top-up reads as the convenience it is.
 
-The fee's own cost to serve rises with the fourth round: 4 × 27p + 60 × 2p =
-**£2.28 of £12**, or 19%. Comfortable, and worth re-checking against the ledger
-rather than against this table once real tweaks have actually been observed.
+£12 for the three-pack is deliberately the same sticker as a whole green fee.
+At one price a host sees three rounds they keep for ever against four that
+expire tonight, and the comparison does the selling without a word of copy.
+
+Stripe's fixed 20p is why there is no £1 rung and why the floor sits where it
+does. Margins hold at 85% on both.
+
+A third rung was drawn and then cut. Eight rounds at £24 priced a spreadsheet
+row rather than a customer: demand here is lopsided — most hosts need no
+top-up at all, some need one, and essentially nobody needs eight in a life,
+let alone a night. Asking a £12 customer to consider a £24 purchase makes the
+whole tariff read as a pricing page, which is the one thing the covenant's
+"one honest tariff" is against. If real demand ever shows a tail, the rung can
+come back; inventing it first is how a bar board turns into a menu.
+
+## Where money is allowed to speak
+
+The harder half of this design, and the half a price table hides.
+
+The covenant permits money at two moments: round creation and the results
+afterglow. No guilt declines, no countdown clocks. A "you have run out of
+rounds" upsell is a **third** moment, and waving that through would make the
+covenant decoration.
+
+It survives on a distinction worth stating precisely: the covenant forbids
+money **interrupting**, not money **answering**. A host who has just asked for
+a fifth course and been refused is not being sold at — they are being told what
+their options are, and concealing the option at exactly the moment it is
+relevant would be the worse failure. Refusal without a way forward is not
+restraint, it is a wall.
+
+So the rule, and it is the load-bearing part of this section:
+
+- The offer appears **only in response to an action the host took** — a plan
+  that could not run. Never on arrival, never on the drafting table, never
+  beside a course that is working fine.
+- It appears **once**, in the refusal itself. It is not a banner that persists,
+  and it does not return on the next screen.
+- The free path is **named first**. `CADDY_CREDITS_SPENT` already does this —
+  every course is yours to keep and change, and plotting one by hand is free as
+  always — and the top-up is the quieter second line, not the headline.
+- No count in the refusal, no scarcity, no clock. The number lives on the
+  drafting table *before* it is spent, where it is useful; repeating it inside
+  a refusal is how a tariff turns into a scolding.
+
+The balance a host sees does **not** distinguish a fee's rounds from a bought
+one. `CaddyUsage` reads a single total, because "4 courses left" is the fact
+and which grant it will come off is bookkeeping. That also keeps the copy
+honest as the mix changes — "left on this fee" stops being true the moment a
+durable pack exists behind it, so that phrasing goes.
 
 ## How it lands in the schema
 

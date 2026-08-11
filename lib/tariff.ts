@@ -1,4 +1,4 @@
-import { GREEN_FEE_LOOKUP_KEY } from "@/lib/billing";
+import { CADDY_TOPUP_LOOKUP_KEYS, GREEN_FEE_LOOKUP_KEY } from "@/lib/billing";
 
 /**
  * The tariff, as data: what each price object holds in Stripe, in every
@@ -18,6 +18,30 @@ export const TARIFF = {
     // ladder is the launch one scaled by exactly 3, which keeps whatever
     // reasoning set the original spreads and lands every currency on a round
     // number — a bar board has no 14.99 on it.
+    amounts: { gbp: 1200, usd: 1500, eur: 1500, cad: 2100, aud: 2400 },
+  },
+  /**
+   * More caddy, and the only thing on this board that does not expire.
+   *
+   * Priced well clear of the fee's own rate rather than just above it. The fee
+   * is £3 a round; these are £5 and £4, so buying the bundle is obviously the
+   * better deal and a top-up reads as the convenience it is. A floor that only
+   * just clears the fee makes the fee look like a rounding error.
+   *
+   * £12 for the three-pack is the same sticker as a whole green fee, and that
+   * is the point: at one price a host sees three rounds they keep for ever
+   * against four that expire tonight. The comparison does the selling.
+   */
+  caddyTopupOne: {
+    lookupKey: CADDY_TOPUP_LOOKUP_KEYS[0],
+    productName: "Another round",
+    taxCode: "txcd_10103000",
+    amounts: { gbp: 500, usd: 600, eur: 600, cad: 900, aud: 1000 },
+  },
+  caddyTopupThree: {
+    lookupKey: CADDY_TOPUP_LOOKUP_KEYS[1],
+    productName: "A few more rounds",
+    taxCode: "txcd_10103000",
     amounts: { gbp: 1200, usd: 1500, eur: 1500, cad: 2100, aud: 2400 },
   },
   honestyBox: {

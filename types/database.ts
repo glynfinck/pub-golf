@@ -867,6 +867,10 @@ export type Database = {
         }[]
       }
       caddy_balance: { Args: { quota: string; who: string }; Returns: number }
+      caddy_topup_size: {
+        Args: { kind: string; quota: string }
+        Returns: number
+      }
       caddy_grant_size: { Args: { quota: string }; Returns: number }
       caddy_next_grant: { Args: { quota: string; who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }

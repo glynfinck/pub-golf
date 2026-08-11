@@ -4,6 +4,33 @@ import type Stripe from "stripe";
  * under the same keys, so code never branches on environment. */
 export const GREEN_FEE_LOOKUP_KEY = "green_fee";
 
+/**
+ * More caddy, for a host whose fee has planned everything it holds.
+ *
+ * Two rungs and no third. Demand here is lopsided — most hosts need none,
+ * some need one — and a third rung turns one honest tariff into a pricing
+ * page. See docs/CADDY-TOPUPS.md for the arithmetic and for why neither
+ * undercuts the fee's own £3 a round.
+ *
+ * The lookup key is also the entitlement `kind` and the reason stamped on the
+ * grants, so one string identifies the purchase from Stripe through to the
+ * ledger row. Add a rung here, add it to `CADDY_TOPUPS` and to
+ * `caddy_topup_size()`, or it sells and grants nothing.
+ */
+export const CADDY_TOPUP_LOOKUP_KEYS = ["caddy_topup_1", "caddy_topup_3"] as const;
+export type CaddyTopupKey = (typeof CADDY_TOPUP_LOOKUP_KEYS)[number];
+
+/** What each rung grants, mirrored from `public.caddy_topup_size()` and proved
+ * equal by a db test. Durable on purpose: these carry no expiry, because cost
+ * is incurred at redemption and an unredeemed round costs nothing to hold. */
+export const CADDY_TOPUPS: Record<
+  CaddyTopupKey,
+  { redesign: number; tweak: number }
+> = {
+  caddy_topup_1: { redesign: 1, tweak: 10 },
+  caddy_topup_3: { redesign: 3, tweak: 30 },
+};
+
 /** Billing is off until the key exists — the maps-key pattern: no secret,
  * no surface, and nothing on screen mentions money. */
 export function billingEnabled(secretKey: string | undefined): boolean {
