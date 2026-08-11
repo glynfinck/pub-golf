@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
+import { RoutePreview } from "@/components/course/route-preview";
 import { HoleEditor, type MoveDirection } from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { PubMapSheet } from "@/components/course/pub-map-sheet";
@@ -343,6 +344,13 @@ export function CourseBuilder({
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
+
+      {/* The shape of the walk, above everything and always on. A list cannot
+          answer "is this a walk or a scatter?" and the map sheet is a tap
+          away, so the answer sits here and changes as the card does. Renders
+          nothing until there are two pubs with coordinates to draw a leg
+          between. */}
+      <RoutePreview stops={holes} />
 
       <div>
         <FieldLabel htmlFor="course-name">Course name</FieldLabel>
