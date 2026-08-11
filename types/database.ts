@@ -137,18 +137,21 @@ export type Database = {
       }
       courses: {
         Row: {
+          archived_at: string | null
           created_at: string
           id: string
           name: string
           owner: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           name: string
           owner: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           name?: string
@@ -160,6 +163,52 @@ export type Database = {
             columns: ["owner"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      caddy_credits: {
+        Row: {
+          created_at: string
+          entitlement_id: string
+          host: string
+          id: string
+          session_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          entitlement_id: string
+          host?: string
+          id?: string
+          session_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          entitlement_id?: string
+          host?: string
+          id?: string
+          session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caddy_credits_entitlement_id_fkey"
+            columns: ["entitlement_id"]
+            isOneToOne: false
+            referencedRelation: "entitlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_credits_host_fkey"
+            columns: ["host"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_credits_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "caddy_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -803,6 +852,8 @@ export type Database = {
           seat_id: string
         }[]
       }
+      caddy_courses_per_fee: { Args: Record<PropertyKey, never>; Returns: number }
+      caddy_credits_left: { Args: { who: string }; Returns: number }
       caddy_unspent_fee: { Args: { who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {

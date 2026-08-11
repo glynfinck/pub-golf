@@ -271,3 +271,38 @@ export async function copyCuratedCourse(
   revalidatePath("/courses");
   return { id: copy.id };
 }
+
+/**
+ * Put a course to the back of the book, or bring it forward again.
+ *
+ * The soft half of tearing out, and it exists because a caddy-planned course
+ * costs a credit that deleting does not give back. Losing the course *and* the
+ * credit from a button whose affordance is "undoable-ish" is not a trade
+ * anybody agreed to — hold-to-confirm is a speed bump, not a receipt.
+ *
+ * Ordinary owner update: `courses` already scopes writes to its owner, so this
+ * needs no door of its own, and RLS filtering the row out returns no error and
+ * no rows exactly as it does everywhere else.
+ */
+export async function archiveCourse(
+  courseId: string,
+  archived: boolean,
+): Promise<CourseActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/signin");
+
+  const { data, error } = await supabase
+    .from("courses")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", courseId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "That course isn't in your book." };
+
+  revalidatePath("/courses");
+  return {};
+}

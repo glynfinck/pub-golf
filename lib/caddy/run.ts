@@ -81,6 +81,11 @@ const NEEDS_FEE = "The caddy comes with the green fee.";
  * names the two ways on, both of which are free, and leaves buying another to
  * the host's own idea.
  */
+/** The pass ran out while a conversation was still open on the table. Warm,
+ * because they did nothing wrong — the day simply ended — and it names the two
+ * things that are still theirs. */
+const PASS_RAN_OUT =
+  "Your green fee's day is over. Every course it planned is still yours to change, and plotting one by hand is free as always.";
 const SPENT_FEE =
   "Your course is already in the book — the caddy plans one to a fee. Change it as much as you like, or tear it out and the caddy will plan you another.";
 const THIN_PATCH =
@@ -398,6 +403,15 @@ export async function askTheCaddy(input: {
   if (!brief || !Array.isArray(candidates) || !candidates.length) {
     return { error: "That patch has been put away. Plan a fresh one." };
   }
+
+  // The fee has to still be running. This was missing, and it was the credit
+  // outliving its own day: a session opened at eleven at night is resumable
+  // for twelve hours, so a host could keep rolling *entirely new cards* long
+  // after the pass had run out. Rolls are free within a paid session — they
+  // are not free within an expired one, because then the day boundary buys
+  // nothing.
+  const { data: covered } = await supabase.rpc("holds_day_pass", { who: user.id });
+  if (covered !== true) return { error: PASS_RAN_OUT };
 
   // Cards only. A failed turn is a real row — it carries what the attempt cost
   // — but its `result` is empty, and replaying an empty card into the

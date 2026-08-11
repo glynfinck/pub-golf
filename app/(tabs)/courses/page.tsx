@@ -22,6 +22,9 @@ export default async function CoursesPage() {
       <RuleDouble head />
       <ScreenHeader eyebrow="The course book" title="Your courses" />
 
+      {/* "Nothing of your own in the book" has to mean the live ones — a host
+          whose only course is put away is not starting from scratch, and
+          telling them so would hide the drawer that has it. */}
       {courses.length > 0 ? (
         <CoursesList courses={courses} />
       ) : (

@@ -20,6 +20,8 @@ export interface MyCourse {
    * which. Delete the wrong one and nothing is freed.
    */
   byCaddy: boolean;
+  /** Put to the back of the book rather than torn out. */
+  archived: boolean;
 }
 
 /** The viewer's saved courses, newest first. */
@@ -33,7 +35,7 @@ export async function getMyCourses(): Promise<MyCourse[]> {
   const [{ data }, { data: planned }] = await Promise.all([
     supabase
       .from("courses")
-      .select("id, name, created_at, course_holes(par, walk_minutes_to_next)")
+      .select("id, name, created_at, archived_at, course_holes(par, walk_minutes_to_next)")
       .order("created_at", { ascending: false }),
     // Which courses came off the caddy, read from the sessions that filed
     // them rather than from a flag on the course. There is no second copy of
@@ -47,6 +49,7 @@ export async function getMyCourses(): Promise<MyCourse[]> {
     name: course.name,
     created_at: course.created_at,
     byCaddy: byCaddy.has(course.id),
+    archived: course.archived_at != null,
     hole_count: course.course_holes.length,
     par: course.course_holes.reduce((sum, hole) => sum + hole.par, 0),
     walk_minutes: course.course_holes.reduce(

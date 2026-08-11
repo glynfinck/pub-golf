@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_FAIR_USE_PER_DAY } from "@/lib/caddy/fair-use";
+import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
 import { caddyBudgetMicroPence, MODEL_PRICES } from "@/lib/caddy/budget";
 import {
   adminClient,
@@ -438,129 +439,142 @@ describe("the course a session filed", () => {
   });
 });
 
-describe("a fee buys one course, and tearing it out buys the next", () => {
+describe("a fee buys a counted number of courses", () => {
   let host: Actor;
   let feeId: string;
+  let sessionId: string;
 
-  async function seedCourse(owner: Actor, name = "The Shoreditch Nine") {
-    const { data, error } = await adminClient()
-      .from("courses")
-      .insert({ owner: owner.userId, name })
-      .select("id")
-      .single();
-    if (error) throw error;
-    return data.id;
+  async function creditsOn(entitlement: string) {
+    const { count } = await adminClient()
+      .from("caddy_credits")
+      .select("id", { count: "exact", head: true })
+      .eq("entitlement_id", entitlement);
+    return count ?? 0;
   }
 
-  async function fileCourse(session: string, courseId: string) {
-    return host.db
-      .from("caddy_sessions")
-      .update({ course_id: courseId })
-      .eq("id", session);
+  /** A plan that produced a card — the only thing that spends a credit. */
+  function planTurn(session: string) {
+    return turnRow(host, session, { kind: "plan" });
   }
 
   beforeEach(async () => {
-    host = await signedInUser("Allowance Host");
+    host = await signedInUser("Credit Host");
     feeId = await seedFee(host);
+    sessionId = await seedSession(host, feeId);
   });
 
-  it("lets the first course through", async () => {
-    const session = await seedSession(host, feeId);
-    const { error } = await fileCourse(session, await seedCourse(host));
+  it("spends one when a plan produces a card", async () => {
+    const { error } = await host.db.from("caddy_turns").insert(planTurn(sessionId));
     expect(error).toBeNull();
+    expect(await creditsOn(feeId)).toBe(1);
   });
 
-  it("refuses a second course on the same fee", async () => {
-    // The hole this closes: twenty-four hours of caddy meant Shoreditch, then
-    // Soho, then Camden, keeping all three. Unbounded output for a fixed
-    // price — and neither the budget nor fair use catches it, because both
-    // bound tokens rather than what somebody unhurried walks away with.
-    const first = await seedSession(host, feeId);
-    await fileCourse(first, await seedCourse(host, "The First"));
-
-    const second = await seedSession(host, feeId);
-    const { error } = await fileCourse(second, await seedCourse(host, "The Second"));
-    expectDenied(error);
+  it("spends none on a roll or a tweak", async () => {
+    // They belong to a session that has already paid. What bounds them is the
+    // budget and fair use, both of which count tokens rather than courses —
+    // worry one course all evening, free.
+    await host.db.from("caddy_turns").insert(planTurn(sessionId));
+    await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "roll" }));
+    await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "tweak" }));
+    expect(await creditsOn(feeId)).toBe(1);
   });
 
-  it("frees the fee when the course is torn out of the book", async () => {
-    // No bookkeeping and nothing to clean up: `on delete set null` (20260827)
-    // nulls the link, and the fee is unspent by the same fact that made it
-    // spent. Plan, look, dislike it, delete, plan again — all day.
-    const first = await seedSession(host, feeId);
-    const courseId = await seedCourse(host, "The Regrettable");
-    await fileCourse(first, courseId);
+  it("spends none on a plan that failed", async () => {
+    // The same promise the `failed` column keeps for money: the vendor billed
+    // us, the host owes nothing. No card, no credit.
+    await host.db
+      .from("caddy_turns")
+      .insert(turnRow(host, sessionId, { kind: "plan", failed: true, result: {} }));
+    expect(await creditsOn(feeId)).toBe(0);
+  });
+
+  it("refuses the plan after the last course on the fee", async () => {
+    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
+      const session = await seedSession(host, feeId);
+      const { error } = await host.db.from("caddy_turns").insert(planTurn(session));
+      expect(error).toBeNull();
+    }
+    const oneMore = await seedSession(host, feeId);
+    expectDenied(await host.db.from("caddy_turns").insert(planTurn(oneMore)).then((r) => r.error));
+    expect(await creditsOn(feeId)).toBe(CADDY_COURSES_PER_FEE);
+  });
+
+  it("does not give a credit back when the course is torn out", async () => {
+    // The whole difference from the holdings rule this replaced. The caddy did
+    // the work and we paid for it; deleting the result does not undo either.
+    const courseId = await (async () => {
+      const { data } = await adminClient()
+        .from("courses")
+        .insert({ owner: host.userId, name: "The Regrettable" })
+        .select("id")
+        .single();
+      return data!.id;
+    })();
+    await host.db.from("caddy_turns").insert(planTurn(sessionId));
+    await host.db.from("caddy_sessions").update({ course_id: courseId }).eq("id", sessionId);
     await adminClient().from("courses").delete().eq("id", courseId);
 
-    const second = await seedSession(host, feeId);
-    const { error } = await fileCourse(second, await seedCourse(host, "The Better One"));
-    expect(error).toBeNull();
+    expect(await creditsOn(feeId)).toBe(1);
   });
 
-  it("gives a second fee its own course", async () => {
-    // "Unless they want to buy more" has to actually work, and it only does
-    // because the allowance is keyed on the entitlement rather than the host.
-    const another = await seedFee(host);
-    const first = await seedSession(host, feeId);
-    await fileCourse(first, await seedCourse(host, "Fee One"));
-
-    const second = await seedSession(host, another);
-    const { error } = await fileCourse(second, await seedCourse(host, "Fee Two"));
-    expect(error).toBeNull();
-  });
-
-  it("never takes back a course already in the book", async () => {
-    // Not a clawback: the guard refuses a new stamp and never touches an
-    // existing one, so deploying it cannot remove anything a host already has.
-    const first = await seedSession(host, feeId);
-    const courseId = await seedCourse(host, "Already Mine");
-    await fileCourse(first, courseId);
-
-    const second = await seedSession(host, feeId);
-    await fileCourse(second, await seedCourse(host, "Refused"));
-
-    const { data } = await adminClient()
-      .from("caddy_sessions")
-      .select("course_id")
-      .eq("id", first)
-      .maybeSingle();
-    expect(data?.course_id).toBe(courseId);
-  });
-
-  it("still lets a session that has spent the fee be closed", async () => {
-    // The guard is about claiming a course. Closing a session and dropping its
-    // dossier must stay possible, or a host's last act on their one course
-    // would fail.
-    const session = await seedSession(host, feeId);
-    await fileCourse(session, await seedCourse(host));
-    const { error } = await host.db
-      .from("caddy_sessions")
-      .update({ completed_at: new Date().toISOString(), dossier: [] })
-      .eq("id", session);
-    expect(error).toBeNull();
-  });
-
-  it("offers an unspent fee, and stops offering a spent one", async () => {
-    // The app and the trigger answer the same question and must agree: this
-    // picks the fee to work under, the trigger decides whether the stamp is
-    // allowed. Disagreement is a host who is told to go ahead and then refused.
-    const before = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
-    expect(before.data).toBe(feeId);
-
-    const session = await seedSession(host, feeId);
-    await fileCourse(session, await seedCourse(host));
-
-    const after = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
-    expect(after.data).toBeNull();
-  });
-
-  it("does not offer an expired fee, spent or not", async () => {
+  it("locks an unused credit once the day is over", async () => {
+    // "This even applies if the user hasn't created anything yet" — a credit
+    // that outlived its pass would be an indefinite one, which is the whole
+    // thing the day boundary exists to prevent.
     await adminClient()
       .from("entitlements")
       .update({ expires_at: new Date(Date.now() - HOUR).toISOString() })
       .eq("id", feeId);
+    expectDenied(
+      await host.db.from("caddy_turns").insert(planTurn(sessionId)).then((r) => r.error),
+    );
+    expect(await creditsOn(feeId)).toBe(0);
+  });
+
+  it("gives a second fee its own courses", async () => {
+    const another = await seedFee(host);
+    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
+      await host.db.from("caddy_turns").insert(planTurn(await seedSession(host, feeId)));
+    }
+    const fresh = await seedSession(host, another);
+    const { error } = await host.db.from("caddy_turns").insert(planTurn(fresh));
+    expect(error).toBeNull();
+  });
+
+  it("cannot be granted by the host it charges", async () => {
+    // No insert policy at all: the trigger is the only author, which is what
+    // makes a credit something that happens *to* a host rather than something
+    // they can decline to record — or mint.
+    const { error } = await host.db
+      .from("caddy_credits")
+      .insert({ entitlement_id: feeId, host: host.userId });
+    expectDenied(error);
+  });
+
+  it("counts down on screen the way it counts down in Postgres", async () => {
+    // The app and the database answer the same question in two places, and a
+    // number the screen misquotes is a host told they have something they do
+    // not.
+    const before = await adminClient().rpc("caddy_credits_left", { who: host.userId });
+    expect(Number(before.data)).toBe(CADDY_COURSES_PER_FEE);
+
+    await host.db.from("caddy_turns").insert(planTurn(sessionId));
+
+    const after = await adminClient().rpc("caddy_credits_left", { who: host.userId });
+    expect(Number(after.data)).toBe(CADDY_COURSES_PER_FEE - 1);
+  });
+
+  it("stops offering a fee once its last course is gone", async () => {
+    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
+      await host.db.from("caddy_turns").insert(planTurn(await seedSession(host, feeId)));
+    }
     const { data } = await adminClient().rpc("caddy_unspent_fee", { who: host.userId });
     expect(data).toBeNull();
+  });
+
+  it("keeps the number the app quotes equal to the database's own", async () => {
+    const { data } = await adminClient().rpc("caddy_courses_per_fee");
+    expect(Number(data)).toBe(CADDY_COURSES_PER_FEE);
   });
 });
 

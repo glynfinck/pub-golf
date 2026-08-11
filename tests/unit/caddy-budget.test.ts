@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CADDY_COURSES_PER_FEE,
+  coursesLeftNote,
+} from "@/lib/caddy/credits";
+import {
   CADDY_BUDGET_NOTE,
   CADDY_BUDGET_SHARE,
   CADDY_CONVERSATION_SHARE,
@@ -258,5 +262,31 @@ describe("summing a tool loop into one bill", () => {
 
   it("leaves a loop of one exactly where a single call already was", () => {
     expect(sumUsage([call()])).toEqual(call());
+  });
+});
+
+describe("what a fee buys, counted", () => {
+  it("buys more than one course, and not so many it stops meaning anything", () => {
+    // The number is a product decision, not arithmetic — this only holds it
+    // inside the range where it is still a fee for a night out rather than a
+    // subscription. `tests/db` proves it equals the database's own copy.
+    expect(CADDY_COURSES_PER_FEE).toBeGreaterThan(1);
+    expect(CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(10);
+  });
+
+  it("can afford every course it sells", () => {
+    // The credit ceiling and the money ceiling have to agree: selling three
+    // courses on a budget that funds two is a host refused mid-fee by a
+    // number nobody told them about. A plan is roughly a conversation's cap.
+    const perPlan = conversationCapMicroPence();
+    expect(perPlan * CADDY_COURSES_PER_FEE).toBeLessThanOrEqual(
+      caddyBudgetMicroPence(),
+    );
+  });
+
+  it("says how many are left in words, never as a bare digit", () => {
+    expect(coursesLeftNote(0)).toMatch(/no courses left/i);
+    expect(coursesLeftNote(1)).toMatch(/one course left/i);
+    expect(coursesLeftNote(3)).toMatch(/^3 courses left/i);
   });
 });
