@@ -1,4 +1,8 @@
-import { haversineKm, kmForWalkMinutes } from "@/lib/geo";
+import {
+  haversineKm,
+  kmForWalkMinutes,
+  WALK_MINUTES_PER_KM,
+} from "@/lib/geo";
 
 /**
  * The walking order, decided by arithmetic rather than by the model.
@@ -331,4 +335,90 @@ export function orderWalk<T extends WalkStop>(
     out[slots[i]] = routable[from];
   });
   return out;
+}
+
+// ————————————————— what the caddy gets to see —————————————————
+
+/** One leg of a trial route, in the terms the brief is actually written in. */
+export interface TrialLeg {
+  from: string;
+  to: string;
+  minutes: number;
+  /** Under the host's minimum comfortable walk. */
+  short: boolean;
+}
+
+/** A proposed set of pubs, routed and measured. */
+export interface RouteTrial {
+  /** The ids in walking order — which is *not* the order they were offered
+   * in, and is the first thing worth reading. */
+  order: string[];
+  legs: TrialLeg[];
+  totalMinutes: number;
+  /** How many legs came in under the minimum. */
+  shortLegs: number;
+  /** The longest run of consecutive short legs — three pubs on one corner
+   * shows up here as 2 and nowhere else, which is exactly the complaint that
+   * put the spacing rules in. */
+  worstRun: number;
+  /** Ids that could not be routed because nothing knows where they are. They
+   * keep their slot and are excluded from every measurement above. */
+  unplaced: string[];
+}
+
+/**
+ * Route a proposed card and hand back what it actually walks like.
+ *
+ * This exists because of an asymmetry that was quietly costing every card:
+ * `orderWalk` runs *after* the caddy has answered, so every spacing rule in
+ * the brief — minimum leg, no three on one corner, the shape of the night —
+ * was enforced downstream of the decision that determines it. The caddy was
+ * told "spread out" in prose and never got to check whether it had. The
+ * penalty weights in `routeCost` exist to repair picks the model could not
+ * evaluate.
+ *
+ * Given to the caddy as a tool, this closes that loop: propose, measure,
+ * revise. And it measures rather than judges — legs in minutes, a count of
+ * short ones, the worst run — because a number is something a model can tell
+ * it has improved, and "is this a good walk" is not.
+ *
+ * The routing is the same `orderWalk` the finished card goes through, so a
+ * trial is a promise rather than an estimate: what it reports is what the
+ * host will get.
+ */
+export function tryRoute<T extends WalkStop & { id: string }>(
+  stops: T[],
+  pins: WalkPins = {},
+): RouteTrial {
+  const ordered = orderWalk(stops, pins);
+  const minKm = kmForWalkMinutes(Math.max(0, pins.minLegMinutes ?? 0));
+  const legs: TrialLeg[] = [];
+  let worstRun = 0;
+  let run = 0;
+
+  const closing = pins.shape === "loop" && ordered.length > 2;
+  const pairs = ordered.slice(1).map((stop, index) => [ordered[index], stop] as const);
+  if (closing) pairs.push([ordered[ordered.length - 1], ordered[0]] as const);
+
+  pairs.forEach(([from, to]) => {
+    const km = legKm(from, to);
+    const short = minKm > 0 && km < minKm;
+    legs.push({
+      from: from.id,
+      to: to.id,
+      minutes: Math.max(1, Math.round(km * WALK_MINUTES_PER_KM)),
+      short,
+    });
+    run = short ? run + 1 : 0;
+    if (run > worstRun) worstRun = run;
+  });
+
+  return {
+    order: ordered.map((stop) => stop.id),
+    legs,
+    totalMinutes: legs.reduce((total, leg) => total + leg.minutes, 0),
+    shortLegs: legs.filter((leg) => leg.short).length,
+    worstRun,
+    unplaced: ordered.filter((stop) => !placed(stop)).map((stop) => stop.id),
+  };
 }

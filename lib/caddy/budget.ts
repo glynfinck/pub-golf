@@ -116,6 +116,21 @@ export function readUsage(raw: unknown): CaddyUsage {
   };
 }
 
+/**
+ * Two calls' usage, added.
+ *
+ * Load-bearing the moment the caddy runs a tool loop. One *plan* is one thing
+ * the host asked for and must stay one `caddy_turns` row, but it is now many
+ * calls to the model — search, look, route, fix, look again. Write a row per
+ * call and a single plan burns the fair-use ceiling a dozen times over, and
+ * the host meets a wall they never went near.
+ *
+ * Adding rather than replacing also matters for what it costs: every call in a
+ * loop after the first is mostly cache *reads* of the same dossier, an order
+ * of magnitude cheaper than the write that seeded it — so a total that kept
+ * only the last call's usage would price a twelve-turn plan as a one-turn one,
+ * in the direction that undercharges.
+ */
 export function addUsage(a: CaddyUsage, b: CaddyUsage): CaddyUsage {
   return {
     input: a.input + b.input,
@@ -220,3 +235,8 @@ export function withinBudget(spentMicroPence: number, budgetMicroPence: number):
  */
 export const CADDY_BUDGET_NOTE =
   "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
+
+/** Every call in one loop, as one bill. */
+export function sumUsage(all: CaddyUsage[]): CaddyUsage {
+  return all.reduce(addUsage, { ...NO_USAGE });
+}

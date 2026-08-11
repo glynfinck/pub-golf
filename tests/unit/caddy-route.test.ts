@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { orderWalk, walkKm, type WalkStop } from "@/lib/caddy/route";
+import {
+  orderWalk,
+  tryRoute,
+  type WalkStop,
+  walkKm,
+} from "@/lib/caddy/route";
 import { WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
@@ -219,5 +224,89 @@ describe("minimum leg", () => {
     const walked = orderWalk(dense, { minLegMinutes: 10 });
     expect(walked).toHaveLength(4);
     expect(new Set(walked).size).toBe(4);
+  });
+});
+
+describe("tryRoute — what the caddy gets to see before it commits", () => {
+  /** A grid of pubs, roughly 220m per step east and 330m per step north. */
+  const pub = (id: string, x: number, y: number) => ({
+    id,
+    lat: 51.5 + y * 0.003,
+    lng: -0.08 + x * 0.003,
+  });
+
+  it("reports the walking order, which is not the order it was handed", () => {
+    // The whole reason this tool exists: the caddy proposes a set, and the
+    // club's own router decides the sequence. Before this it found that out
+    // after answering, which is to say never.
+    const trial = tryRoute([pub("p1", 0, 0), pub("p2", 8, 0), pub("p3", 1, 0)]);
+    expect(trial.order).toHaveLength(3);
+    expect(new Set(trial.order)).toEqual(new Set(["p1", "p2", "p3"]));
+    expect(trial.order).not.toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("measures in the units the brief is written in", () => {
+    // The host sets a minimum walk in minutes, so the answer comes back in
+    // minutes. A caddy asked to fix "0.42 km" against a five-minute rule is
+    // being asked to do arithmetic instead of judgment.
+    const trial = tryRoute([pub("p1", 0, 0), pub("p2", 10, 0)]);
+    expect(trial.legs).toHaveLength(1);
+    expect(trial.legs[0].minutes).toBeGreaterThan(0);
+    expect(trial.totalMinutes).toBe(trial.legs[0].minutes);
+  });
+
+  it("names three pubs on one corner as a run, not as three separate niggles", () => {
+    // The complaint that started the spacing work — "it did 3 pubs all right
+    // next to each other". One short leg is a shortcut; two in a row is a
+    // huddle, and only `worstRun` can tell them apart.
+    const huddle = tryRoute(
+      [pub("p1", 0, 0), pub("p2", 0.2, 0), pub("p3", 0.4, 0), pub("p4", 20, 0)],
+      { minLegMinutes: 5 },
+    );
+    expect(huddle.shortLegs).toBeGreaterThanOrEqual(2);
+    expect(huddle.worstRun).toBeGreaterThanOrEqual(2);
+
+    const spaced = tryRoute(
+      [pub("p1", 0, 0), pub("p2", 8, 0), pub("p3", 16, 0), pub("p4", 24, 0)],
+      { minLegMinutes: 5 },
+    );
+    expect(spaced.shortLegs).toBe(0);
+    expect(spaced.worstRun).toBe(0);
+  });
+
+  it("counts the walk home on a loop and not on a path", () => {
+    const stops = [pub("p1", 0, 0), pub("p2", 6, 0), pub("p3", 6, 6)];
+    const path = tryRoute(stops, { shape: "path" });
+    const loop = tryRoute(stops, { shape: "loop" });
+    expect(loop.legs).toHaveLength(path.legs.length + 1);
+    expect(loop.totalMinutes).toBeGreaterThan(path.totalMinutes);
+  });
+
+  it("says which pubs it could not place rather than quietly dropping them", () => {
+    const trial = tryRoute([
+      pub("p1", 0, 0),
+      { id: "p2", lat: null, lng: null },
+      pub("p3", 6, 0),
+    ]);
+    expect(trial.unplaced).toEqual(["p2"]);
+    expect(trial.order).toContain("p2");
+  });
+
+  it("promises what the finished card will actually walk like", () => {
+    // A trial that routed differently from the real thing would be worse than
+    // no trial: the caddy would optimise against a walk nobody takes.
+    const stops = [pub("p1", 0, 0), pub("p2", 9, 2), pub("p3", 3, 7), pub("p4", 7, 1)];
+    const pins = { minLegMinutes: 5 } as const;
+    expect(tryRoute(stops, pins).order).toEqual(
+      orderWalk(stops, pins).map((stop) => stop.id),
+    );
+  });
+
+  it("turns spacing off when the host asked for none", () => {
+    const doorstep = tryRoute([pub("p1", 0, 0), pub("p2", 0.2, 0)], {
+      minLegMinutes: 0,
+    });
+    expect(doorstep.shortLegs).toBe(0);
+    expect(doorstep.worstRun).toBe(0);
   });
 });
