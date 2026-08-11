@@ -23,6 +23,21 @@ export interface Hazard {
   meaning: string;
   /** The offence it exists to price, matching the house penalty table. */
   offence: string;
+  /**
+   * May this hazard sit on the final hole?
+   *
+   * Only water may not, and the reason is what actually happens at the end of
+   * a crawl: the group stops walking and settles in. Water is the one hazard
+   * whose relief is deferred — the toilet is out of bounds *until the hole is
+   * filed* — so on a hole nobody ever leaves it stops being a forfeit and
+   * becomes an hour of discomfort. Bunker and dogleg both resolve on the
+   * drink itself, so they make perfectly good finales.
+   *
+   * Enforced in `parsePlan` rather than only asked for in the prompt, because
+   * the caddy cannot know which hole ends up last: the walking order is
+   * decided after it answers (`lib/caddy/route.ts`).
+   */
+  onFinalHole: boolean;
 }
 
 export const HAZARDS: Hazard[] = [
@@ -32,6 +47,7 @@ export const HAZARDS: Hazard[] = [
     meaning:
       "The toilet is out of bounds until the hole is filed — hold it, or take the penalty.",
     offence: "Using the toilet on a water hazard",
+    onFinalHole: false,
   },
   {
     id: "bunker",
@@ -39,6 +55,7 @@ export const HAZARDS: Hazard[] = [
     meaning:
       "Down in one. Every swig after the first is another stroke on your card — a bunker is a hole you get out of, not one you sip.",
     offence: "Not down in one",
+    onFinalHole: true,
   },
   {
     id: "dogleg",
@@ -46,6 +63,7 @@ export const HAZARDS: Hazard[] = [
     meaning:
       "You do not drink what you ordered. Everyone hands their glass to the player on their left, and plays whatever arrives.",
     offence: "Drinking before the pass is complete",
+    onFinalHole: true,
   },
 ];
 

@@ -1,4 +1,4 @@
-import { haversineKm } from "@/lib/geo";
+import { haversineKm, kmForWalkMinutes } from "@/lib/geo";
 
 /**
  * The walking order, decided by arithmetic rather than by the model.
@@ -62,6 +62,33 @@ export interface WalkStop {
  */
 export type WalkShape = "path" | "loop";
 
+/**
+ * The minimum a leg should be, and what happens when it is not.
+ *
+ * Shortest-total-distance is the classic objective and it is subtly the wrong
+ * one for a pub crawl. Given three pubs on the same corner, the shortest route
+ * visits all three back to back — which is optimal arithmetic and a poor night.
+ * A crawl wants to *go somewhere*; the walk between rounds is the part that
+ * sobers you up, and three doors in a row is one long session in disguise.
+ *
+ * So the objective gains two penalties, both measured in kilometres so they
+ * trade honestly against the distance they are competing with:
+ *
+ *   `SHORT_LEG_WEIGHT` — a mild, proportional cost for any leg under the
+ *     minimum. Mild because a short hop now and then is fine and sometimes
+ *     unavoidable; the patch is what it is.
+ *
+ *   `SHORT_RUN_WEIGHT` — a heavy cost for a *second* consecutive short leg,
+ *     which is precisely the "three pubs next to each other" shape. This is
+ *     the one doing the work, and it is deliberately several times the other:
+ *     one short hop is a quirk, two in a row is a bad card.
+ *
+ * Both scale with the minimum, so a host who asks for a longer stretch gets
+ * proportionally stronger spacing rather than a differently-tuned algorithm.
+ */
+export const SHORT_LEG_WEIGHT = 1;
+export const SHORT_RUN_WEIGHT = 4;
+
 /** Which stops must stay where they are, as indices into the input. */
 export interface WalkPins {
   /** The host's pinned first tee. */
@@ -71,6 +98,11 @@ export interface WalkPins {
   last?: number | null;
   /** Default `path`. */
   shape?: WalkShape;
+  /**
+   * How long the shortest comfortable walk between two pubs should be, in
+   * minutes. Zero turns spacing off and restores plain shortest-distance.
+   */
+  minLegMinutes?: number;
 }
 
 /** A stop we can actually measure. Anything without coordinates cannot be
@@ -98,13 +130,46 @@ function matrix(stops: WalkStop[]): number[][] {
   return stops.map((from) => stops.map((to) => legKm(from, to)));
 }
 
-function pathKm(order: number[], dist: number[][], loop = false): number {
-  let total = 0;
-  for (let i = 0; i < order.length - 1; i++) total += dist[order[i]][order[i + 1]];
-  // The walk home is part of the distance being minimised, which is the whole
-  // difference between the two shapes.
-  if (loop && order.length > 1) total += dist[order[order.length - 1]][order[0]];
-  return total;
+/** Every leg of a route, in order, including the walk home on a loop. */
+function legsOf(order: number[], dist: number[][], loop: boolean): number[] {
+  const legs: number[] = [];
+  for (let i = 0; i < order.length - 1; i++) legs.push(dist[order[i]][order[i + 1]]);
+  if (loop && order.length > 1) legs.push(dist[order[order.length - 1]][order[0]]);
+  return legs;
+}
+
+/**
+ * What the solver actually minimises: distance, plus what the spacing rule
+ * thinks of it.
+ *
+ * Evaluated over the whole route rather than as an edge delta, because "was
+ * the previous leg also short" is not a property of one edge. At eighteen
+ * stops that costs nothing and it keeps the rule readable, which matters more
+ * than the microseconds.
+ */
+function routeCost(
+  order: number[],
+  dist: number[][],
+  loop: boolean,
+  minKm: number,
+): number {
+  const legs = legsOf(order, dist, loop);
+  let cost = legs.reduce((total, leg) => total + leg, 0);
+  if (minKm <= 0) return cost;
+
+  let previousShort = false;
+  for (const leg of legs) {
+    const short = leg < minKm;
+    if (short) {
+      // Proportional to how far under it fell, so a 30-second hop is worse
+      // than a four-minute one rather than equally bad.
+      const shortfall = (minKm - leg) / minKm;
+      cost += SHORT_LEG_WEIGHT * minKm * shortfall;
+      if (previousShort) cost += SHORT_RUN_WEIGHT * minKm;
+    }
+    previousShort = short;
+  }
+  return cost;
 }
 
 /**
@@ -152,9 +217,11 @@ function twoOpt(
   dist: number[][],
   fixFirst: boolean,
   fixLast: boolean,
-  loop = false,
+  loop: boolean,
+  minKm: number,
 ): number[] {
-  const route = [...order];
+  let route = [...order];
+  let cost = routeCost(route, dist, loop, minKm);
   const lo = fixFirst ? 1 : 0;
   // On a loop the final stop is not an endpoint — it has an edge back to the
   // start — so it is fair game for reversal like any interior stop.
@@ -165,27 +232,20 @@ function twoOpt(
     let improved = false;
     for (let i = lo; i < hi; i++) {
       for (let j = i + 1; j <= hi; j++) {
-        // What the two edges cost now, against what they would cost reversed.
-        // The edge leaving stop j is the next stop, or — on a loop whose tail
-        // is being reversed — the wrap back to the start.
-        const after_j =
-          j + 1 < route.length ? route[j + 1] : loop ? route[0] : -1;
-        const before =
-          (i > 0 ? dist[route[i - 1]][route[i]] : 0) +
-          (after_j >= 0 ? dist[route[j]][after_j] : 0);
-        const after =
-          (i > 0 ? dist[route[i - 1]][route[j]] : 0) +
-          (after_j >= 0 ? dist[route[i]][after_j] : 0);
+        const candidate = [...route];
+        let a = i;
+        let b = j;
+        while (a < b) {
+          [candidate[a], candidate[b]] = [candidate[b], candidate[a]];
+          a++;
+          b--;
+        }
+        const next = routeCost(candidate, dist, loop, minKm);
         // A strict epsilon, so floating-point noise cannot make this loop
         // forever swapping two equivalent routes back and forth.
-        if (after < before - 1e-9) {
-          let a = i;
-          let b = j;
-          while (a < b) {
-            [route[a], route[b]] = [route[b], route[a]];
-            a++;
-            b--;
-          }
+        if (next < cost - 1e-9) {
+          route = candidate;
+          cost = next;
           improved = true;
         }
       }
@@ -220,6 +280,7 @@ export function orderWalk<T extends WalkStop>(
   const routable = slots.map((index) => stops[index]);
   const dist = matrix(routable);
   const loop = pins.shape === "loop";
+  const minKm = kmForWalkMinutes(Math.max(0, pins.minLegMinutes ?? 0));
 
   // Pins arrive as indices into the caller's array; translate them into the
   // routable subsequence, and ignore a pin on a stop we cannot measure.
@@ -245,8 +306,8 @@ export function orderWalk<T extends WalkStop>(
       routable.length,
       fixLast ? pinLast : null,
     );
-    const tuned = twoOpt(greedy, dist, fixFirst, fixLast, loop);
-    const km = pathKm(tuned, dist, loop);
+    const tuned = twoOpt(greedy, dist, fixFirst, fixLast, loop, minKm);
+    const km = routeCost(tuned, dist, loop, minKm);
     if (km < bestKm) {
       bestKm = km;
       best = tuned;
@@ -257,10 +318,11 @@ export function orderWalk<T extends WalkStop>(
   // Never hand back a worse walk than we were given. 2-opt cannot lengthen a
   // route, but the greedy construction is free to, so this is the guarantee
   // that turning routing on can only ever help.
-  const asGiven = pathKm(
+  const asGiven = routeCost(
     slots.map((_, i) => i),
     dist,
     loop,
+    minKm,
   );
   if (asGiven <= bestKm) return [...stops];
 

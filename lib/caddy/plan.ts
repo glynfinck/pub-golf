@@ -6,6 +6,7 @@ import {
 } from "@/lib/caddy/dossier";
 import {
   particularLabel,
+  stretchMeaning,
   vibeMeaning,
   type CaddyBrief,
 } from "@/lib/caddy/brief";
@@ -90,8 +91,12 @@ export const CADDY_SYSTEM = [
   "- Refer to a pub only by its id (p1, p2, …). Never write a pub's name.",
   "- Choose only from the ids you were given. Never invent one.",
   "- Use each pub at most once.",
-  "- Order the holes so the walk between them is short and mostly one way;",
-  "  do not send the group back and forth across the patch.",
+  "- Do not worry about the walking order: the club routes the card itself",
+  "  once you have chosen. Choose pubs that sit well together, and spread out",
+  "  rather than picking several on one corner.",
+  "- Water cannot be the last hole's hazard: relief waits until the hole is",
+  "  filed, and the last hole is the one nobody leaves. The club will strip it",
+  "  if you do, so spend it earlier.",
   "- Par is how many swigs the drink should take: 2 is a half or a short,",
   "  3 is a spirit and mixer, 4 is a pint, 5 is a pint of something heavy.",
   "- Hazards are the house's three and mean what the club says they mean:",
@@ -123,6 +128,11 @@ export function briefBlock(
   if (brief.particulars.length) {
     lines.push(
       `Wanted: ${brief.particulars.map(particularLabel).join(", ")}. Prefer pubs whose facts or reviews bear these out; say so in fitNote where they do.`,
+    );
+  }
+  if (brief.stretch > 0) {
+    lines.push(
+      `Spacing: ${stretchMeaning(brief.stretch)} Aim for about ${brief.stretch} minutes' walk between consecutive pubs, and do not pick three that sit on the same corner — the walk between rounds is what paces the night.`,
     );
   }
   const start = brief.startVenueId ? byVenue.get(brief.startVenueId) : undefined;
@@ -276,7 +286,10 @@ export function readRules(value: unknown): RulesetPenalty[] {
 export function parsePlan(
   raw: unknown,
   candidates: CandidateDossier[],
-  brief: Pick<CaddyBrief, "holes" | "startVenueId" | "finishVenueId">,
+  brief: Pick<
+    CaddyBrief,
+    "holes" | "startVenueId" | "finishVenueId" | "stretch"
+  >,
 ): PlanResult {
   if (typeof raw !== "object" || raw === null) {
     return { ok: false, reason: "malformed" };
@@ -337,6 +350,7 @@ export function parsePlan(
     last: brief.finishVenueId
       ? holes.findIndex((hole) => hole.venue_id === brief.finishVenueId)
       : null,
+    minLegMinutes: brief.stretch,
   });
 
   // Kept as an assertion on our own output rather than on the model's. If this
@@ -350,6 +364,16 @@ export function parsePlan(
     ordered[ordered.length - 1].venue_id !== brief.finishVenueId
   ) {
     return { ok: false, reason: "pin-moved" };
+  }
+
+  // Which hole is last is decided *here*, by the router, after the caddy has
+  // already dressed them — so a rule about the final hole can only be applied
+  // now. Water is the one hazard that cannot finish a round: its relief is
+  // deferred until the hole is filed, and the last hole is the one nobody
+  // leaves (`lib/hazards.ts`).
+  const final = ordered[ordered.length - 1];
+  if (final.hazard && !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole) {
+    ordered[ordered.length - 1] = { ...final, hazard: null, hazard_note: null };
   }
 
   const name =

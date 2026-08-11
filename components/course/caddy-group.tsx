@@ -10,11 +10,14 @@ import { Putt } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
 import {
   DEFAULT_HOLES,
+  DEFAULT_STRETCH,
   HOLE_CHOICES,
   NOTE_MAX,
   PARTICULARS,
+  STRETCH_CHOICES,
   VIBES,
   WHERE_MAX,
+  stretchMeaning,
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
@@ -61,8 +64,10 @@ export function CaddyGroup({
   const [vibe, setVibe] = useState<VibeId>("traditional");
   const [particulars, setParticulars] = useState<ParticularId[]>([]);
   const [note, setNote] = useState("");
+  const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
+  const stretchNote = stretchMeaning(stretch);
 
   function plan() {
     run(async () => {
@@ -72,6 +77,7 @@ export function CaddyGroup({
         vibe,
         particulars,
         note,
+        stretch,
         startVenueId: null,
         finishVenueId: null,
       });
@@ -268,6 +274,31 @@ export function CaddyGroup({
         </div>
         <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
           {meaning}
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel htmlFor="caddy-stretch">How far apart</FieldLabel>
+        <div
+          className="flex flex-wrap gap-1.5"
+          id="caddy-stretch"
+          role="radiogroup"
+          aria-label="How far apart"
+        >
+          {STRETCH_CHOICES.map((entry) => (
+            <Chip
+              key={entry.id}
+              role="radio"
+              aria-checked={stretch === entry.id}
+              active={stretch === entry.id}
+              onClick={() => setStretch(entry.id)}
+            >
+              {entry.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
+          {stretchNote}
         </p>
       </div>
 

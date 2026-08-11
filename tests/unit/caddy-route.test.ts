@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { orderWalk, walkKm, type WalkStop } from "@/lib/caddy/route";
+import { WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
  * A tidy grid so the right answer is obvious by eye. Roughly 111m per 0.001
@@ -144,5 +145,79 @@ describe("at eighteen holes", () => {
     expect(Date.now() - started).toBeLessThan(500);
     expect(walkKm(walked)).toBeLessThanOrEqual(walkKm(stops) + 1e-9);
     expect(walked).toHaveLength(18);
+  });
+});
+
+describe("minimum leg", () => {
+  /** Minutes between two consecutive stops, the way the app measures it. */
+  const legMinutes = (a: WalkStop, b: WalkStop) =>
+    walkKm([a, b]) * WALK_MINUTES_PER_KM;
+
+  /** How many times a short leg immediately follows another — "three pubs in
+   * a row", which is the shape actually complained about. */
+  function runsOfShort(stops: WalkStop[], min: number) {
+    let runs = 0;
+    let previousShort = false;
+    for (let i = 1; i < stops.length; i++) {
+      const short = legMinutes(stops[i - 1], stops[i]) < min;
+      if (short && previousShort) runs++;
+      previousShort = short;
+    }
+    return runs;
+  }
+
+  /** Three pubs on one corner, plus four spread out — the real case. */
+  const clustered = [
+    at(0, 0),
+    at(0.05, 0),
+    at(0.1, 0),
+    at(4, 0),
+    at(8, 0),
+    at(12, 0),
+    at(16, 0),
+  ];
+
+  it("stacks the close ones together when spacing is off", () => {
+    // Shortest total distance is exactly what produces the bad card, and this
+    // asserts that — the objective was wrong, not the algorithm.
+    const walked = orderWalk(clustered, { minLegMinutes: 0 });
+    expect(runsOfShort(walked, 5)).toBeGreaterThan(0);
+  });
+
+  it("breaks up three-in-a-row once a minimum is asked for", () => {
+    const walked = orderWalk(clustered, { minLegMinutes: 5 });
+    expect(runsOfShort(walked, 5)).toBe(0);
+  });
+
+  it("buys that spacing with distance, which is the trade being made", () => {
+    const tight = orderWalk(clustered, { minLegMinutes: 0 });
+    const spread = orderWalk(clustered, { minLegMinutes: 5 });
+    expect(walkKm(spread)).toBeGreaterThan(walkKm(tight));
+  });
+
+  it("spreads harder when asked for a longer stretch", () => {
+    const steady = orderWalk(clustered, { minLegMinutes: 5 });
+    const stretch = orderWalk(clustered, { minLegMinutes: 10 });
+    expect(walkKm(stretch)).toBeGreaterThanOrEqual(walkKm(steady) - 1e-9);
+  });
+
+  it("still honours pins while spacing", () => {
+    const walked = orderWalk(clustered, { minLegMinutes: 5, first: 6, last: 0 });
+    expect(walked[0]).toBe(clustered[6]);
+    expect(walked[walked.length - 1]).toBe(clustered[0]);
+  });
+
+  it("keeps every pub — spacing reorders, it never drops", () => {
+    const walked = orderWalk(clustered, { minLegMinutes: 10 });
+    expect(new Set(walked).size).toBe(clustered.length);
+  });
+
+  it("does the best it can in a patch that cannot answer", () => {
+    // Every pub on one street corner: no ordering satisfies the minimum, and
+    // the right behaviour is a card anyway rather than a refusal.
+    const dense = [at(0, 0), at(0.05, 0), at(0.1, 0), at(0.15, 0)];
+    const walked = orderWalk(dense, { minLegMinutes: 10 });
+    expect(walked).toHaveLength(4);
+    expect(new Set(walked).size).toBe(4);
   });
 });

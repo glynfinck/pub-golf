@@ -48,6 +48,10 @@ const BRIEF = {
   vibe: "traditional" as const,
   particulars: [] as never[],
   note: "",
+  // Spacing off, so these fixtures exercise ordering and dressing without the
+  // minimum-leg rule reshuffling them. lib/caddy/route.ts owns spacing and
+  // tests/unit/caddy-route.test.ts is where it is proved.
+  stretch: 0,
 };
 
 function plan(ids: string[], over: Record<string, unknown> = {}) {
@@ -470,5 +474,59 @@ describe("schemas a constrained decoder will actually accept", () => {
       properties: { holes: { items: { properties: Record<string, { enum?: unknown[] }> } } };
     }).properties.holes.items.properties;
     expect(holes.hazard.enum).toEqual([...HAZARDS.map((h) => h.id), null]);
+  });
+});
+
+describe("the last hole", () => {
+  /** A card whose every hole carries the given hazard. */
+  function planWithHazard(ids: string[], hazard: string) {
+    return {
+      courseName: "The Test",
+      holes: ids.map((candidateId) => ({
+        candidateId,
+        drink: "Pint",
+        par: 4,
+        hazard,
+        hazardNote: "hold it till the next hole",
+      })),
+    };
+  }
+
+  it("never finishes on water, because nobody leaves the last hole", () => {
+    // Water's relief is deferred until the hole is filed, and the last hole is
+    // the one a group settles into. Stripped here rather than only asked for
+    // in the prompt, because the caddy cannot know which hole ends up last —
+    // the walking order is decided after it answers.
+    const result = parsePlan(planWithHazard(["p1", "p2", "p3"], "water"), CANDIDATES, BRIEF);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const holes = result.course.holes;
+    expect(holes[holes.length - 1].hazard).toBeNull();
+    expect(holes[holes.length - 1].hazard_note).toBeNull();
+    // And only the last one — the earlier water hazards are untouched.
+    expect(holes.slice(0, -1).every((hole) => hole.hazard === "water")).toBe(true);
+  });
+
+  it("lets a hazard that resolves on the drink finish the round", () => {
+    // Bunker and dogleg are both done with by the time the glass is empty, so
+    // they make perfectly good finales and are left alone.
+    HAZARDS.filter((hazard) => hazard.onFinalHole).forEach((hazard) => {
+      const result = parsePlan(
+        planWithHazard(["p1", "p2", "p3"], hazard.id),
+        CANDIDATES,
+        BRIEF,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const holes = result.course.holes;
+      expect(holes[holes.length - 1].hazard).toBe(hazard.id);
+    });
+  });
+
+  it("has exactly one hazard that cannot finish a round", () => {
+    // If a fourth hazard is added, this makes somebody decide which it is.
+    expect(HAZARDS.filter((hazard) => !hazard.onFinalHole).map((h) => h.id)).toEqual([
+      "water",
+    ]);
   });
 });
