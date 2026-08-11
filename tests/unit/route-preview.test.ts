@@ -5,6 +5,8 @@ import {
   MIN_ASPECT,
   MIN_SPAN_DEG,
   previewFrame,
+  walkRoute,
+  type PreviewHole,
   type PreviewStop,
 } from "@/lib/route-preview";
 
@@ -125,5 +127,106 @@ describe("previewFrame", () => {
     const frame = previewFrame([at(3, 4), at(0, 0), at(1, 2)]);
     expect(frame!.bounds.north).toBeGreaterThan(frame!.bounds.south);
     expect(frame!.bounds.east).toBeGreaterThan(frame!.bounds.west);
+  });
+});
+
+/** A hole on the card, at a grid position, for the walking tests. */
+const hole = (x: number, y: number, number: number): PreviewHole => ({
+  ...(at(x, y) as { lat: number; lng: number }),
+  hole: number,
+});
+
+describe("walkRoute", () => {
+  const card = [hole(0, 0, 1), hole(4, 0, 2), hole(4, 3, 3), hole(0, 3, 4)];
+
+  it("starts at the first pub with no line drawn yet", () => {
+    // Not an empty map: the walk begins *at* a pub, so its pin is there from
+    // the first frame and the line grows out of it.
+    const walked = walkRoute(card, 0);
+    expect(walked.reached).toBe(1);
+    expect(walked.path).toEqual([{ lat: card[0].lat, lng: card[0].lng }]);
+  });
+
+  it("ends with the whole card, and stays there when asked for more", () => {
+    [1, 1.5, 99].forEach((progress) => {
+      const walked = walkRoute(card, progress);
+      expect(walked.reached).toBe(card.length);
+      expect(walked.path).toHaveLength(card.length);
+      expect(walked.path.at(-1)).toEqual({ lat: card[3].lat, lng: card[3].lng });
+    });
+  });
+
+  it("never goes backwards", () => {
+    let previous = 0;
+    for (let step = 0; step <= 100; step += 1) {
+      const walked = walkRoute(card, step / 100);
+      expect(walked.reached).toBeGreaterThanOrEqual(previous);
+      previous = walked.reached;
+    }
+    expect(previous).toBe(card.length);
+  });
+
+  it("lands each pin exactly as the line reaches its pub", () => {
+    // The pin and the end of the line are the same event. If they drift, a pin
+    // appears out in the road or the line arrives at an empty corner.
+    let seen = 1;
+    for (let step = 0; step <= 200; step += 1) {
+      const walked = walkRoute(card, step / 200);
+      if (walked.reached > seen) {
+        seen = walked.reached;
+        const arrived = card[walked.reached - 1];
+        expect(walked.path.at(-1)).toEqual({ lat: arrived.lat, lng: arrived.lng });
+      }
+    }
+  });
+
+  it("paces by how far the walk is, not by how many pubs are on it", () => {
+    // One long leg then one short one. Half way through, an animation counting
+    // pubs would already be at the second pub; one measuring the ground is
+    // still out on the first leg — which is what makes the line move at a
+    // steady speed on screen instead of lurching.
+    const lopsided = [hole(0, 0, 1), hole(10, 0, 2), hole(11, 0, 3)];
+    expect(walkRoute(lopsided, 0.5).reached).toBe(1);
+    expect(walkRoute(lopsided, 0.5).path.at(-1)!.lng).toBeLessThan(lopsided[1].lng);
+  });
+
+  it("rests at each pub before setting off again", () => {
+    // The pause is what gives each numbered pin its own beat. During it the
+    // line does not move at all.
+    const lopsided = [hole(0, 0, 1), hole(10, 0, 2), hole(11, 0, 3)];
+    const justArrived = walkRoute(lopsided, 0.8);
+    const stillThere = walkRoute(lopsided, 0.88);
+    expect(justArrived.reached).toBe(2);
+    expect(stillThere.reached).toBe(2);
+    expect(stillThere.path).toEqual(justArrived.path);
+  });
+
+  it("draws nothing outside the route it was given", () => {
+    const north = Math.max(...card.map((stop) => stop.lat));
+    const south = Math.min(...card.map((stop) => stop.lat));
+    const east = Math.max(...card.map((stop) => stop.lng));
+    const west = Math.min(...card.map((stop) => stop.lng));
+    for (let step = 0; step <= 60; step += 1) {
+      walkRoute(card, step / 60).path.forEach((point) => {
+        expect(point.lat).toBeGreaterThanOrEqual(south);
+        expect(point.lat).toBeLessThanOrEqual(north);
+        expect(point.lng).toBeGreaterThanOrEqual(west);
+        expect(point.lng).toBeLessThanOrEqual(east);
+      });
+    }
+  });
+
+  it("survives a card with nothing to walk", () => {
+    // No holes, one hole, and every pub on the same doorstep — the last of
+    // which divides by a zero-length walk if the guard is missing.
+    expect(walkRoute([], 0.5)).toEqual({ path: [], reached: 0 });
+    expect(walkRoute([hole(0, 0, 1)], 0.5).reached).toBe(1);
+    const stacked = [hole(1, 1, 1), hole(1, 1, 2), hole(1, 1, 3)];
+    const walked = walkRoute(stacked, 0.5);
+    expect(walked.reached).toBe(3);
+    walked.path.forEach((point) => {
+      expect(Number.isFinite(point.lat)).toBe(true);
+      expect(Number.isFinite(point.lng)).toBe(true);
+    });
   });
 });

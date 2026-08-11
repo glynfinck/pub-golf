@@ -1,5 +1,8 @@
+import { haversineKm } from "@/lib/geo";
+
 /**
- * How to frame the route preview: what it covers, and what shape the box is.
+ * How to frame the route preview: what it covers, what shape the box is, and
+ * how far along the walk has been drawn.
  *
  * The preview is a real map (`components/course/route-preview.tsx`) rather than
  * a diagram, so this module does not project anything — Google does that. What
@@ -23,6 +26,11 @@
 export interface PreviewStop {
   lat: number | null;
   lng: number | null;
+}
+
+export interface LatLng {
+  lat: number;
+  lng: number;
 }
 
 /** A hole that can actually be drawn: a position, and its number on the card. */
@@ -122,4 +130,93 @@ export function previewFrame(stops: PreviewStop[]): PreviewFrame | null {
     holes,
     lastHole: holes[holes.length - 1].hole,
   };
+}
+
+/**
+ * How long the walk rests at each pub before setting off again, as a share of
+ * the average leg.
+ *
+ * The pause is the whole reason this is paced rather than simply tweened. A
+ * line that crawls at constant speed from one end of the card to the other
+ * reads as a progress bar bent into the shape of a route; stopping at each pub
+ * reads as a crawl, and — the part that actually matters — it lands every
+ * numbered pin on its own beat instead of scattering nine of them past the eye
+ * in a second and a half.
+ */
+export const DWELL_SHARE = 0.35;
+
+/** The walk, drawn as far as it has got. */
+export interface WalkedRoute {
+  /** The line so far, ending part-way along a leg. One point until the walk
+   * leaves the first pub, which draws as nothing — correct, there is no line
+   * yet. */
+  path: LatLng[];
+  /** How many of `holes` have been reached, so their pins are on the map.
+   * Always at least one: the walk starts *at* the first pub. */
+  reached: number;
+}
+
+/**
+ * Walk the route, and report how much of it has happened.
+ *
+ * Pure, and paced by ground distance rather than by hole count, for a reason
+ * that is easy to miss: the preview is a Mercator map, and Mercator is
+ * conformal — locally, screen distance is proportional to ground distance. So
+ * pacing by metres is what makes the line move at a constant speed *on screen*.
+ * Pace it by hole instead and a two-minute hop takes as long to draw as the
+ * long trudge across the park, which looks like the animation stalling.
+ *
+ * `progress` runs 0..1 over the whole timeline — every leg, plus a rest at
+ * every pub but the first and last.
+ */
+export function walkRoute(holes: PreviewHole[], progress: number): WalkedRoute {
+  if (holes.length === 0) return { path: [], reached: 0 };
+  const all = () => ({
+    path: holes.map((hole) => ({ lat: hole.lat, lng: hole.lng })),
+    reached: holes.length,
+  });
+  if (holes.length === 1 || progress >= 1) return all();
+
+  const legs = holes
+    .slice(1)
+    .map((hole, index) =>
+      haversineKm(holes[index].lat, holes[index].lng, hole.lat, hole.lng),
+    );
+  const walking = legs.reduce((total, leg) => total + leg, 0);
+  // Every pub on one spot: there is no walk to pace, and dividing by the
+  // distance would hand back NaN. Draw it and move on.
+  if (walking <= 0) return all();
+
+  const dwell = (walking / legs.length) * DWELL_SHARE;
+  const timeline = walking + dwell * (legs.length - 1);
+  let spent = Math.max(0, progress) * timeline;
+
+  const path: LatLng[] = [{ lat: holes[0].lat, lng: holes[0].lng }];
+  let reached = 1;
+
+  for (let index = 0; index < legs.length; index += 1) {
+    // Resting at the pub just reached — every one but the first, which is
+    // where the walk begins rather than somewhere it arrives.
+    if (index > 0) {
+      if (spent < dwell) return { path, reached };
+      spent -= dwell;
+    }
+    const leg = legs[index];
+    if (spent < leg) {
+      const share = spent / leg;
+      // Straight-line interpolation: a leg is a few hundred metres, where the
+      // difference between a rhumb line and a great circle is under a pixel.
+      if (share > 0) {
+        path.push({
+          lat: holes[index].lat + (holes[index + 1].lat - holes[index].lat) * share,
+          lng: holes[index].lng + (holes[index + 1].lng - holes[index].lng) * share,
+        });
+      }
+      return { path, reached };
+    }
+    spent -= leg;
+    path.push({ lat: holes[index + 1].lat, lng: holes[index + 1].lng });
+    reached = index + 2;
+  }
+  return { path, reached };
 }

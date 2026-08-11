@@ -10,7 +10,7 @@ import {
   vibeMeaning,
   type CaddyBrief,
 } from "@/lib/caddy/brief";
-import { HAZARDS, type HazardId } from "@/lib/hazards";
+import { drinkForHazard, HAZARDS, type HazardId } from "@/lib/hazards";
 import { orderWalk } from "@/lib/caddy/route";
 import { MAX_LOCAL_RULES } from "@/lib/rules";
 import type { RulesetPenalty } from "@/lib/ruleset";
@@ -322,7 +322,12 @@ export function parsePlan(
       rating: candidate.rating,
       lat: candidate.lat,
       lng: candidate.lng,
-      drink: clampText(row.drink, DRINK_MAX) || "Pint of your choosing",
+      // The hazard has the last word on what is in the glass. Asking for it in
+      // the prompt was not enough — see `drinkGuard` in `lib/hazards.ts`.
+      drink: drinkForHazard(
+        hazard,
+        clampText(row.drink, DRINK_MAX) || "Pint of your choosing",
+      ),
       par: clampInt(row.par, 1, 20, 4),
       hazard,
       hazard_note: hazard ? clampText(row.hazardNote, HAZARD_NOTE_MAX) || null : null,

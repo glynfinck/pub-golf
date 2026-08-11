@@ -93,6 +93,9 @@ export function CourseBuilder({
   // what drops the dossier — Google's atmosphere facts are read for the length
   // of one conversation and are not ours to keep.
   const [caddySession, setCaddySession] = useState<string | null>(null);
+  // Counts the cards the caddy has handed over, which is all the preview needs
+  // to know about to decide whether to walk the route or simply show it.
+  const [drawKey, setDrawKey] = useState(0);
   const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -205,6 +208,11 @@ export function CourseBuilder({
    */
   function takeCaddyCourse(planned: PlannedCourse, moved: number[]) {
     clearUndo();
+    // A new card is a new walk: the preview redraws itself rather than
+    // swapping one route for another between frames. Hand-edits below do not
+    // bump this — replaying the animation every time a pub moves would make
+    // the map the loudest thing on the page.
+    setDrawKey((current) => current + 1);
     setHoles(
       planned.holes.map((hole) => ({
         id: crypto.randomUUID(),
@@ -352,6 +360,7 @@ export function CourseBuilder({
           between. */}
       <RoutePreview
         stops={holes}
+        drawKey={drawKey}
         onOpen={
           MAPS_BROWSER_KEY
             ? () => {

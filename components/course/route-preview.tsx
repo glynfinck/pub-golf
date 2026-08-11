@@ -11,9 +11,31 @@ import {
   Polyline,
 } from "@vis.gl/react-google-maps";
 
+import { useDrawIn } from "@/hooks/use-draw-in";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
-import { previewFrame, type PreviewStop } from "@/lib/route-preview";
+import {
+  previewFrame,
+  walkRoute,
+  type PreviewFrame,
+  type PreviewStop,
+} from "@/lib/route-preview";
 import { cn } from "@/lib/utils";
+
+/**
+ * How long the walk takes to draw: a beat per hole, floored and capped.
+ *
+ * Fixed would be wrong at both ends — six holes would crawl and eighteen would
+ * flicker past. The cap matters more than the floor: nobody is watching a map
+ * for four seconds, however many pubs are on it.
+ */
+const DRAW_MS_PER_HOLE = 190;
+const DRAW_MS_MIN = 1_200;
+const DRAW_MS_MAX = 3_000;
+
+function drawMs(holes: number): number {
+  return Math.min(DRAW_MS_MAX, Math.max(DRAW_MS_MIN, holes * DRAW_MS_PER_HOLE));
+}
 
 /**
  * The walk, on a real map, at the top of the drafting table.
@@ -45,23 +67,34 @@ import { cn } from "@/lib/utils";
 export function RoutePreview({
   stops,
   onOpen,
+  drawKey = 0,
   className,
 }: {
   stops: PreviewStop[];
   /** Tapping the preview opens the real map sheet. Absent and it stays a
    * picture — the preview never pretends to be tappable when it is not. */
   onOpen?: () => void;
+  /**
+   * Bump this and the walk draws itself in again.
+   *
+   * Which edits are worth replaying the animation for is a question only the
+   * drafting table can answer, so it answers it: a card off the caddy is a new
+   * route and redraws, moving a pub by hand is not and does not. Zero means
+   * "nothing has been handed over" — a course loaded from the database is
+   * simply there, and animating it on every page load would be scenery.
+   */
+  drawKey?: number;
   className?: string;
 }) {
   const { resolvedTheme } = useTheme();
   const [mapsFailed, setMapsFailed] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
   const frame = previewFrame(stops);
 
   // Fewer than two positioned holes is not a route; no key is not a map.
   if (!frame || !MAPS_BROWSER_KEY || mapsFailed) return null;
 
   const dark = resolvedTheme === "dark";
-  const path = frame.holes.map((hole) => ({ lat: hole.lat, lng: hole.lng }));
 
   return (
     <figure
@@ -84,44 +117,15 @@ export function RoutePreview({
           keyboardShortcuts={false}
           clickableIcons={false}
         >
-          <Polyline
-            path={path}
-            strokeOpacity={0}
-            icons={[
-              {
-                // The same dotted walking line the sheet draws, so the two
-                // read as one map seen at two sizes.
-                icon: {
-                  path: "M0,0m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0",
-                  fillColor: dark ? "#e9e2d0" : "#1e4630",
-                  fillOpacity: 1,
-                  strokeOpacity: 0,
-                  scale: 2,
-                },
-                offset: "0",
-                repeat: "12px",
-              },
-            ]}
+          {/* Remounted whenever the caddy hands over a card, which is what
+              replays the walk. The map itself stays put — remounting *that*
+              would reload the tiles and flash. */}
+          <WalkedLine
+            key={drawKey}
+            frame={frame}
+            dark={dark}
+            animate={drawKey > 0 && !reducedMotion}
           />
-          {frame.holes.map((hole) => (
-            <AdvancedMarker
-              key={`hole-${hole.hole}`}
-              position={{ lat: hole.lat, lng: hole.lng }}
-              anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-              title={`Hole ${hole.hole}`}
-            >
-              <div
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                  // The last hole wears marker gold, the way the card's own
-                  // furniture already marks where a round finishes.
-                  hole.hole === frame.lastHole ? "bg-marker" : "bg-fairway",
-                )}
-              >
-                {hole.hole}
-              </div>
-            </AdvancedMarker>
-          ))}
         </Map>
       </APIProvider>
       {/* The way in. A real button over an inert map, rather than handlers on
@@ -141,5 +145,72 @@ export function RoutePreview({
         </button>
       ) : null}
     </figure>
+  );
+}
+
+/**
+ * The walking line and its numbered pins — drawn all at once, or walked.
+ *
+ * Separate from the map on purpose. This is the part that has animation state,
+ * and it is remounted (by `key`) every time there is a new card to draw, which
+ * resets that state without touching the map above it.
+ */
+function WalkedLine({
+  frame,
+  dark,
+  animate,
+}: {
+  frame: PreviewFrame;
+  dark: boolean;
+  animate: boolean;
+}) {
+  const progress = useDrawIn(animate, drawMs(frame.holes.length));
+  const { path, reached } = walkRoute(frame.holes, progress);
+
+  return (
+    <>
+      <Polyline
+        path={path}
+        strokeOpacity={0}
+        icons={[
+          {
+            // The same dotted walking line the sheet draws, so the two
+            // read as one map seen at two sizes.
+            icon: {
+              path: "M0,0m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0",
+              fillColor: dark ? "#e9e2d0" : "#1e4630",
+              fillOpacity: 1,
+              strokeOpacity: 0,
+              scale: 2,
+            },
+            offset: "0",
+            repeat: "12px",
+          },
+        ]}
+      />
+      {/* Only the pubs the walk has actually reached. Each one mounts as the
+          line arrives, so the entrance below plays per pin rather than nine at
+          once — which is what turns a route into a crawl. */}
+      {frame.holes.slice(0, reached).map((hole) => (
+        <AdvancedMarker
+          key={`hole-${hole.hole}`}
+          position={{ lat: hole.lat, lng: hole.lng }}
+          anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+          title={`Hole ${hole.hole}`}
+        >
+          <div
+            className={cn(
+              "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+              "animate-in zoom-in-50 fade-in duration-300",
+              // The last hole wears marker gold, the way the card's own
+              // furniture already marks where a round finishes.
+              hole.hole === frame.lastHole ? "bg-marker" : "bg-fairway",
+            )}
+          >
+            {hole.hole}
+          </div>
+        </AdvancedMarker>
+      ))}
+    </>
   );
 }
