@@ -299,7 +299,10 @@ export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
  * free: the refusal happens before anything has been asked of the model.
  */
 export async function openPlan(rawBrief: unknown): Promise<
-  | { error: string; spent?: boolean }
+  // `detail` rides along for the same reason CaddyResult carries one: off
+  // production the staging note may say which gate refused, while the player
+  // always reads the same plain sentence.
+  | { error: string; spent?: boolean; detail?: string }
   | {
       supabase: Awaited<ReturnType<typeof createClient>>;
       userId: string;
@@ -308,9 +311,25 @@ export async function openPlan(rawBrief: unknown): Promise<
       candidates: CandidateDossier[];
     }
 > {
-  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  // Three different failures used to answer with the same sentence, which
+  // made "the caddy isn't on duty" a shrug rather than a diagnosis — a
+  // missing model credential, a missing Places key and a refused session
+  // insert are three separate problems with three separate fixes, and off
+  // production the staging note is allowed to say which. The player-facing
+  // sentence never changes; only `detail` does, and only where it is read.
+  if (!caddyEnabled(process.env))
+    return {
+      error: NO_CADDY,
+      detail:
+        "No model credential on this deploy — set AI_GATEWAY_API_KEY (or ANTHROPIC_API_KEY). Check it is enabled for this environment, not only for the preview branch.",
+    };
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!placesKey) return { error: NO_CADDY };
+  if (!placesKey)
+    return {
+      error: NO_CADDY,
+      detail:
+        "No GOOGLE_PLACES_API_KEY on this deploy. This is the server's Places key and is separate from the browser maps key — a deploy can have the model credential and still be missing this one.",
+    };
 
   const brief = readBrief(rawBrief);
   if (!brief) return { error: "Tell the caddy where you're drinking." };
@@ -382,7 +401,15 @@ export async function openPlan(rawBrief: unknown): Promise<
     })
     .select("id")
     .single();
-  if (sessionError || !created) return { error: NO_CADDY };
+  if (sessionError || !created)
+    return {
+      error: NO_CADDY,
+      // The one that is not a missing secret: the row was refused. Almost
+      // always RLS or a constraint, so the code is worth more than the prose.
+      detail: `The caddy session would not open: ${
+        sessionError?.code ?? "no row returned"
+      } ${sessionError?.message ?? ""}`.trim(),
+    };
 
   return { supabase, userId: user.id, sessionId: created.id, brief, candidates };
 }
