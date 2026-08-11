@@ -3,11 +3,7 @@ import "server-only";
 import { headers } from "next/headers";
 
 import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
-import {
-  CADDY_BUDGET_NOTE,
-  caddyBudgetMicroPence,
-  withinBudget,
-} from "@/lib/caddy/budget";
+import { caddyBudgetMicroPence } from "@/lib/caddy/budget";
 import {
   askCaddy,
   askCaddyLooped,
@@ -107,10 +103,15 @@ const PASS_RAN_OUT =
 const SPENT_FEE = CADDY_CREDITS_SPENT;
 const THIN_PATCH =
   "Not enough pubs in that patch for the round you asked for. Widen the patch, or drop a few holes.";
-// One line for both ceilings. A host who meets the turn cap and a host who
-// meets the budget are in the same position and are told the same thing —
-// which is also why neither message names the number it hit.
-const FULL_SHIFT = CADDY_BUDGET_NOTE;
+/**
+ * Fair use, which is a different thing from a budget and the only ceiling left
+ * that is about volume rather than about what was bought.
+ *
+ * Raised by the Postgres guard, never decided here — the same arrangement
+ * every other guarded write uses, because RLS is the only real enforcement.
+ */
+const FULL_SHIFT =
+  "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
 
 /** The signed-in host, or null. Guests never cross this boundary: hosting a
  * round takes a Google sign-in and so does planning one. */
@@ -517,32 +518,6 @@ export async function askTheCaddy(input: {
   });
 }
 
-/**
- * What this host has spent on the caddy in the last rolling day.
- *
- * Read on their own session, which is all RLS will show them anyway. The
- * authority on this number is `guard_caddy_fair_use` in Postgres — it takes a
- * lock and cannot be raced, and it is what actually refuses. This read is the
- * *polite* version of the same question, asked before the money is spent
- * rather than after: without it, a host at the ceiling would pay for one more
- * call and then be told it could not be filed, which is the one shape of
- * failure that genuinely wastes money.
- */
-async function spentToday(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<number> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from("caddy_turns")
-    .select("cost_micropence")
-    .eq("host", userId)
-    .gt("created_at", since);
-  return (data ?? []).reduce(
-    (total, row) => total + Number(row.cost_micropence ?? 0),
-    0,
-  );
-}
 
 /**
  * What the loop needs from the outside world, assembled where the keys are.
@@ -618,11 +593,22 @@ export async function runTurn(input: {
     doing?: string;
   }) => void;
 }): Promise<CaddyResult> {
-  // Asked before the call, so a host at the ceiling is told plainly instead of
-  // being charged for a turn that Postgres is about to refuse.
-  if (!withinBudget(await spentToday(input.supabase, input.userId), caddyBudgetMicroPence())) {
-    return { error: CADDY_BUDGET_NOTE, spent: true };
-  }
+  // There used to be a budget check here — 12% of the fee, refused before the
+  // model was called. It is gone, and the reasoning is worth keeping because
+  // it is the same reasoning that removed the token cap before it.
+  //
+  // A host who has paid for four re-designs has bought four re-designs. What
+  // they cost us varies; absorbing that variance is what a fixed price is for.
+  // Metering the same purchase a second time in money means the fourth plan
+  // can be refused for no reason the host can see or predict — which is what
+  // happened: a fee bought four courses and the budget stopped it after two,
+  // with a sentence about a full shift that explains nothing.
+  //
+  // What bounds the work now is what a host was actually told: the re-design
+  // quota, which is a count they can see, and the runaway breaker inside the
+  // loop, which is not a ceiling anyone meets. Cost is still recorded on every
+  // turn — that is what prices the tariff (docs/CADDY-TOPUPS.md) — but it is
+  // evidence, not a gate.
 
   const ask = {
     brief: input.brief,
