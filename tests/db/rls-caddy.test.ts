@@ -652,6 +652,117 @@ describe("the ledger: granted, spent, and expired", () => {
     });
     expect(Number(balance)).toBe(CADDY_TOPUPS.caddy_topup_3.redesign);
   });
+
+  /** A purchase, minted by the trigger. Returns the entitlement so a test can
+   * refund it — deleting the row is what a refund does to this schema. */
+  async function seedTopup(buyer: Actor, kind: "caddy_topup_1" | "caddy_topup_3") {
+    const { data, error } = await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: buyer.userId,
+        kind,
+        stripe_event_id: `evt_topup_${randomUUID()}`,
+        expires_at: null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function balanceOf(buyer: Actor, quota: "redesign" | "tweak") {
+    const { data } = await adminClient().rpc("caddy_balance", {
+      who: buyer.userId,
+      quota,
+    });
+    return Number(data ?? 0);
+  }
+
+  it("accepts both top-up kinds through the entitlements gate", async () => {
+    // The regression for a bug the whole pyramid missed: `entitlements.kind`
+    // is CHECK-constrained, so before the constraint was restated a top-up row
+    // could not be inserted at all. The grant logic was perfect and the
+    // purchase died at the door with 23514. A typecheck cannot see a CHECK.
+    const buyer = await signedInUser("Kind Gate Buyer");
+    for (const kind of CADDY_TOPUP_LOOKUP_KEYS) {
+      const id = await seedTopup(buyer, kind);
+      expect(id, `${kind} was refused by entitlements_kind_check`).toBeTruthy();
+    }
+  });
+
+  it("a refunded top-up takes its rounds with it", async () => {
+    // The hole this closes: a durable grant has no expiry, so an orphan left
+    // behind by `on delete set null` was immortal — refund the purchase, keep
+    // the rounds for ever.
+    const buyer = await signedInUser("Refunded Buyer");
+    const bought = await seedTopup(buyer, "caddy_topup_3");
+    expect(await balanceOf(buyer, "redesign")).toBe(
+      CADDY_TOPUPS.caddy_topup_3.redesign,
+    );
+
+    await adminClient().from("entitlements").delete().eq("id", bought);
+
+    expect(await balanceOf(buyer, "redesign")).toBe(0);
+    expect(await balanceOf(buyer, "tweak")).toBe(0);
+
+    // Not merely uncounted — gone. An orphan with a null entitlement would
+    // still satisfy the balance query, which is exactly how this failed.
+    const { data: orphans } = await adminClient()
+      .from("caddy_grants")
+      .select("id")
+      .eq("host", buyer.userId);
+    expect(orphans ?? []).toHaveLength(0);
+  });
+
+  it("refunding one purchase leaves the other purchase alone", async () => {
+    const buyer = await signedInUser("Two Purchase Buyer");
+    const fee = await seedFee(buyer);
+    await seedTopup(buyer, "caddy_topup_1");
+
+    expect(await balanceOf(buyer, "redesign")).toBe(
+      CADDY_GRANT_SIZE.redesign + CADDY_TOPUPS.caddy_topup_1.redesign,
+    );
+
+    // Refund the fee. The top-up is a separate purchase and must survive it.
+    await adminClient().from("entitlements").delete().eq("id", fee);
+
+    expect(await balanceOf(buyer, "redesign")).toBe(
+      CADDY_TOPUPS.caddy_topup_1.redesign,
+    );
+  });
+
+  it("a refund never leaves the balance negative, even after spending", async () => {
+    // The reason grants and spends are separate tables, proved from the other
+    // direction: a single signed-delta ledger would drop the +3 on refund and
+    // keep the -1 spends, and the host would owe us rounds.
+    const buyer = await signedInUser("Spent Then Refunded");
+    const bought = await seedTopup(buyer, "caddy_topup_3");
+
+    const { data: grant } = await adminClient()
+      .from("caddy_grants")
+      .select("id")
+      .eq("entitlement_id", bought)
+      .eq("quota", "redesign")
+      .single();
+
+    const sessionId = await seedSession(buyer, await seedFee(buyer));
+    await adminClient().from("caddy_spends").insert({
+      grant_id: grant!.id,
+      host: buyer.userId,
+      session_id: sessionId,
+    });
+
+    await adminClient().from("entitlements").delete().eq("id", bought);
+
+    // The spends cascaded with the grant, so nothing is left pointing at a
+    // purchase that no longer exists.
+    expect(await balanceOf(buyer, "redesign")).toBeGreaterThanOrEqual(0);
+    const { data: spends } = await adminClient()
+      .from("caddy_spends")
+      .select("id")
+      .eq("grant_id", grant!.id);
+    expect(spends ?? []).toHaveLength(0);
+  });
 });
 
 describe("the ceilings hold in Postgres", () => {

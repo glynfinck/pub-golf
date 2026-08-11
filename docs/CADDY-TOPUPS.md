@@ -197,8 +197,8 @@ the seams:
   grant is still spent first
 - a pack bought with **no** green fee at all still grants — a top-up is a
   purchase, not an add-on to a pass
-- a refunded pack removes its grants, and does not remove the fee's —
-  **this does not currently hold, see below**
+- a refunded pack removes its grants, and does not remove the fee's — **done**,
+  see the section below
 - spends already made against a refunded pack do not push the balance negative
   (the reason grants and spends are separate tables)
 - the day-lock: an expired grant stops counting, and its spends stop counting
@@ -207,36 +207,25 @@ the seams:
 The last three are the ones a single signed-delta ledger would have got wrong,
 so they are the ones worth writing first.
 
-## Open: a refunded top-up keeps its rounds
+## Settled: a refunded purchase takes its rounds with it
 
-Found by deleting an entitlement against preview and watching the grants
-survive it.
+`caddy_grants.entitlement_id` was `on delete set null`, which orphaned a grant
+rather than removing it. Survivable while every grant carried a fee's expiry —
+an orphan died on its own clock inside the day. Durable top-ups ended that: a
+grant with no expiry, orphaned, is immortal. Refund the purchase, keep the
+rounds for ever. It was quietly wrong for the fee too, where a refund inside
+the window left the rounds spendable until the clock ran out.
 
-`caddy_grants.entitlement_id` is `on delete set null`, so removing the
-purchase orphans the grant rather than removing it. For a **green fee** that is
-harmless and arguably right: the grant carries the pass's `expires_at`, so an
-orphan dies on its own clock within the day, and the row survives as a record
-of what was given.
+`on delete cascade` (migration `20260903000000`), and the accounting objection
+to it does not survive inspection. The worry was losing the record of what a
+purchase produced — but that record is not in this table. `caddy_turns` holds
+the model, the tokens and the recomputed cost, and it references the *session*,
+not the grant, so it is untouched. What cascades is `caddy_spends`, the counter
+that decides a balance; once the purchase is refunded there is no balance for
+it to decide. Grant and spends go together, the balance returns to what it
+would have been, and nothing can go negative.
 
-For a **top-up it is a hole**. A durable grant has no expiry, so an orphaned
-one is immortal: refund the purchase, keep the rounds for ever. Nothing else in
-the ledger closes this — `caddy_balance` counts any live grant, and a null
-`entitlement_id` reads as live.
-
-Three ways out, none obviously best:
-
-1. **`on delete cascade` on the FK.** One line, and it makes refunds correct
-   for both kinds. It also drops the fee's accounting record, and takes the
-   grant's spends with it on the same cascade — the balance recomputes fine,
-   but "what did this fee produce" stops being answerable.
-2. **Cascade only for durable grants**, via a trigger on entitlement delete
-   that removes grants with a null `expires_at`. Keeps the fee's record,
-   targets exactly the hole. More machinery than a foreign key.
-3. **Never delete the entitlement on refund** — mark it refunded and have the
-   balance ignore grants behind a refunded purchase. The most honest
-   accounting, and the largest change.
-
-Not fixed here because the fix is a schema decision on the paid path and this
-was found at the end of a long session. It must be settled before top-ups can
-actually be sold; until there is a checkout path there is nothing to refund,
-so nothing is currently at risk.
+Covered by four db tests: both kinds pass the entitlements gate (the regression
+for the CHECK-constraint bug), a refunded top-up leaves no grant behind,
+refunding one purchase leaves another alone, and a refund after spending never
+drives the balance below zero.
