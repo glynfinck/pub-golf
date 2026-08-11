@@ -52,7 +52,7 @@ import {
  * documented as the setting for the hardest agentic work and would be the next
  * thing to try when the tool loop lands.
  */
-const EFFORT = "high";
+const EFFORT = "high" as const;
 
 /**
  * Thinking, stated rather than inherited.
@@ -141,81 +141,16 @@ export type CaddyOutcome = (
  * failure here is a line on screen and none of them costs the host a card.
  */
 export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
-  // Read per call, never at module load: a Vercel OIDC token rotates, and a
-  // credential captured once at cold start goes stale under the deploy.
-  const credentials = caddyCredentials(process.env);
-  if (!credentials) {
-    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model: "" };
-  }
-  const model = credentials.model;
-
-  const client = new Anthropic({
-    apiKey: credentials.apiKey ?? null,
-    authToken: credentials.authToken,
-    ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
-  });
-  const messages = buildMessages(input);
-
+  const call = openCall();
+  if (!call) return unavailable();
   try {
-    const response = await client.messages.create({
-      model,
-      max_tokens: MAX_TOKENS,
-      system: CADDY_SYSTEM,
+    const response = await call.client.messages.create({
+      ...requestOf(input, call.model),
       thinking: THINKING,
-      output_config: {
-        effort: EFFORT,
-        format: {
-          type: "json_schema",
-          schema: planSchema(input.candidates),
-        },
-      },
-      messages,
     });
-
-    // Read before anything can return: the tokens are spent whatever the
-    // content turns out to be.
-    const usage = readUsage(response.usage);
-    const spent = <T extends { ok: boolean }>(outcome: T) => ({ ...outcome, usage, model });
-
-    // A refusal is a content outcome, not an error — check before reading.
-    if (response.stop_reason === "refusal") {
-      return spent({ ok: false as const, reason: "malformed" as const });
-    }
-    const text = response.content
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("");
-    if (!text.trim()) return spent({ ok: false as const, reason: "malformed" as const });
-
-    let payload: unknown;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      return spent({ ok: false as const, reason: "malformed" as const });
-    }
-    return spent(parsePlan(payload, input.candidates, input.brief));
+    return interpret(response, input, call.model);
   } catch (cause) {
-    // Timeouts, rate limits, a bad gateway — all of them are "the caddy lost
-    // the ball", all of them cost the host nothing, and none of them reach
-    // them as a vendor's error message. Usage is genuinely unknown here: the
-    // call may never have reached the model, and guessing a number would put
-    // an invented charge on a real bill.
-    //
-    // The reason is kept rather than dropped. Swallowing it entirely is what
-    // turned the first real staging failure into a guessing game — the host
-    // saw one line, the log had nothing, and the only way forward was to
-    // redeploy with logging. Once was enough.
-    const detail = describeFailure(cause);
-    // The log gets the whole thing; the screen gets the short form. A vendor
-    // nests the sentence that matters — which field it actually rejected —
-    // well past where a toast would stop.
-    console.error(
-      `[caddy] ${credentials.via} ${model} failed: ${describeFailure(cause, FAILURE_LOG_MAX)}`,
-    );
-    // A 401/403/404 is the deploy being wrong, not the night being unlucky —
-    // it will answer identically for ever. Saying so is the difference between
-    // an honest line and one that has a paying host tapping a dead button.
-    const reason = isPermanentFailure(cause) ? "misconfigured" : "unavailable";
-    return { ok: false, reason, usage: { ...NO_USAGE }, model, detail };
+    return lostBall(cause, call, "");
   }
 }
 
@@ -228,41 +163,23 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
  * what it does with them is its business, and dropping every one of them would
  * still leave a correct card at the end.
  *
- * Failure behaves exactly as it does in `askCaddy`, and for the same reason:
- * a vendor's error is "the caddy lost the ball", it costs the host nothing,
- * and the reason goes to the log rather than to the screen. The one difference
- * is that a stream can fail *after* tokens have been spent, so usage is read
- * off the final message whenever there is one to read.
+ * The two share everything except those two lines, which is the point: a
+ * streamed plan and an unstreamed tweak must fail identically, bill
+ * identically and parse identically, and the cheapest way to guarantee that is
+ * for there to be one of each.
  */
 export async function askCaddyStreamed(
   input: CaddyAsk,
   narrate: (update: { thinking?: string; answer?: string }) => void,
 ): Promise<CaddyOutcome> {
-  const credentials = caddyCredentials(process.env);
-  if (!credentials) {
-    return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model: "" };
-  }
-  const model = credentials.model;
-  const client = new Anthropic({
-    apiKey: credentials.apiKey ?? null,
-    authToken: credentials.authToken,
-    ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
-  });
-
+  const call = openCall();
+  if (!call) return unavailable();
   try {
-    const stream = client.messages.stream({
-      model,
-      max_tokens: MAX_TOKENS,
-      system: CADDY_SYSTEM,
+    const stream = call.client.messages.stream({
+      ...requestOf(input, call.model),
       thinking: THINKING_SHOWN,
-      output_config: {
-        effort: EFFORT,
-        format: { type: "json_schema", schema: planSchema(input.candidates) },
-      },
-      messages: buildMessages(input),
     });
-
-    // Two deltas matter and the rest are structure. `thinking` is the window;
+    // Two deltas matter and the rest is structure. `thinking` is the window;
     // `text` is the answer being written, which the caller reads picks out of.
     stream.on("streamEvent", (event) => {
       if (event.type !== "content_block_delta") return;
@@ -272,38 +189,118 @@ export async function askCaddyStreamed(
         narrate({ answer: event.delta.text });
       }
     });
-
-    const response = await stream.finalMessage();
-    const usage = readUsage(response.usage);
-    const spent = <T extends { ok: boolean }>(outcome: T) => ({ ...outcome, usage, model });
-
-    if (response.stop_reason === "refusal") {
-      return spent({ ok: false as const, reason: "malformed" as const });
-    }
-    const text = response.content
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("");
-    if (!text.trim()) return spent({ ok: false as const, reason: "malformed" as const });
-
-    let payload: unknown;
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      return spent({ ok: false as const, reason: "malformed" as const });
-    }
-    return spent(parsePlan(payload, input.candidates, input.brief));
+    return interpret(await stream.finalMessage(), input, call.model);
   } catch (cause) {
-    console.error(
-      `[caddy] ${credentials.via} ${model} stream failed: ${describeFailure(cause, FAILURE_LOG_MAX)}`,
-    );
-    return {
-      ok: false,
-      reason: isPermanentFailure(cause) ? "misconfigured" : "unavailable",
-      usage: { ...NO_USAGE },
-      model,
-      detail: describeFailure(cause),
-    };
+    return lostBall(cause, call, "stream ");
   }
+}
+
+/** An open line to the vendor, or null when this deploy has no credentials. */
+function openCall() {
+  // Read per call, never at module load: a Vercel OIDC token rotates, and a
+  // credential captured once at cold start goes stale under the deploy.
+  const credentials = caddyCredentials(process.env);
+  if (!credentials) return null;
+  return {
+    credentials,
+    model: credentials.model,
+    client: new Anthropic({
+      apiKey: credentials.apiKey ?? null,
+      authToken: credentials.authToken,
+      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
+    }),
+  };
+}
+
+function unavailable(): CaddyOutcome {
+  return { ok: false, reason: "unavailable", usage: { ...NO_USAGE }, model: "" };
+}
+
+/** Everything about the request that does not depend on how it is sent. */
+function requestOf(input: CaddyAsk, model: string) {
+  return {
+    model,
+    max_tokens: MAX_TOKENS,
+    system: CADDY_SYSTEM,
+    output_config: {
+      effort: EFFORT,
+      format: {
+        type: "json_schema" as const,
+        schema: planSchema(input.candidates),
+      },
+    },
+    messages: buildMessages(input),
+  };
+}
+
+/**
+ * A finished message, read once — and read for what it cost *before* it is
+ * read for what it says.
+ *
+ * Every branch below returns usage, because a refusal and a malformed answer
+ * are billed by the vendor exactly like a good one. Miss one and failures
+ * become the one unmetered way to spend (see the `failed` column in migration
+ * 20260826).
+ */
+function interpret(
+  response: Anthropic.Message,
+  input: CaddyAsk,
+  model: string,
+): CaddyOutcome {
+  const usage = readUsage(response.usage);
+  const spent = <T extends { ok: boolean }>(outcome: T) => ({ ...outcome, usage, model });
+
+  // A refusal is a content outcome, not an error — check before reading.
+  if (response.stop_reason === "refusal") {
+    return spent({ ok: false as const, reason: "malformed" as const });
+  }
+  const text = response.content
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("");
+  if (!text.trim()) return spent({ ok: false as const, reason: "malformed" as const });
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return spent({ ok: false as const, reason: "malformed" as const });
+  }
+  return spent(parsePlan(payload, input.candidates, input.brief));
+}
+
+/**
+ * The caddy lost the ball.
+ *
+ * Timeouts, rate limits, a bad gateway — all of them cost the host nothing and
+ * none of them reach them as a vendor's error message. Usage is genuinely
+ * unknown: the call may never have reached the model, and guessing a number
+ * would put an invented charge on a real bill.
+ *
+ * The reason is kept rather than dropped. Swallowing it entirely is what
+ * turned the first real staging failure into a guessing game — the host saw
+ * one line, the log had nothing, and the only way forward was to redeploy with
+ * logging. Once was enough. The log gets the whole thing and the screen gets
+ * the short form, because a vendor nests the sentence that matters — which
+ * field it actually rejected — well past where a toast would stop.
+ */
+function lostBall(
+  cause: unknown,
+  call: NonNullable<ReturnType<typeof openCall>>,
+  label: string,
+): CaddyOutcome {
+  console.error(
+    `[caddy] ${call.credentials.via} ${call.model} ${label}failed: ${describeFailure(cause, FAILURE_LOG_MAX)}`,
+  );
+  return {
+    ok: false,
+    // A 401/403/404 is the deploy being wrong, not the night being unlucky —
+    // it will answer identically for ever. Saying so is the difference between
+    // an honest line and one that has a paying host tapping a dead button.
+    reason: isPermanentFailure(cause) ? "misconfigured" : "unavailable",
+    usage: { ...NO_USAGE },
+    model: call.model,
+    detail: describeFailure(cause),
+  };
 }
 
 /**
