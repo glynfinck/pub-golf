@@ -55,9 +55,12 @@ export const RESUMABLE_HOURS = 12;
  * The host's most recent unfinished caddy session, if there is one worth
  * picking up.
  *
- * Finished sessions never resume: `closeCaddySession` stamps `completed_at`
- * and empties the dossier when a course is saved, so a completed row has
- * nothing left to continue with and the host has what they came for.
+ * Finished sessions resume as well as unfinished ones. `closeCaddySession`
+ * still stamps `completed_at` when a course is saved, but that marks "this
+ * produced a card", not "you may not ask again" — the host keeps a tweak
+ * quota, and the card, brief and dossier they would need are all still in
+ * Postgres. Note the dossier is emptied on close, so a resumed-after-saving
+ * session can tweak what it has; a genuinely new patch is a new plan.
  *
  * Read on the caller's own session, so RLS is the thing deciding whose this
  * is — `caddy_sessions` is visible to its host and to nobody else, which makes
@@ -70,7 +73,17 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
   const { data: session } = await supabase
     .from("caddy_sessions")
     .select("id, brief, course_id")
-    .is("completed_at", null)
+    // Completed sessions resume too, which reverses the original rule.
+    //
+    // `completed_at` was terminal when a fee bought exactly one course: saving
+    // it was the end of the thread because there was nothing left to spend. It
+    // is not the end any more — tweaks are their own quota now, and a host who
+    // saves a course and comes back to it should be able to keep asking rather
+    // than be told the conversation is over. Refusing them meant paying for a
+    // fresh gather and a fresh plan to redo work already sitting in Postgres.
+    //
+    // The window below still applies, so this resumes a conversation rather
+    // than opening a cupboard.
     .gt("created_at", since)
     .order("created_at", { ascending: false })
     .limit(1)

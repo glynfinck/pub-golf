@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   AdvancedMarker,
@@ -9,6 +9,7 @@ import {
   ColorScheme,
   Map,
   Polyline,
+  useMap,
 } from "@vis.gl/react-google-maps";
 
 import { useDrawIn } from "@/hooks/use-draw-in";
@@ -142,6 +143,7 @@ export function RoutePreview({
           keyboardShortcuts={false}
           clickableIcons={false}
         >
+          <Reframe bounds={frame.bounds} />
           {route ? (
             /* Remounted whenever the caddy hands over a card, which is what
                replays the walk. The map itself stays put — remounting *that*
@@ -275,4 +277,30 @@ function PatchPins({ live, picked }: { live: LivePatch; picked: Set<string> }) {
       })}
     </>
   );
+}
+
+/**
+ * Keep the map on the frame, not on the first frame it ever saw.
+ *
+ * `defaultBounds` is initial-only — every `default*` prop in
+ * @vis.gl/react-google-maps sets the view on mount and is never read again. So
+ * a host who planned Shoreditch and then changed the patch to Camden kept
+ * looking at Shoreditch: the pins moved, the map did not. It looked correct on
+ * a fresh load for the worst possible reason, which is that a fresh load *is* a
+ * mount.
+ *
+ * Re-framing imperatively rather than remounting the `<Map>`: a remount
+ * reloads the tiles, flashes, and bills another map load. This is the same
+ * thing `pub-map-sheet.tsx` already does with its viewport.
+ */
+function Reframe({ bounds }: { bounds: PreviewFrame["bounds"] }) {
+  const map = useMap();
+  // Depending on the four numbers rather than the object: `frame` is rebuilt on
+  // every render, so an object identity here would re-fit the map continuously.
+  const { north, south, east, west } = bounds;
+  useEffect(() => {
+    if (!map) return;
+    map.fitBounds({ north, south, east, west }, 48);
+  }, [map, north, south, east, west]);
+  return null;
 }
