@@ -1,0 +1,466 @@
+import type { CandidateDossier } from "@/lib/caddy/dossier";
+import { haversineKm } from "@/lib/geo";
+
+/**
+ * The map, worked out before the caddy is asked.
+ *
+ * A plan used to cost a dozen turns because the model was *searching* — call a
+ * tool, get a slice of the map, call again — and every call dragged the whole
+ * dossier back through the context. One such plan burned 160k cache reads and
+ * 29.20p and timed out with no card, which is more than a successful plan
+ * costs. See docs/CADDY-ROUTE-GRAPH.md for that evidence.
+ *
+ * The search was never necessary. By the time the model runs, the candidate set
+ * is fixed — Places has already returned its forty pubs — so the problem is
+ * "choose n of N and order them, endpoints pinned". That is an orienteering
+ * problem with heuristics that run in milliseconds at this size, and there is
+ * no reason to make a language model rediscover them one tool call at a time.
+ *
+ * So this module answers it up front and hands over the answers: a handful of
+ * genuinely different routes, and the nearest alternatives to every stop on
+ * them. The model's job becomes choosing and adjusting, which is one turn.
+ *
+ * **Pure, and deliberately so.** Candidates in, routes out. No clock, no
+ * network, no database — which is what lets the whole of it be proved in the
+ * unit tier, where CLAUDE.md says rules belong.
+ *
+ * **It cannot invent a pub.** Every route is a permutation of candidate ids.
+ * Nothing here constructs a name, and nothing here can: the only strings it
+ * reads are ids and names it was given.
+ */
+
+/** A candidate that actually has a position. One without coordinates cannot be
+ * routed and is dropped here rather than defaulting to zero, which would put a
+ * pub in the Gulf of Guinea and make it look like the nearest thing to
+ * everything. */
+export interface RouteNode {
+  id: string;
+  lat: number;
+  lng: number;
+  /** Chains repeat their name, so the normalised name is a good enough
+   * "kind of place" for variety scoring without needing a taxonomy. */
+  kind: string;
+}
+
+export interface Neighbour {
+  id: string;
+  km: number;
+}
+
+export interface RouteLeg {
+  from: string;
+  to: string;
+  km: number;
+}
+
+export interface PlannedRoute {
+  /** Candidate ids, in walking order. */
+  stops: string[];
+  legs: RouteLeg[];
+  totalKm: number;
+  /** The longest single leg — the one that decides whether a route is a walk
+   * or a trek, which an average hides completely. */
+  worstLegKm: number;
+  /** Distinct `kind`s across the stops. Nine identical chain bars can be the
+   * shortest route on the map and the worst night on it. */
+  variety: number;
+  /** Why this one is in the set, for the model to read: "shortest",
+   * "kindest legs", "most variety". */
+  character: string;
+}
+
+export interface RouteGraph {
+  /** Every routable stop, by id. */
+  nodes: RouteNode[];
+  /** The k nearest other candidates to each node, nearest first. This is what
+   * removes the *second* wave of turns: when the model wants to swap a hole,
+   * the alternatives and their costs are already in front of it. */
+  neighbours: Record<string, Neighbour[]>;
+  /** A few genuinely different complete routes, best first. */
+  routes: PlannedRoute[];
+}
+
+export interface RouteRequest {
+  /** How many stops the round wants. */
+  holes: number;
+  /** Pinned first and last stops, where the brief named them. */
+  startId?: string | null;
+  finishId?: string | null;
+  /** The walk the host asked for. Routes are scored on *nearness to* this, not
+   * on being as short as possible — a crawl is not better for being shorter,
+   * and the shortest tour of nine pubs is usually nine pubs on one street. */
+  targetKm?: number | null;
+  /** How many alternatives to offer per stop. */
+  neighbours?: number;
+  /** How many routes to hand over. */
+  routes?: number;
+}
+
+const DEFAULT_NEIGHBOURS = 5;
+const DEFAULT_ROUTES = 4;
+
+/**
+ * Two routes sharing all but one stop are one route wearing two hats. Handing
+ * both over spends context to offer no choice, so a candidate must differ by
+ * more than this share of its stops to earn a place.
+ */
+const DIVERSITY_FLOOR = 0.3;
+
+/** Chains give themselves away by repeating their name, which is all the
+ * "kind of place" this needs. Punctuation and the branch suffix go, so
+ * "BrewDog Shoreditch" and "Brewdog — Camden" read as one kind. */
+export function kindOf(name: string): string {
+  const words = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    // A leading "the" is on half the pubs in the country and distinguishes
+    // none of them, so it goes before the brand word is taken.
+    .filter((word, index) => !(index === 0 && word === "the"));
+  // One word, because the brand is the first and the branch is the rest:
+  // keeping two made "BrewDog Shoreditch" and "BrewDog Camden" two kinds,
+  // which is the exact case this is meant to catch.
+  return words[0] ?? name.toLowerCase();
+}
+
+/** The candidates that can actually be walked between. */
+export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
+  const nodes: RouteNode[] = [];
+  for (const candidate of candidates) {
+    if (typeof candidate.lat !== "number" || typeof candidate.lng !== "number") {
+      continue;
+    }
+    nodes.push({
+      id: candidate.id,
+      lat: candidate.lat,
+      lng: candidate.lng,
+      kind: kindOf(candidate.name),
+    });
+  }
+  return nodes;
+}
+
+/** Every pairwise distance, once. At N≈40 this is 1,600 haversines — free, and
+ * far cheaper than recomputing inside the improvement loops. */
+function distances(nodes: RouteNode[]): Map<string, Map<string, number>> {
+  const table = new Map<string, Map<string, number>>();
+  for (const from of nodes) table.set(from.id, new Map());
+  for (let i = 0; i < nodes.length; i += 1) {
+    for (let j = i + 1; j < nodes.length; j += 1) {
+      const km = haversineKm(nodes[i].lat, nodes[i].lng, nodes[j].lat, nodes[j].lng);
+      table.get(nodes[i].id)!.set(nodes[j].id, km);
+      table.get(nodes[j].id)!.set(nodes[i].id, km);
+    }
+  }
+  return table;
+}
+
+const gap = (
+  table: Map<string, Map<string, number>>,
+  from: string,
+  to: string,
+): number => (from === to ? 0 : (table.get(from)?.get(to) ?? Number.POSITIVE_INFINITY));
+
+/** The k nearest others to each node. */
+export function nearestNeighbours(
+  nodes: RouteNode[],
+  k: number,
+  table = distances(nodes),
+): Record<string, Neighbour[]> {
+  const out: Record<string, Neighbour[]> = {};
+  for (const node of nodes) {
+    out[node.id] = nodes
+      .filter((other) => other.id !== node.id)
+      .map((other) => ({ id: other.id, km: gap(table, node.id, other.id) }))
+      .sort((a, b) => a.km - b.km)
+      .slice(0, k);
+  }
+  return out;
+}
+
+function walk(table: Map<string, Map<string, number>>, stops: string[]): number {
+  let km = 0;
+  for (let i = 1; i < stops.length; i += 1) km += gap(table, stops[i - 1], stops[i]);
+  return km;
+}
+
+/**
+ * A greedy tour: from the start, always step to the nearest unused stop, and
+ * finish on the pinned one if there is one.
+ *
+ * `skip` lets the caller force a different second stop, which is how the seed
+ * set gets its variety — greedy from one origin always gives the same answer,
+ * and a set of identical seeds improves into a set of identical routes.
+ */
+function greedy(
+  table: Map<string, Map<string, number>>,
+  pool: string[],
+  holes: number,
+  startId: string,
+  finishId: string | null,
+  skip: string | null,
+): string[] | null {
+  const used = new Set<string>([startId]);
+  if (finishId) used.add(finishId);
+  const stops = [startId];
+  const wanted = finishId ? holes - 1 : holes;
+
+  while (stops.length < wanted) {
+    const from = stops[stops.length - 1];
+    let best: string | null = null;
+    let bestKm = Number.POSITIVE_INFINITY;
+    for (const id of pool) {
+      if (used.has(id)) continue;
+      // Only the first choice is forced away; after that `skip` has done its
+      // job and holding it out would just shrink the pool.
+      if (id === skip && stops.length === 1) continue;
+      const km = gap(table, from, id);
+      if (km < bestKm) {
+        bestKm = km;
+        best = id;
+      }
+    }
+    if (!best) break;
+    used.add(best);
+    stops.push(best);
+  }
+
+  if (finishId) stops.push(finishId);
+  return stops.length === holes ? stops : null;
+}
+
+/**
+ * 2-opt, endpoints pinned: reverse an interior run wherever that shortens the
+ * walk. Fixes the crossings greedy always leaves behind.
+ */
+function twoOpt(
+  table: Map<string, Map<string, number>>,
+  stops: string[],
+  pinStart: boolean,
+  pinFinish: boolean,
+): string[] {
+  const route = [...stops];
+  const first = pinStart ? 1 : 0;
+  const last = pinFinish ? route.length - 2 : route.length - 1;
+  let improved = true;
+  while (improved) {
+    improved = false;
+    for (let i = first; i < last; i += 1) {
+      for (let j = i + 1; j <= last; j += 1) {
+        const before =
+          gap(table, route[i - 1] ?? route[i], route[i]) +
+          gap(table, route[j], route[j + 1] ?? route[j]);
+        const after =
+          gap(table, route[i - 1] ?? route[j], route[j]) +
+          gap(table, route[i], route[j + 1] ?? route[i]);
+        if (after < before - 1e-9) {
+          const slice = route.slice(i, j + 1).reverse();
+          route.splice(i, slice.length, ...slice);
+          improved = true;
+        }
+      }
+    }
+  }
+  return route;
+}
+
+/**
+ * Swap a chosen stop for one nobody chose, where that shortens the walk.
+ *
+ * This is the half of the problem 2-opt cannot touch. 2-opt reorders what is
+ * already in the route; this decides *which* pubs are in it, which is the
+ * "choose n of N" the ordering heuristics take as given.
+ */
+function swapIn(
+  table: Map<string, Map<string, number>>,
+  stops: string[],
+  pool: string[],
+  pinStart: boolean,
+  pinFinish: boolean,
+): string[] {
+  const route = [...stops];
+  const first = pinStart ? 1 : 0;
+  const last = pinFinish ? route.length - 2 : route.length - 1;
+  let improved = true;
+  while (improved) {
+    improved = false;
+    const inRoute = new Set(route);
+    for (let i = first; i <= last; i += 1) {
+      const before =
+        gap(table, route[i - 1] ?? route[i], route[i]) +
+        gap(table, route[i], route[i + 1] ?? route[i]);
+      for (const id of pool) {
+        if (inRoute.has(id)) continue;
+        const after =
+          gap(table, route[i - 1] ?? id, id) + gap(table, id, route[i + 1] ?? id);
+        if (after < before - 1e-9) {
+          inRoute.delete(route[i]);
+          inRoute.add(id);
+          route[i] = id;
+          improved = true;
+          break;
+        }
+      }
+    }
+  }
+  return route;
+}
+
+/** How much two routes overlap, 0 (nothing shared) to 1 (identical set). */
+export function overlap(a: string[], b: string[]): number {
+  const left = new Set(a);
+  const right = new Set(b);
+  let shared = 0;
+  for (const id of left) if (right.has(id)) shared += 1;
+  const union = new Set([...left, ...right]).size;
+  return union === 0 ? 0 : shared / union;
+}
+
+function describe(
+  table: Map<string, Map<string, number>>,
+  nodes: Map<string, RouteNode>,
+  stops: string[],
+  character: string,
+): PlannedRoute {
+  const legs: RouteLeg[] = [];
+  for (let i = 1; i < stops.length; i += 1) {
+    legs.push({
+      from: stops[i - 1],
+      to: stops[i],
+      km: gap(table, stops[i - 1], stops[i]),
+    });
+  }
+  const kinds = new Set(stops.map((id) => nodes.get(id)?.kind ?? id));
+  return {
+    stops,
+    legs,
+    totalKm: walk(table, stops),
+    worstLegKm: legs.reduce((worst, leg) => Math.max(worst, leg.km), 0),
+    variety: kinds.size,
+    character,
+  };
+}
+
+/**
+ * What makes a route good, which is where this stops being a textbook TSP.
+ *
+ * Lower is better. Three terms, and the first is the one a distance-minimising
+ * solver gets wrong: a crawl is not better for being shorter. A host who asked
+ * for four kilometres wants four, so the penalty is on the *distance from* the
+ * target rather than on the distance itself — otherwise every answer is nine
+ * pubs on one street.
+ */
+export function scoreRoute(route: PlannedRoute, targetKm: number | null): number {
+  const spread = targetKm
+    ? Math.abs(route.totalKm - targetKm) / Math.max(targetKm, 0.1)
+    : route.totalKm / 10;
+  // A single brutal leg ruins a night the average never shows. Only the excess
+  // over a comfortable ten minutes' walk counts.
+  const trek = Math.max(0, route.worstLegKm - 0.8);
+  // Variety pulls the other way, so it subtracts. Capped: past a handful of
+  // distinct kinds nobody notices another.
+  const sameness = (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
+  return spread + trek + sameness * 0.5;
+}
+
+/**
+ * The map, ready to hand over.
+ *
+ * Seed several greedy tours from different second stops, improve each by
+ * reordering and by swapping pubs in and out, then keep only those that differ
+ * enough from the ones already kept to be a real alternative.
+ */
+export function buildRouteGraph(
+  candidates: CandidateDossier[],
+  request: RouteRequest,
+): RouteGraph {
+  const nodes = routableNodes(candidates);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const table = distances(nodes);
+  const neighbours = nearestNeighbours(
+    nodes,
+    request.neighbours ?? DEFAULT_NEIGHBOURS,
+    table,
+  );
+
+  const pool = nodes.map((node) => node.id);
+  const holes = Math.min(request.holes, pool.length);
+  // Nothing to route: one stop is not a crawl, and the caller gets the
+  // neighbour map alone rather than a fabricated route.
+  if (holes < 2) return { nodes, neighbours, routes: [] };
+
+  const startId =
+    request.startId && byId.has(request.startId) ? request.startId : null;
+  const finishId =
+    request.finishId && byId.has(request.finishId) && request.finishId !== startId
+      ? request.finishId
+      : null;
+
+  // With no pinned tee, try several origins so the seeds genuinely differ.
+  const origins = startId ? [startId] : pool.slice(0, 6);
+  const seeds: string[][] = [];
+  for (const origin of origins) {
+    // `null` is the plain greedy run; the rest force a different second stop.
+    for (const skip of [null, ...neighbours[origin].slice(0, 3).map((n) => n.id)]) {
+      const seed = greedy(table, pool, holes, origin, finishId, skip);
+      if (seed) seeds.push(seed);
+    }
+  }
+
+  const improved = seeds.map((seed) => {
+    let route = twoOpt(table, seed, startId !== null, finishId !== null);
+    route = swapIn(table, route, pool, startId !== null, finishId !== null);
+    // Reordering can pay off again once the membership has changed.
+    return twoOpt(table, route, startId !== null, finishId !== null);
+  });
+
+  const target = request.targetKm ?? null;
+  const scored = improved
+    .map((stops) => describe(table, byId, stops, "shortest"))
+    .sort((a, b) => scoreRoute(a, target) - scoreRoute(b, target));
+
+  const kept: PlannedRoute[] = [];
+  for (const route of scored) {
+    if (kept.length >= (request.routes ?? DEFAULT_ROUTES)) break;
+    const tooSimilar = kept.some(
+      (other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR,
+    );
+    if (!tooSimilar) kept.push(route);
+  }
+
+  // Character is relative to the set, so it can only be named once the set is
+  // known — and every label must be distinct, or the model is offered "most
+  // variety" twice and has no way to tell them apart.
+  if (kept.length > 0) {
+    const taken = new Set<number>([0]);
+    kept[0].character = "best fit for the brief";
+    const pick = (better: (a: PlannedRoute, b: PlannedRoute) => boolean) => {
+      let best: number | null = null;
+      for (let i = 1; i < kept.length; i += 1) {
+        if (taken.has(i)) continue;
+        if (best === null || better(kept[i], kept[best])) best = i;
+      }
+      return best;
+    };
+    const kindest = pick((a, b) => a.worstLegKm < b.worstLegKm);
+    if (kindest !== null) {
+      kept[kindest].character = "kindest legs";
+      taken.add(kindest);
+    }
+    const mixed = pick((a, b) => a.variety > b.variety);
+    if (mixed !== null) {
+      kept[mixed].character = "most variety";
+      taken.add(mixed);
+    }
+    let spare = 1;
+    for (let i = 1; i < kept.length; i += 1) {
+      if (!taken.has(i)) {
+        kept[i].character = `another way round (${spare})`;
+        spare += 1;
+      }
+    }
+  }
+
+  return { nodes, neighbours, routes: kept };
+}
