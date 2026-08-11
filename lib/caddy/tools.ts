@@ -17,6 +17,7 @@ import {
   dossierLine,
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
+import type { RouteTrial } from "@/lib/caddy/route";
 
 /**
  * The caddy's hands: the tools it may call, and what each one does to the
@@ -62,6 +63,7 @@ export const TOOL_SET = "set_hole";
 export const TOOL_REMOVE = "remove_hole";
 export const TOOL_MOVE = "move_hole";
 export const TOOL_NAME = "name_course";
+export const TOOL_ROUTE = "try_route";
 
 /** One hole as the caddy holds it: an id and its dressing. The venue behind
  * the id is the server's business, which is the whole point. */
@@ -208,6 +210,24 @@ export const CADDY_TOOLS = [
     },
   },
   {
+    name: TOOL_ROUTE,
+    description:
+      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to try a set you have not committed to, or with nothing to measure what is on the table. This is the same router the finished card goes through, so what it reports is what the group will walk — use it before you hand a card over, and again after you change one.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: [],
+      properties: {
+        candidateIds: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description:
+            "The pubs to try, by id. Leave it out to route the holes already on the table.",
+        },
+      },
+    },
+  },
+  {
     name: TOOL_NAME,
     description: "Name the course.",
     input_schema: {
@@ -286,6 +306,51 @@ export function searchResultBlock(found: CandidateDossier[]): string {
     "",
     ...found.map(dossierLine),
   ].join("\n");
+}
+
+/**
+ * A routed trial, written for the caddy to act on.
+ *
+ * Numbers first and a verdict never. The caddy is the one deciding whether a
+ * fourteen-minute leg is a problem — that depends on the brief, and the brief
+ * is already in front of it. What it cannot work out for itself is what the
+ * router did with its picks, and that is all this says.
+ */
+export function routeTrialBlock(
+  trial: RouteTrial,
+  candidates: CandidateDossier[],
+): string {
+  const byId = candidatesById(candidates);
+  const named = (id: string) => `${id} (${byId.get(id)?.name ?? "?"})`;
+  if (!trial.legs.length) {
+    return "Nothing to route yet — put some pubs on the table first.";
+  }
+  const lines = [
+    "ROUTED",
+    `order: ${trial.order.map(named).join(" → ")}`,
+    `total walk: ${trial.totalMinutes} min`,
+    ...trial.legs.map(
+      (leg) =>
+        `  ${leg.from} → ${leg.to}: ${leg.minutes} min${leg.short ? "  ← under the minimum" : ""}`,
+    ),
+  ];
+  if (trial.shortLegs > 0) {
+    lines.push(
+      `${trial.shortLegs} ${trial.shortLegs === 1 ? "leg is" : "legs are"} shorter than asked for.`,
+    );
+  }
+  if (trial.worstRun >= 2) {
+    // The complaint that started the spacing work, named as what it is.
+    lines.push(
+      `${trial.worstRun + 1} pubs in a row sit almost on top of each other. Spread them out.`,
+    );
+  }
+  if (trial.unplaced.length) {
+    lines.push(
+      `No coordinates for ${trial.unplaced.join(", ")}, so they are not in any of the above.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 // ————————————————— what the caddy may change —————————————————
