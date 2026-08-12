@@ -81,6 +81,43 @@ export async function resumeCaddyForCourse(
   return latestSession(courseId);
 }
 
+/**
+ * A conversation about this course that is over only because its patch went.
+ *
+ * The difference between "there is no caddy here" and "the caddy is here and
+ * needs a moment" — and it is worth the extra read, because those look
+ * identical from outside and mean opposite things to a host with tweaks left
+ * on their fee.
+ *
+ * Deliberately narrow: in the window, about this course, has produced a card,
+ * and has no patch. Anything else answers null and the screen shows what it
+ * showed before. Returns the session id, which is all `reopenCaddyPatch`
+ * needs — everything it re-gathers from is already on the row.
+ */
+export async function caddyReopenable(courseId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: session } = await supabase
+    .from("caddy_sessions")
+    .select("id, brief, dossier")
+    .eq("course_id", courseId)
+    .gt("created_at", resumableSince(Date.now()))
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!session || !readBrief(session.brief)) return null;
+  // An open patch is `resumeCaddyForCourse`'s business, not this one's.
+  if (patchIsOpen(session.dossier)) return null;
+
+  // A session that never produced a card has nothing to pick back up; the
+  // host closed the tab mid-plan and was never charged for it.
+  const { count } = await supabase
+    .from("caddy_turns")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", session.id)
+    .eq("failed", false);
+  return count && count > 0 ? session.id : null;
+}
+
 async function latestSession(
   courseId: string | null,
 ): Promise<ResumedCaddy | null> {

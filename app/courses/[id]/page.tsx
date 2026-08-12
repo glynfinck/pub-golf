@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { CourseBuilder } from "@/components/course/course-builder";
 import { getCourseForEdit } from "@/lib/data/courses";
 import { caddyStand } from "@/lib/data/caddy-gate";
-import { resumeCaddyForCourse } from "@/lib/data/caddy";
+import { caddyReopenable, resumeCaddyForCourse } from "@/lib/data/caddy";
 
 export const metadata = { title: "Retouch the course" };
 
@@ -30,17 +30,23 @@ export default async function EditCoursePage({
   const course = await getCourseForEdit(id);
   if (!course) notFound();
 
-  const [stand, resumed] = await Promise.all([
+  const [stand, resumed, reopen] = await Promise.all([
     caddyStand(),
     resumeCaddyForCourse(id),
+    // The other half of the same question: a conversation that is over only
+    // because its patch was swept. Without this, a course planned this morning
+    // and saved shows no caddy at all, which is indistinguishable from a
+    // hand-built one and wrong in a way the host cannot act on.
+    caddyReopenable(id),
   ]);
 
   return (
     <CourseBuilder
       course={course}
-      caddy={stand.ready && resumed !== null}
+      caddy={stand.ready && (resumed !== null || reopen !== null)}
       hasPass={stand.hasPass}
       resumed={resumed}
+      reopen={reopen}
       allowance={stand.allowance}
     />
   );

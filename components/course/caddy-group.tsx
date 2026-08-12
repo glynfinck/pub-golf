@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Sparkle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,7 +31,11 @@ import {
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
-import { askTheCaddy, collectCaddyCard } from "@/lib/actions/caddy";
+import {
+  askTheCaddy,
+  collectCaddyCard,
+  reopenCaddyPatch,
+} from "@/lib/actions/caddy";
 import { startCaddyTopupCheckout } from "@/lib/actions/billing";
 import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
@@ -63,6 +68,7 @@ export function CaddyGroup({
   onReach,
   reach,
   session = null,
+  reopen = null,
   className,
 }: {
   /** A live green fee on this host. The form is identical either way — only
@@ -92,6 +98,15 @@ export function CaddyGroup({
    * still could not be spoken to.
    */
   session?: string | null;
+  /**
+   * A conversation whose patch has been swept, and the id it lives under.
+   *
+   * The retention rule's bill, made payable. Twelve hours after a session
+   * opens its dossier goes, and a host with tweaks left on their fee had no
+   * way to spend them but to plan the course again — which costs a re-design
+   * for work already done. One trip back to Google puts the patch back.
+   */
+  reopen?: string | null;
   /** How far the round reaches, for the ring on the drafting table's map.
    * Null while there is nothing to draw. */
   onReach?: (reach: Reach | null) => void;
@@ -100,6 +115,7 @@ export function CaddyGroup({
   reach?: Reach | null;
   className?: string;
 }) {
+  const router = useRouter();
   const { run, pending, busy } = useAction();
   const [open, setOpen] = useState(false);
   // Seeded from the server's answer, so a resumed conversation opens on the
@@ -494,6 +510,45 @@ export function CaddyGroup({
             </p>
           )}
         </div>
+      </div>
+    );
+  }
+
+  // ——— The card is here and the patch is not. Offered rather than done
+  // automatically: it is a call out to Google, and a host who only came to
+  // rename a hole should not pay for one they never asked for.
+  if (!sessionId && reopen) {
+    return (
+      <div
+        className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
+      >
+        <span className="eyebrow text-fairway">The caddy</span>
+        <p className="text-[13px] text-muted-foreground">
+          The caddy has put this patch away for the night. Fetch it back and
+          you can carry on changing the card — it costs nothing off your fee.
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              const result = await reopenCaddyPatch(reopen);
+              if (result.error) return result;
+              // The patch is on the session now; the page reads it on the way
+              // back in, which is also what puts the ask box on screen.
+              router.refresh();
+              return {};
+            })
+          }
+        >
+          <PendingLabel
+            pending={pending}
+            busy={busy}
+            label="Pick this back up"
+            pendingLabel="Bringing it back"
+          />
+        </Button>
       </div>
     );
   }

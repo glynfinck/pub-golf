@@ -108,6 +108,7 @@ export function CourseBuilder({
   caddy = false,
   hasPass = false,
   resumed = null,
+  reopen = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -116,6 +117,10 @@ export function CourseBuilder({
    * and — the part that matters — knows which course it already filed, so the
    * next card writes over that one instead of minting a second. */
   resumed?: ResumedCaddy | null;
+  /** A conversation about this course whose patch has been swept, and so needs
+   * one trip back to Google before it can be spoken to. The id is all the
+   * caddy needs; everything else is already on the session row. */
+  reopen?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -508,6 +513,7 @@ export function CourseBuilder({
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
           session={caddySession}
+          reopen={reopen}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
           onReach={setReach}

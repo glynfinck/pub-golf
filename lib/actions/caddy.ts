@@ -8,6 +8,7 @@ import {
   closeCaddySession as closeCaddySessionRun,
   planCourse as planCourseRun,
   rememberCaddyCourse as rememberCaddyCourseRun,
+  reopenCaddyPatch as reopenCaddyPatchRun,
   type CaddyResult,
 } from "@/lib/caddy/run";
 
@@ -60,9 +61,17 @@ export async function rememberCaddyCourse(
   return rememberCaddyCourseRun(sessionId, courseId);
 }
 
-/** The session is finished: stamp it and drop the dossier. */
+/** The session is finished: stamp it. The patch stays until the window ends. */
 export async function closeCaddySession(sessionId: string): Promise<void> {
   return closeCaddySessionRun(sessionId);
+}
+
+/** Go back to Google for a patch that has been swept, so a conversation with
+ * tweaks left on it can carry on. No card, no credit. */
+export async function reopenCaddyPatch(
+  sessionId: string,
+): Promise<{ error?: string }> {
+  return reopenCaddyPatchRun(sessionId);
 }
 
 /**

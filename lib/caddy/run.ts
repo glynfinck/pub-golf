@@ -310,6 +310,142 @@ async function pinCoords(
 }
 
 /**
+ * The patch, from Google: everywhere worth drinking between the brief's ends.
+ *
+ * Lifted out of `openPlan` when re-opening a swept session needed the same
+ * thing. Both callers want exactly this — the candidates and the two ends the
+ * areas resolved to — and neither wants a model, a session row or a credit,
+ * which is what makes it a sensible seam.
+ *
+ * A thin patch is an honest refusal, never a padded card, and it costs nothing
+ * either way: no turn row is written here.
+ */
+async function gatherFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  brief: CaddyBrief,
+  placesKey: string,
+): Promise<
+  | { candidates: CandidateDossier[]; from: unknown; to: unknown }
+  | { error: string }
+> {
+  const pins = await pinCoords(supabase, [
+    brief.startVenueId,
+    brief.finishVenueId,
+  ]);
+  const start = pins.get(brief.startVenueId ?? "");
+  const finish = pins.get(brief.finishVenueId ?? "");
+
+  const requestHeaders = await headers();
+  const gather = await gatherPubs({
+    key: placesKey,
+    where: brief.where,
+    whereTo: brief.whereTo,
+    start: start?.lat != null && start.lng != null
+      ? { lat: start.lat, lng: start.lng }
+      : null,
+    finish: finish?.lat != null && finish.lng != null
+      ? { lat: finish.lat, lng: finish.lng }
+      : null,
+    ipBias: ipBiasFrom(requestHeaders),
+    language: primaryLanguage(requestHeaders.get("accept-language")),
+  });
+
+  const cached = await cachePubs(supabase, gather.pubs);
+  // Pinned tees always join the table, whatever the gather returned.
+  const withPins = [
+    ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
+    ...cached,
+  ];
+  const candidates = buildCandidates(
+    withPins,
+    [brief.startVenueId, brief.finishVenueId].filter((id): id is string =>
+      Boolean(id),
+    ),
+  );
+
+  if (candidates.length < candidateFloor(brief.holes)) {
+    return { error: THIN_PATCH };
+  }
+  return { candidates, from: gather.from, to: gather.to };
+}
+
+/**
+ * Pick a conversation back up after its patch has been swept.
+ *
+ * The retention rule costs something, and this is what it costs: twelve hours
+ * after a session opens its dossier goes, and with it the caddy's ability to
+ * swap a pub — because there is nothing left to swap *for*. Until now that was
+ * terminal, so a host with tweaks still on their fee and a course in the book
+ * had no way to spend them except to plan the whole thing again, which spends
+ * a re-design on work already done.
+ *
+ * So: re-gather. Google is asked the same brief a second time and the answer
+ * goes back on the session. No model call, no card, no turn row and **no
+ * credit** — the patch expiring is our policy rather than the host's action,
+ * and charging for it would be charging them for our own housekeeping.
+ *
+ * Three things bound it. The session must be theirs (RLS decides, not this
+ * function). Their fee must still be running, exactly as `askTheCaddy`
+ * requires — a conversation on an expired pass is over regardless. And the
+ * patch must actually be gone, so this cannot be used to refresh a live one.
+ *
+ * Note the window still means what it says: `resumeCaddy` will not offer a
+ * session older than it, so this re-opens a conversation from tonight rather
+ * than resurrecting one from last week. And it *fetches* rather than
+ * un-deletes, so nothing about Google's data is held longer than the rule
+ * allows.
+ */
+export async function reopenCaddyPatch(
+  sessionId: string,
+): Promise<{ error?: string }> {
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey) return { error: NO_CADDY };
+
+  const session = await host();
+  if (!session) return { error: "Planning a course takes a sign-in." };
+  const { supabase, user } = session;
+
+  const { data: row } = await supabase
+    .from("caddy_sessions")
+    .select("id, brief, dossier")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!row) return { error: "That patch isn't on your table." };
+
+  const brief = readBrief(row.brief);
+  if (!brief) return { error: "That patch isn't on your table." };
+  // Already open. Answering plainly rather than re-gathering keeps this from
+  // becoming a way to spend Places quota on a session that needs nothing.
+  if (patchIsOpen(row.dossier)) return {};
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: user.id,
+  });
+  if (covered !== true) return { error: PASS_RAN_OUT };
+
+  const gathered = await gatherFor(supabase, brief, placesKey);
+  if ("error" in gathered) return gathered;
+
+  const { error } = await supabase
+    .from("caddy_sessions")
+    .update({
+      // The ends resolve again with the patch, so a re-opened conversation
+      // aims the same way a fresh one would rather than carrying whatever the
+      // first gather happened to find.
+      brief: {
+        ...brief,
+        aimFrom: gathered.from,
+        aimTo: gathered.to,
+      } as unknown as never,
+      dossier: gathered.candidates as unknown as never,
+    })
+    .eq("id", sessionId);
+  if (error) return { error: "That patch isn't on your table." };
+  return {};
+}
+
+/**
  * Plan a course: gather the patch, brief the caddy, keep the card.
  *
  * The gather happens once. Its dossier is written onto the session and every
@@ -388,46 +524,9 @@ export async function openPlan(rawBrief: unknown): Promise<
     };
   }
 
-  const pins = await pinCoords(supabase, [
-    brief.startVenueId,
-    brief.finishVenueId,
-  ]);
-  const start = pins.get(brief.startVenueId ?? "");
-  const finish = pins.get(brief.finishVenueId ?? "");
-
-  const requestHeaders = await headers();
-  const gather = await gatherPubs({
-    key: placesKey,
-    where: brief.where,
-    whereTo: brief.whereTo,
-    start: start?.lat != null && start.lng != null
-      ? { lat: start.lat, lng: start.lng }
-      : null,
-    finish: finish?.lat != null && finish.lng != null
-      ? { lat: finish.lat, lng: finish.lng }
-      : null,
-    ipBias: ipBiasFrom(requestHeaders),
-    language: primaryLanguage(requestHeaders.get("accept-language")),
-  });
-
-  const cached = await cachePubs(supabase, gather.pubs);
-  // Pinned tees always join the table, whatever the gather returned.
-  const withPins = [
-    ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
-    ...cached,
-  ];
-  const candidates = buildCandidates(
-    withPins,
-    [brief.startVenueId, brief.finishVenueId].filter((id): id is string =>
-      Boolean(id),
-    ),
-  );
-
-  // A thin patch is an honest refusal, never a padded card — and it costs
-  // nothing, because no turn row is written.
-  if (candidates.length < candidateFloor(brief.holes)) {
-    return { error: THIN_PATCH };
-  }
+  const gathered = await gatherFor(supabase, brief, placesKey);
+  if ("error" in gathered) return gathered;
+  const { candidates, from, to } = gathered;
 
   const { data: created, error: sessionError } = await supabase
     .from("caddy_sessions")
@@ -438,8 +537,8 @@ export async function openPlan(rawBrief: unknown): Promise<
       // host asked rather than guessing a direction from the candidate cloud.
       brief: {
         ...brief,
-        aimFrom: gather.from,
-        aimTo: gather.to,
+        aimFrom: from,
+        aimTo: to,
       } as unknown as never,
       dossier: candidates as unknown as never,
     })
