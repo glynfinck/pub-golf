@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_GRANT_SIZE, CADDY_QUOTAS } from "@/lib/caddy/credits";
-import { DAY_PASS_HOURS } from "@/lib/billing";
+import {
+  CADDY_TOPUP_LOOKUP_KEYS,
+  CADDY_TOPUPS,
+  DAY_PASS_HOURS,
+  type CaddyTopupKey,
+} from "@/lib/billing";
 import { adminClient, signedInUser, type Actor } from "@/tests/support/clients";
 
 import { expectDenied } from "./helpers/assert";
@@ -363,6 +368,115 @@ describe("the spend ladder", () => {
     const landed = both.filter((r) => r.error === null);
     expect(landed, "exactly one card should get the last credit").toHaveLength(1);
     expect(await balance(solo, "redesign")).toBe(0);
+  });
+});
+
+/**
+ * Every rung of the tariff grants what the tariff says it grants.
+ *
+ * `caddy_topup_course` shipped and granted **nothing** — the purchase went
+ * through, the entitlement row was written, and the buyer got no course, no
+ * revision and no tweaks. Money taken, nothing given, which is the worst
+ * failure a billing path has.
+ *
+ * `grant_caddy_package` decided whether a row was a top-up by testing
+ * `new.kind` against a hardcoded list of the two rungs that existed when it was
+ * written. The migration that added the third taught `caddy_topup_size` and
+ * restated the CHECK — both necessary — while the trigger in between went on
+ * saying "never heard of it" and fell through.
+ *
+ * It is the second time this shape has bitten: `caddy_topup_1` first shipped
+ * unable to be inserted at all, because a *different* hardcoded list — the
+ * CHECK constraint — had never heard of it either. So this suite walks
+ * `CADDY_TOPUP_LOOKUP_KEYS` rather than naming rungs, which is the only way a
+ * test can catch the next one.
+ */
+describe("what every top-up grants", () => {
+  let buyer: Actor;
+
+  beforeEach(async () => {
+    buyer = await signedInUser("Top-up Buyer");
+  });
+
+  async function buy(kind: CaddyTopupKey) {
+    const { data, error } = await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: buyer.userId,
+        kind,
+        stripe_event_id: `evt_topup_${randomUUID()}`,
+        expires_at: null,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function grantsFor(entitlementId: string) {
+    const { data, error } = await adminClient()
+      .from("caddy_grants")
+      .select("quota, amount, expires_at")
+      .eq("entitlement_id", entitlementId);
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  it("grants something for every rung the code sells", async () => {
+    // The regression, and deliberately a loop rather than three named cases:
+    // the bug was a rung the database had never heard of, so a test that names
+    // rungs would have been written against the same stale list.
+    for (const kind of CADDY_TOPUP_LOOKUP_KEYS) {
+      const bought = await buy(kind);
+      expect(
+        await grantsFor(bought),
+        `${kind} granted nothing — money taken, nothing given`,
+      ).not.toHaveLength(0);
+    }
+  });
+
+  it("grants exactly what the tariff prints", async () => {
+    for (const kind of CADDY_TOPUP_LOOKUP_KEYS) {
+      const bought = await buy(kind);
+      const granted = Object.fromEntries(
+        (await grantsFor(bought)).map((g) => [g.quota, g.amount]),
+      );
+      const tariff = CADDY_TOPUPS[kind];
+      expect(granted.redesign, `${kind} revisions`).toBe(tariff.redesign);
+      expect(granted.tweak, `${kind} tweaks`).toBe(tariff.tweak);
+      // A rung with no course credit must not quietly acquire one: that is the
+      // difference between "another round" and "another course", and it is the
+      // whole reason the two are separate products.
+      expect(granted.course, `${kind} course credit`).toBe(tariff.course);
+    }
+  });
+
+  it("keeps every top-up durable, whatever the rung", async () => {
+    // Cost is incurred at redemption, so an unredeemed round costs nothing to
+    // hold and expiring one would earn breakage and nothing else. The fee is
+    // the only thing here with a clock, and even that one starts at tee-off.
+    for (const kind of CADDY_TOPUP_LOOKUP_KEYS) {
+      for (const grant of await grantsFor(await buy(kind))) {
+        expect(grant.expires_at, `${kind} ${grant.quota} expires`).toBeNull();
+      }
+    }
+  });
+
+  it("grants nothing at all for a kind the tariff does not sell", async () => {
+    // The fall-through has to stay a fall-through. `season_ticket` is in the
+    // CHECK constraint and sells nothing today, so it is the honest probe for
+    // "recognised by the column, unknown to the tariff".
+    const { data } = await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: buyer.userId,
+        kind: "season_ticket",
+        stripe_event_id: `evt_topup_${randomUUID()}`,
+        expires_at: null,
+      })
+      .select("id")
+      .single();
+    expect(await grantsFor(data!.id)).toHaveLength(0);
   });
 });
 

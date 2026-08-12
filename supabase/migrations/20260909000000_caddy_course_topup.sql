@@ -30,8 +30,17 @@
 --
 -- Additive per DEPLOYMENT.md: a restated CHECK and `create or replace` on one
 -- immutable function. Code that has never heard of this kind keeps selling the
--- other two, and `grant_caddy_package` already iterates `enum_range`, so the
--- course grant is minted by the function below rather than by any new branch.
+-- other two.
+--
+-- **This was not enough, and the note that used to sit here said so wrongly.**
+-- It claimed `grant_caddy_package` "already iterates `enum_range`", so no new
+-- branch was needed. That trigger does iterate `enum_range` — over *quotas*,
+-- inside a branch it only enters for a kind on a hardcoded list of the two
+-- older rungs. So this rung sold and granted nothing until
+-- `20260911000000` replaced that list with a question the tariff can answer.
+-- Kept rather than reworded, because the mistake is the useful part: adding a
+-- rung touches several places, and every one of them holding its own copy of
+-- "which rungs exist" is one that can be missed.
 -- ---------------------------------------------------------------------------
 
 -- The gate before the grant, restated whole — a CHECK has no ALTER, and this
