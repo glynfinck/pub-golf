@@ -89,12 +89,18 @@ const PRICES = [
     product: { name: "Another course", metadata: { kind: "caddy_topup_course" } },
     metadata: { kind: "caddy_topup_course" },
     currency: "gbp",
-    unit_amount: 800,
+    // £9, not £8, and the reason is the ladder rather than the margin: at £8
+    // this rung was £4.00 a card and tied with the three-pack, while also
+    // throwing in a kept-course slot — so the dearer rung was the better buy
+    // and "cheaper with volume" was untrue in the middle of its own ladder.
+    // £5.00 → £4.50 → £4.00 is monotone. See lib/tariff.ts, which is the
+    // source this must match and which a smoke test holds it to.
+    unit_amount: 900,
     currency_options: {
-      usd: { unit_amount: 1000, tax_behavior: "inclusive" },
-      eur: { unit_amount: 1000, tax_behavior: "inclusive" },
-      cad: { unit_amount: 1400, tax_behavior: "inclusive" },
-      aud: { unit_amount: 1600, tax_behavior: "inclusive" },
+      usd: { unit_amount: 1100, tax_behavior: "inclusive" },
+      eur: { unit_amount: 1100, tax_behavior: "inclusive" },
+      cad: { unit_amount: 1600, tax_behavior: "inclusive" },
+      aud: { unit_amount: 1800, tax_behavior: "inclusive" },
     },
   },
   {
