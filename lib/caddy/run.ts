@@ -398,6 +398,7 @@ export async function openPlan(rawBrief: unknown): Promise<
   const gathered = await gatherPubs({
     key: placesKey,
     where: brief.where,
+    whereTo: brief.whereTo,
     start: start?.lat != null && start.lng != null
       ? { lat: start.lat, lng: start.lng }
       : null,
@@ -548,6 +549,9 @@ function midConversation(brief: CaddyBrief) {
         const found = await gatherPubs({
           key,
           where: query,
+          // A mid-plan search is one place the caddy went looking for, not a
+          // walk between two — the corridor is the brief's business.
+          whereTo: "",
           start: null,
           finish: null,
           ipBias: null,

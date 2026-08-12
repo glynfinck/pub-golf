@@ -187,6 +187,17 @@ export interface GatherInput {
   key: string;
   /** The patch in the host's words. Empty when both tees are pinned. */
   where: string;
+  /**
+   * Where the night finishes, in the host's words. Empty for a single patch.
+   *
+   * Resolved here rather than passed in as coordinates, because a *named* area
+   * is what the host actually typed and pinned venues are a different feature.
+   * Without this the corridor could only ever be drawn between two dropped
+   * pins — so a host who asked to finish in Covent Garden got pubs around
+   * where they started and a route that stopped a mile short, not because the
+   * router refused to go but because nothing out there was ever gathered.
+   */
+  whereTo: string;
   /** Coordinates of pinned tees, where the host dropped them. */
   start: { lat: number; lng: number } | null;
   finish: { lat: number; lng: number } | null;
@@ -206,37 +217,22 @@ export interface GatherInput {
  */
 export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   const { key, language } = input;
-  const centres: { lat: number; lng: number }[] = [];
-
-  const corridor = Boolean(input.start && input.finish);
-  if (input.start && input.finish) {
-    const samples = corridorSamples(
-      haversineKm(input.start.lat, input.start.lng, input.finish.lat, input.finish.lng),
-    );
-    for (let i = 0; i < samples; i++) {
-      // Evenly down the line, ends included. Guarded so a future single-sample
-      // corridor lands on the start rather than on NaN.
-      const t = i / Math.max(1, samples - 1);
-      centres.push({
-        lat: input.start.lat + (input.finish.lat - input.start.lat) * t,
-        lng: input.start.lng + (input.finish.lng - input.start.lng) * t,
-      });
-    }
-  } else if (input.start || input.finish) {
-    centres.push((input.start ?? input.finish) as { lat: number; lng: number });
-  }
-
   const found: GooglePlace[] = [];
 
-  // A named patch is located first, so "Shoreditch" becomes a point before it
-  // becomes a ring of pubs.
-  if (input.where.trim()) {
-    const bias = centres[0] ?? input.ipBias;
-    const located = await call(
+  /**
+   * Turn an area's name into a point, by asking what pubs are in it.
+   *
+   * The mean of the answers rather than the first: "Covent Garden" returns
+   * pubs *around* Covent Garden and the first can sit at its edge, which drags
+   * a corridor end off by a few hundred metres before anything else happens.
+   */
+  const locate = async (query: string, bias: { lat: number; lng: number } | null) => {
+    if (!query.trim()) return null;
+    const places = await call(
       key,
       TEXT_URL,
       {
-        textQuery: `pubs in ${input.where.trim()}`,
+        textQuery: `pubs in ${query.trim()}`,
         pageSize: 20,
         ...(bias
           ? {
@@ -251,14 +247,52 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
       },
       language,
     );
-    found.push(...located);
-    const anchor = located.find((place) => place.location);
-    if (!centres.length && anchor?.location) {
+    found.push(...places);
+    const placed = places
+      .filter((place) => place.location)
+      .slice(0, 5)
+      .map((place) => ({
+        lat: place.location!.latitude as number,
+        lng: place.location!.longitude as number,
+      }));
+    if (placed.length === 0) return null;
+    return {
+      lat: placed.reduce((sum, p) => sum + p.lat, 0) / placed.length,
+      lng: placed.reduce((sum, p) => sum + p.lng, 0) / placed.length,
+    };
+  };
+
+  // Pinned tees win where the host dropped them; otherwise the two named areas
+  // are located and become the ends of the walk themselves.
+  let from = input.start;
+  let to = input.finish;
+  if (!from || !to) {
+    const [namedFrom, namedTo] = await Promise.all([
+      from ? Promise.resolve(from) : locate(input.where, input.ipBias),
+      to ? Promise.resolve(to) : locate(input.whereTo, input.ipBias),
+    ]);
+    from = from ?? namedFrom;
+    to = to ?? namedTo;
+  }
+
+  const corridor = Boolean(from && to);
+  const centres: { lat: number; lng: number }[] = [];
+  if (from && to) {
+    const samples = corridorSamples(
+      haversineKm(from.lat, from.lng, to.lat, to.lng),
+      CORRIDOR_RADIUS_M / 1000,
+    );
+    for (let i = 0; i < samples; i++) {
+      // Evenly down the line, ends included. Guarded so a future single-sample
+      // corridor lands on the start rather than on NaN.
+      const t = i / Math.max(1, samples - 1);
       centres.push({
-        lat: anchor.location.latitude as number,
-        lng: anchor.location.longitude as number,
+        lat: from.lat + (to.lat - from.lat) * t,
+        lng: from.lng + (to.lng - from.lng) * t,
       });
     }
+  } else if (from || to) {
+    centres.push((from ?? to) as { lat: number; lng: number });
   }
 
   if (!centres.length && input.ipBias) centres.push(input.ipBias);
