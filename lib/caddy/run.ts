@@ -7,7 +7,6 @@ import { caddyBudgetMicroPence } from "@/lib/caddy/budget";
 import {
   askCaddy,
   askCaddyLooped,
-  askCaddyStreamed,
   type CaddyTurnRecord,
 } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
@@ -820,13 +819,16 @@ export async function runTurn(input: {
   kind: "plan" | "roll" | "tweak";
   ask?: string;
   holeNumber?: number | null;
-  /** Present on a streamed turn: the caddy's reasoning and the answer as it
-   * is written. Narration only — nothing here reaches the card. */
+  /** Present on a streamed plan: the caddy's reasoning, the tool it is
+   * reaching for, and the pubs it has settled on. Narration only — nothing
+   * here reaches the card, and a run where none of it arrives looks exactly
+   * like a run before any of it existed. */
   narrate?: (update: {
     thinking?: string;
-    answer?: string;
     /** A tool call, named for the host. */
     doing?: string;
+    /** Pubs chosen so far, by candidate id. The map lights them. */
+    picked?: string[];
   }) => void;
 }): Promise<CaddyResult> {
   // There used to be a budget check here — 12% of the fee, refused before the
@@ -857,18 +859,23 @@ export async function runTurn(input: {
   /**
    * Which caddy answers.
    *
-   * A first plan gets the tool loop: it is the turn where getting it right
-   * first time is worth several passes, because every revision it saves is a
-   * revision the host never has to ask for — and cheaper than the conversation
-   * it replaces. A roll or a tweak does not: the patch is already read, the
-   * host has said exactly what they want changed, and a loop there would spend
-   * a plan's worth of tokens re-deciding things nobody questioned.
+   * A narrated first plan gets the tool loop: it is the turn where getting it
+   * right first time is worth several passes, because every revision it saves
+   * is a revision the host never has to ask for — and cheaper than the
+   * conversation it replaces. Everything else gets one call. A roll or a tweak
+   * does not need the loop: the patch is already read, the host has said
+   * exactly what they want changed, and a loop there would spend a plan's
+   * worth of tokens re-deciding things nobody questioned.
+   *
+   * There used to be a third arm — a streamed single call for a narrated turn
+   * that was not a plan — and no caller ever reached it, because the streaming
+   * route always sends `kind: "plan"` and nothing else narrates. See the note
+   * where it stood in `lib/caddy/client.ts`.
    */
-  const outcome = input.narrate
-    ? input.kind === "plan"
+  const outcome =
+    input.narrate && input.kind === "plan"
       ? await askCaddyLooped(ask, midConversation(input.brief), input.narrate)
-      : await askCaddyStreamed(ask, input.narrate)
-    : await askCaddy(ask);
+      : await askCaddy(ask);
 
   /** The ledger line. Written for a failure too — the vendor billed us for it
    * either way — but marked `failed`, which is what keeps the host's promise

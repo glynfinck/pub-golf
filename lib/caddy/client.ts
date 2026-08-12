@@ -35,6 +35,7 @@ import {
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
+  freshPicks,
   isDraftTool,
   TURN_TIMEOUT_MS,
   MAX_TOOL_TURNS,
@@ -197,70 +198,20 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
 }
 
 /**
- * Ask the caddy, and narrate the wait.
+ * `askCaddyStreamed` used to sit here: the same request as `askCaddy` with the
+ * stream on, handing the caller the half-written answer so the map could light
+ * pins as the caddy chose them.
  *
- * The same request as `askCaddy` — same system rules, same cached dossier,
- * same schema — with `stream` on and the thinking summary asked for. The
- * caller is handed the reasoning and the half-written answer as they arrive;
- * what it does with them is its business, and dropping every one of them would
- * still leave a correct card at the end.
+ * It became unreachable the day the plan became a tool loop. `runTurn` picks
+ * the streamed caddy only for a narrated turn that is *not* a plan, and there
+ * is no such caller — the streaming route always sends `kind: "plan"`, and
+ * rolls and tweaks are never narrated. So it was a second implementation of
+ * the same call, kept in step by hand, exercised by nothing.
  *
- * The two share everything except those two lines, which is the point: a
- * streamed plan and an unstreamed tweak must fail identically, bill
- * identically and parse identically, and the cheapest way to guarantee that is
- * for there to be one of each.
+ * The feature it existed for is not gone: `askCaddyLooped` announces picks off
+ * the board, which is where a loop's picks actually are.
  */
-export async function askCaddyStreamed(
-  input: CaddyAsk,
-  narrate: (update: { thinking?: string; answer?: string }) => void,
-): Promise<CaddyOutcome> {
-  const call = openCall();
-  if (!call) return unavailable();
-  try {
-    const stream = call.client.messages.stream({
-      ...requestOf(input, call.model),
-      thinking: THINKING_SHOWN,
-    });
-    // Two deltas matter and the rest is structure. `thinking` is the window;
-    // `text` is the answer being written, which the caller reads picks out of.
-    stream.on("streamEvent", (event) => {
-      if (event.type !== "content_block_delta") return;
-      if (event.delta.type === "thinking_delta") {
-        narrate({ thinking: event.delta.thinking });
-      } else if (event.delta.type === "text_delta") {
-        narrate({ answer: event.delta.text });
-      }
-    });
-    const finished = await stream.finalMessage();
-    return {
-      ...interpret(finished, input, call.model),
-      /**
-       * A trace for the toolless paths too.
-       *
-       * Only the looped plan has tool calls, so this one carries no `calls` —
-       * and that is the honest record rather than an absence. Every roll and
-       * every tweak used to store `trace: null`, which meant the feedback loop
-       * had nothing at all for **exactly the turns a drafting-table bug report
-       * is most likely to be about**: a host complains after a tweak, far more
-       * often than after the first plan.
-       *
-       * What is left still answers most of the question — how the model
-       * stopped, and how many pubs it had to choose from. `candidates` is what
-       * distinguishes "it picked badly" from "it had nothing to pick from".
-       */
-      trace: trimTrace({
-        ...EMPTY_TRACE,
-        turns: 1,
-        stopReason: finished.stop_reason ?? "end_turn",
-        candidates: input.candidates.length,
-      }),
-    };
-  } catch (cause) {
-    return lostBall(cause, call, "stream ");
-  }
-}
 
-/** An open line to the vendor, or null when this deploy has no credentials. */
 function openCall() {
   // Read per call, never at module load: a Vercel OIDC token rotates, and a
   // credential captured once at cold start goes stale under the deploy.
@@ -486,7 +437,25 @@ export async function askCaddyLooped(
      * that has gone wrong rather than one that was expensive. */
     breaker: number;
   },
-  narrate: (update: { thinking?: string; doing?: string }) => void,
+  narrate: (update: {
+    thinking?: string;
+    doing?: string;
+    /**
+     * Pubs the caddy has settled on so far, by candidate id.
+     *
+     * The map lights these several seconds before a hole exists, which is the
+     * difference between watching a plan happen and watching a spinner. They
+     * used to be read out of the streamed *text* of a one-shot answer by a
+     * regex, which stopped producing anything the moment the plan became a
+     * tool loop: a loop streams tool calls and no answer at all. The pins went
+     * dark and every consumer of them stayed live and idle.
+     *
+     * So they come off the board, which is where a loop's picks are. Not the
+     * walking order — that is decided after the answer is complete, which is
+     * exactly why these land as pins and the numbers arrive with the card.
+     */
+    picked?: string[];
+  }) => void,
 ): Promise<CaddyOutcome> {
   const call = openCall();
   if (!call) return unavailable();
@@ -524,6 +493,8 @@ export async function askCaddyLooped(
   /** Whether the caddy has already been asked to name the card. Once only —
    * see the nudge below, and the fallback it exists to keep as a floor. */
   let askedForName = false;
+  /** How many of the board's picks the caller has already been told about. */
+  let announcedPicks = 0;
   const aim = {
     from: input.brief.aimFrom,
     to: input.brief.aimTo,
@@ -700,6 +671,12 @@ export async function askCaddyLooped(
         });
         if (answered.added.length) candidates = [...candidates, ...answered.added];
         if (answered.narration) narrate({ doing: answered.narration });
+        // Only the new ones. Re-announcing the whole board after every call
+        // would work and would also be most of the bytes on this stream.
+        if (board.holes.length > announcedPicks) {
+          narrate({ picked: freshPicks(board, announcedPicks) });
+          announcedPicks = board.holes.length;
+        }
         results.push({
           type: "tool_result",
           tool_use_id: block.id,

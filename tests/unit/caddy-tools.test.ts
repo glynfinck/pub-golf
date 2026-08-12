@@ -17,6 +17,7 @@ import {
   TURN_TIMEOUT_MS,
   applyDraftTool,
   boardBlock,
+  freshPicks,
   isDraftTool,
   outOfLoopTime,
   readSearchCall,
@@ -494,5 +495,59 @@ describe("the loop fits inside the function that runs it", () => {
     // The first turn always runs: a loop that refuses before it has drafted
     // anything is the empty-board failure this whole area exists to stop.
     expect(outOfLoopTime(0, CADDY_LOOP_MS * 2)).toBe(false);
+  });
+});
+
+/**
+ * The picks the map lights, and the high-water mark behind them.
+ *
+ * This is the seam that was silently broken for a release. The picks used to
+ * be read out of the streamed text of a one-shot answer, and the plan became a
+ * tool loop — which streams tool calls and never writes an answer. The regex
+ * went on compiling, the event went on being typed, the map went on listening,
+ * and nothing was ever sent. Every consumer stayed live and idle.
+ */
+describe("freshPicks", () => {
+  const board: CaddyBoard = {
+    name: "",
+    holes: ["p3", "p7", "p1"].map((candidateId) => ({
+      candidateId,
+      drink: "Pint",
+      par: 3,
+      hazard: null,
+      hazardNote: null,
+      fitNote: null,
+      localRules: [],
+    })),
+  };
+
+  it("sends the whole board when nothing has been announced", () => {
+    expect(freshPicks(board, 0)).toEqual(["p3", "p7", "p1"]);
+  });
+
+  it("sends only what is new", () => {
+    // The bytes matter: re-announcing the whole board after every tool call
+    // is most of what would be on that stream.
+    expect(freshPicks(board, 2)).toEqual(["p1"]);
+  });
+
+  it("sends nothing when the board has not grown", () => {
+    expect(freshPicks(board, 3)).toEqual([]);
+  });
+
+  it("does not go backwards on a board that shrank", () => {
+    // `remove_hole` is a tool. A negative slice index would re-announce the
+    // tail of the board as though it were new.
+    expect(freshPicks(board, 9)).toEqual([]);
+    expect(freshPicks({ name: "", holes: [] }, 4)).toEqual([]);
+  });
+
+  it("carries candidate ids, never names", () => {
+    // The whole safety rule in one assertion: what crosses the wire is an id
+    // the server minted from a real Places result, and the name is attached
+    // on the way out of the dossier.
+    for (const id of freshPicks(board, 0)) {
+      expect(id).toMatch(/^[ps]\d+$/);
+    }
   });
 });

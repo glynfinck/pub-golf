@@ -107,39 +107,6 @@ export function decodeEvents(buffer: string): {
 }
 
 /**
- * Which candidates the answer has named so far, read out of a half-written
- * JSON document.
- *
- * A regex rather than an incremental JSON parser, and deliberately so. The
- * thing being looked for is one key with one shape — the schema admits
- * `candidateId` as a string and nothing else can produce that pattern — and a
- * partial-JSON parser would be a few hundred lines of machinery whose failure
- * mode is silently mis-reading a card. This cannot mis-read a card: it is not
- * in the path that builds one. `parsePlan` still reads the finished document,
- * still resolves every id against the dossier, and still drops anything it
- * does not recognise. If this function returned nonsense the worst that
- * happens is a pin lights up early.
- *
- * Ids are returned in the order they appear, deduplicated, so a caller can
- * treat it as "the picks so far" and diff against what it already has.
- */
-export function pickedIds(text: string): string[] {
-  const found: string[] = [];
-  const seen = new Set<string>();
-  const pattern = /"candidateId"\s*:\s*"([^"]+)"/g;
-  let match = pattern.exec(text);
-  while (match !== null) {
-    const id = match[1];
-    if (!seen.has(id)) {
-      seen.add(id);
-      found.push(id);
-    }
-    match = pattern.exec(text);
-  }
-  return found;
-}
-
-/**
  * How much of the caddy's thinking to keep on screen.
  *
  * A window, not a transcript. The reasoning runs to thousands of words and

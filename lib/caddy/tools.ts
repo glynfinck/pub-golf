@@ -143,6 +143,24 @@ export interface CaddyBoard {
 }
 
 /**
+ * The picks the caller has not been told about yet.
+ *
+ * The map lights a pub several seconds before its hole exists, which is the
+ * difference between watching a plan happen and watching a spinner. Announcing
+ * the whole board after every tool call would work and would also be most of
+ * the bytes on that stream, so the loop keeps a high-water mark and sends the
+ * tail.
+ *
+ * A function rather than two lines inline because the off-by-one has two
+ * failure modes and neither is visible on screen: one re-sends everything on
+ * every call, the other announces nothing at all. The pins look the same to a
+ * host while the stream is three times the size, or dark.
+ */
+export function freshPicks(board: CaddyBoard, announced: number): string[] {
+  return board.holes.slice(Math.max(0, announced)).map((hole) => hole.candidateId);
+}
+
+/**
  * What a tool call did.
  *
  * A refusal is `ok: false` and still carries a sentence, because it is not an

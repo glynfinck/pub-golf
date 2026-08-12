@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { caddyEnabled } from "@/lib/caddy/credentials";
 import { openPlan, runTurn } from "@/lib/caddy/run";
-import { encodeEvent, pickedIds, type CaddyEvent } from "@/lib/caddy/stream";
+import { encodeEvent, type CaddyEvent } from "@/lib/caddy/stream";
 
 /**
  * The plan, narrated.
@@ -98,28 +98,19 @@ export async function POST(request: Request) {
         ),
       });
 
-      // The answer, accumulated only so the picks can be read out of it. The
-      // card itself comes back from `runTurn` fully parsed — this copy is
-      // narration and is thrown away.
-      let answer = "";
-      let announced = 0;
-
+      // Every narration channel goes straight out as an event. This used to
+      // accumulate the streamed answer and run a regex over it to find the
+      // picks — which produced nothing at all once the plan became a tool
+      // loop, because a loop streams tool calls and never writes an answer.
+      // The loop announces its own picks off the board now.
       const result = await runTurn({
         ...opened,
         history: [],
         kind: "plan",
-        narrate: ({ thinking, answer: chunk, doing }) => {
+        narrate: ({ thinking, doing, picked }) => {
           if (doing) say({ type: "doing", text: doing });
           if (thinking) say({ type: "thinking", text: thinking });
-          if (!chunk) return;
-          answer += chunk;
-          const ids = pickedIds(answer);
-          // Only ever the new ones. Re-sending the whole list every few tokens
-          // would work and would also be most of the bytes on this stream.
-          if (ids.length > announced) {
-            say({ type: "picked", ids: ids.slice(announced) });
-            announced = ids.length;
-          }
+          if (picked?.length) say({ type: "picked", ids: picked });
         },
       });
 
