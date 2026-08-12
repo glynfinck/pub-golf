@@ -41,6 +41,9 @@ export function ReportBugSheet({
   roundCode,
   hole,
   phase,
+  caddySessionId,
+  caddyTurnId,
+  area: initialArea,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,9 +51,24 @@ export function ReportBugSheet({
   roundCode?: string | null;
   hole?: number | null;
   phase?: string | null;
+  /**
+   * The caddy conversation this is about, when the sheet is opened from the
+   * drafting table. Private to the row — the public issue carries nothing but
+   * the report's own id — and it is what turns a complaint about a course into
+   * a question with an answer: from here to the session, from the session to
+   * its turns, from a turn's trace to what the caddy actually did.
+   */
+  caddySessionId?: string | null;
+  /** The exact card the report is about, when the page watched it arrive.
+   * Narrows the session to one turn, which is the difference between a
+   * feedback loop and a search. */
+  caddyTurnId?: string | null;
+  /** Where the report is being filed from, so the door picks the right one and
+   * the player is not asked a question the screen already answers. */
+  area?: BugArea;
 }) {
   const { run, pending, busy } = useAction();
-  const [area, setArea] = useState<BugArea>("other");
+  const [area, setArea] = useState<BugArea>(initialArea ?? "other");
   const [text, setText] = useState("");
   const [filed, setFiled] = useState<{
     url: string | null;
@@ -66,7 +84,7 @@ export function ReportBugSheet({
     if (!next) {
       setFiled(null);
       setText("");
-      setArea("other");
+      setArea(initialArea ?? "other");
     }
     onOpenChange(next);
   }
@@ -77,6 +95,8 @@ export function ReportBugSheet({
         area,
         body: text,
         roundCode: roundCode ?? null,
+        caddySessionId: caddySessionId ?? null,
+        caddyTurnId: caddyTurnId ?? null,
         hole: hole ?? null,
         phase: phase ?? null,
         // Read at the tap, never in render — the route and the viewport are
@@ -179,8 +199,9 @@ export function ReportBugSheet({
                   player who types a phone number into it cannot take it back. */}
               <p className="text-[11px] text-muted-foreground">
                 This becomes a public issue on the house&apos;s tracker. Your
-                name and your round&apos;s code stay here — everything you type
-                does not, so leave anything private out of it.
+                name, your round&apos;s code and anything that identifies your
+                phone stay here — everything you type does not, so leave
+                anything private out of it.
               </p>
 
               <Button

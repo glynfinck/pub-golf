@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { RoundBundle } from "@/lib/data/rounds";
+import { HOW_IT_PLAYS } from "@/lib/house-rules";
 import { hazardsOn } from "@/lib/hazards";
 import { penaltyOptions } from "@/lib/penalty-options";
 import { roundRuleLines } from "@/lib/round-rules";
@@ -87,9 +88,7 @@ export function RulesSheet({
         <div className="flex max-h-[70svh] flex-col overflow-y-auto px-4 pb-6">
           <SheetHeading>How it plays</SheetHeading>
           <p className="text-xs text-muted-foreground">
-            Every hole is a pub and the drink is the ball: a swig is a stroke,
-            and the lowest card wins. The caddy calls the hole — drink at your
-            own pace.
+            {HOW_IT_PLAYS} The caddy calls the hole — drink at your own pace.
           </p>
           <ul className="mt-2 flex list-disc flex-col gap-1 pl-4 text-[11px] text-muted-foreground">
             <li>

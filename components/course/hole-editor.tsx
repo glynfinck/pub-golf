@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { describeDressing, type DraftHole } from "@/lib/course-draft";
+import { HAZARDS, readHazard } from "@/lib/hazards";
 import { MAX_LOCAL_RULES } from "@/lib/rules";
 import type { RulesetPenalty } from "@/lib/ruleset";
 import { cn } from "@/lib/utils";
@@ -32,11 +33,18 @@ export type { DraftHole } from "@/lib/course-draft";
 /** Which chevron a move should hand the focus back to. */
 export type MoveDirection = "up" | "down";
 
-const HAZARDS = [
+/**
+ * The chips, off the house list rather than beside it.
+ *
+ * This was four hand-written labels — the very drift `lib/hazards.ts` was
+ * written to end. Its own opening comment says the module exists so that "a
+ * host picking 'Dogleg' from a chip in the course builder was choosing a word,
+ * not a rule", and the builder was the one surface that never adopted it, so
+ * the two lists could disagree and nothing would say so.
+ */
+const HAZARD_CHOICES = [
   { id: null, label: "No hazard" },
-  { id: "water", label: "Water" },
-  { id: "bunker", label: "Bunker" },
-  { id: "dogleg", label: "Dogleg" },
+  ...HAZARDS.map((hazard) => ({ id: hazard.id, label: hazard.label })),
 ] as const;
 
 /** One hole on the drafting table: par, drink, hazard. */
@@ -49,6 +57,7 @@ export function HoleEditor({
   onMove,
   onReplace,
   registerMoveButton,
+  className,
 }: {
   hole: DraftHole;
   number: number;
@@ -64,13 +73,16 @@ export function HoleEditor({
     direction: MoveDirection,
     node: HTMLButtonElement | null,
   ) => void;
+  /** The builder marks a hole the caddy just moved, so the change is visible
+   * without every other hole having to animate to prove it didn't. */
+  className?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const first = number === 1;
   const last = number === total;
 
   return (
-    <Card className="gap-2.5 px-4 py-3.5">
+    <Card className={cn("gap-2.5 px-4 py-3.5", className)}>
       <div className="flex items-start gap-2.5">
         <span className="tabular flex size-8 shrink-0 items-center justify-center rounded-full border-[1.5px] border-marker font-serif text-marker">
           {number}
@@ -188,7 +200,7 @@ export function HoleEditor({
       </div>
 
       <div className="flex flex-wrap gap-1.5">
-        {HAZARDS.map((option) => (
+        {HAZARD_CHOICES.map((option) => (
           <Chip
             key={option.label}
             active={hole.hazard === option.id}
@@ -205,12 +217,21 @@ export function HoleEditor({
         ))}
       </div>
       {hole.hazard ? (
-        <Input
-          aria-label={`Hazard note for hole ${number}`}
-          placeholder="The house rule — e.g. no toilet for the whole hole"
-          value={hole.hazard_note ?? ""}
-          onChange={(event) => onChange({ hazard_note: event.target.value })}
-        />
+        <>
+          {/* What the word actually means, under the chip that chose it.
+              `lib/hazards.ts` exists because "Dogleg" explains nothing, and
+              the rules sheet has always printed this line during the round —
+              the host picking it had been the one person never shown it. */}
+          <p className="-mt-1 text-[11px] text-muted-foreground">
+            {readHazard(hole.hazard)?.meaning}
+          </p>
+          <Input
+            aria-label={`Hazard note for hole ${number}`}
+            placeholder="In this pub's words — e.g. no toilet for the whole hole"
+            value={hole.hazard_note ?? ""}
+            onChange={(event) => onChange({ hazard_note: event.target.value })}
+          />
+        </>
       ) : null}
 
       <LocalRules

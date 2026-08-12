@@ -10,7 +10,8 @@ import {
   GREEN_FEE_EXTRAS,
 } from "@/lib/billing";
 import { SUPPORT_EMAIL } from "@/lib/config";
-import { GREEN_FEE_PRICE } from "@/lib/tariff";
+import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
+import { GREEN_FEE_PRICE, TARIFF } from "@/lib/tariff";
 
 export const metadata = {
   title: "The tariff",
@@ -24,14 +25,28 @@ export const metadata = {
  * Payment processors reviewing the site land here too: pricing, refund
  * policy, and a contact all live on this one card.
  */
+/**
+ * The fee in the currencies Checkout actually presents, read off the price
+ * object rather than typed out. The sentence used to name £4 — the launch
+ * price — under a board rendering £12, because one was a constant and the
+ * other was prose, and only one of them was updated when the caddy shipped.
+ */
+const ABROAD = [
+  `$${TARIFF.greenFee.amounts.usd / 100}`,
+  `€${TARIFF.greenFee.amounts.eur / 100}`,
+  `C$${TARIFF.greenFee.amounts.cad / 100}`,
+  `A$${TARIFF.greenFee.amounts.aud / 100}`,
+];
+
 export default function TariffPage() {
   return (
     <Screen>
       <Masthead back={{ href: "/", label: "Clubhouse" }} />
       <ScreenHeader eyebrow="The Clubhouse" title="The tariff" />
       <p className="text-sm text-muted-foreground">
-        Same as the sign on the wall. Checkout shows your own money — the £4
-        green fee reads $5, €5, C$7 or A$8 abroad.
+        Same as the sign on the wall. Checkout shows your own money — the{" "}
+        {GREEN_FEE_PRICE} green fee reads{" "}
+        {ABROAD.map((line) => line).join(", ")} abroad.
       </p>
 
       <Card className="gap-2.5 px-4">
@@ -43,15 +58,29 @@ export default function TariffPage() {
           label="Green fee — a day of extras"
           value={GREEN_FEE_PRICE}
         />
+        {/* The top-ups are on the board because a price list that omits three
+            of four things sold is not one. They are never *offered* here — the
+            covenant keeps an offer to the moment a host is refused something
+            (`tests/unit/covenant-money.test.ts`) — but disclosure and
+            marketing are different acts, and a processor reading this page
+            should find every price the house can charge. */}
+        {CADDY_TOPUP_OFFERS.map((offer) => (
+          <DotLeaderRow
+            key={offer.lookupKey}
+            label={`More caddy — ${offer.rounds.toLowerCase()}${offer.keepsACourse ? ", and a course to keep" : ""}`}
+            value={offer.price}
+          />
+        ))}
         <DotLeaderRow label="Honesty box — a tip, if you like" value="from £3" />
       </Card>
 
       <p className="text-xs text-muted-foreground">
         The green fee is a day pass, the way a real course means it: every
         round you host for {DAY_PASS_HOURS} hours is covered, one payment for
-        the whole table, with the time remaining always on show. Covered
-        rounds stay covered for good — the pass runs out, the rounds it
-        granted never do. What it buys today is{" "}
+        the whole table, with the time remaining always on show. The day
+        starts when you tee a round off rather than when you pay, so buying on
+        Wednesday for Saturday costs you nothing. Covered rounds stay covered
+        for good — the pass runs out, the rounds it granted never do. What it buys today is{" "}
         {GREEN_FEE_EXTRAS.map((extra) => extra.title.toLowerCase()).join(", ")}
         ; anything added later joins the same fee.
         {billingEnabled(process.env.STRIPE_SECRET_KEY)

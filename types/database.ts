@@ -37,6 +37,8 @@ export type Database = {
       bug_reports: {
         Row: {
           area: string
+          caddy_session_id: string | null
+          caddy_turn_id: string | null
           body: string
           context: Json
           created_at: string
@@ -48,6 +50,8 @@ export type Database = {
         }
         Insert: {
           area?: string
+          caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body: string
           context?: Json
           created_at?: string
@@ -59,6 +63,8 @@ export type Database = {
         }
         Update: {
           area?: string
+          caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body?: string
           context?: Json
           created_at?: string
@@ -137,18 +143,21 @@ export type Database = {
       }
       courses: {
         Row: {
+          archived_at: string | null
           created_at: string
           id: string
           name: string
           owner: string
         }
         Insert: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           name: string
           owner: string
         }
         Update: {
+          archived_at?: string | null
           created_at?: string
           id?: string
           name?: string
@@ -164,8 +173,193 @@ export type Database = {
           },
         ]
       }
+      caddy_grants: {
+        Row: {
+          amount: number
+          created_at: string
+          entitlement_id: string | null
+          expires_at: string | null
+          host: string
+          id: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
+          reason: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          entitlement_id?: string | null
+          expires_at?: string | null
+          host: string
+          id?: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
+          reason?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          entitlement_id?: string | null
+          expires_at?: string | null
+          host?: string
+          id?: string
+          quota?: Database["public"]["Enums"]["caddy_quota"]
+          reason?: string
+        }
+        Relationships: []
+      }
+      caddy_spends: {
+        Row: {
+          created_at: string
+          grant_id: string
+          host: string
+          id: string
+          session_id: string | null
+          turn_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          grant_id: string
+          host: string
+          id?: string
+          session_id?: string | null
+          turn_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          grant_id?: string
+          host?: string
+          id?: string
+          session_id?: string | null
+          turn_id?: string | null
+        }
+        Relationships: []
+      }
+      caddy_sessions: {
+        Row: {
+          brief: Json
+          completed_at: string | null
+          course_id: string | null
+          created_at: string
+          dossier: Json
+          entitlement_id: string | null
+          host: string
+          id: string
+        }
+        Insert: {
+          brief?: Json
+          completed_at?: string | null
+          course_id?: string | null
+          created_at?: string
+          dossier?: Json
+          entitlement_id?: string | null
+          host?: string
+          id?: string
+        }
+        Update: {
+          brief?: Json
+          completed_at?: string | null
+          course_id?: string | null
+          created_at?: string
+          dossier?: Json
+          entitlement_id?: string | null
+          host?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caddy_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_sessions_entitlement_id_fkey"
+            columns: ["entitlement_id"]
+            isOneToOne: false
+            referencedRelation: "entitlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_sessions_host_fkey"
+            columns: ["host"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      caddy_turns: {
+        Row: {
+          ask: string | null
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_micropence: number
+          created_at: string
+          failed: boolean
+          host: string
+          id: string
+          input_tokens: number
+          kind: string
+          model: string
+          output_tokens: number
+          result: Json
+          session_id: string
+          trace: Json | null
+        }
+        Insert: {
+          ask?: string | null
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_micropence?: number
+          created_at?: string
+          failed?: boolean
+          host?: string
+          id?: string
+          input_tokens?: number
+          kind?: string
+          model?: string
+          output_tokens?: number
+          result: Json
+          session_id: string
+          trace?: Json | null
+        }
+        Update: {
+          ask?: string | null
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_micropence?: number
+          created_at?: string
+          failed?: boolean
+          host?: string
+          id?: string
+          input_tokens?: number
+          kind?: string
+          model?: string
+          output_tokens?: number
+          result?: Json
+          session_id?: string
+          trace?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caddy_turns_host_fkey"
+            columns: ["host"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "caddy_turns_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "caddy_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       entitlements: {
         Row: {
+          activated_at: string | null
           amount_total: number | null
           created_at: string
           currency: string | null
@@ -178,6 +372,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -190,6 +385,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -632,6 +828,19 @@ export type Database = {
     Functions: {
       approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
       bug_report_daily_cap: { Args: never; Returns: number }
+      caddy_cost_micropence: {
+        Args: {
+          cache_read_tokens: number
+          cache_write_tokens: number
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Returns: number
+      }
+      activate_day_pass: { Args: { who: string }; Returns: undefined }
+      caddy_fair_use_cap: { Args: never; Returns: number }
+      day_pass_hours: { Args: never; Returns: number }
       dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
       get_round_card: {
@@ -670,6 +879,13 @@ export type Database = {
           seat_id: string
         }[]
       }
+      caddy_balance: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: number }
+      caddy_topup_size: {
+        Args: { kind: string; quota: Database["public"]["Enums"]["caddy_quota"] }
+        Returns: number
+      }
+      caddy_grant_size: { Args: { quota: Database["public"]["Enums"]["caddy_quota"] }; Returns: number }
+      caddy_next_grant: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {
         Args: { since?: string; until?: string }
@@ -696,7 +912,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      caddy_quota: "course" | "redesign" | "tweak"
     }
     CompositeTypes: {
       [_ in never]: never

@@ -1,7 +1,6 @@
 import type { DraftHole } from "@/components/course/hole-editor";
 import { readHolePenalties } from "@/lib/ruleset";
 import { createClient } from "@/lib/supabase/server";
-import type { Tables } from "@/types/supabase-helpers";
 
 export interface MyCourse {
   id: string;
@@ -11,6 +10,17 @@ export interface MyCourse {
   par: number;
   /** Σ walk_minutes_to_next, for the 19th-hole estimate. */
   walk_minutes: number;
+  /**
+   * The caddy planned this one.
+   *
+   * Newly load-bearing rather than decorative: a green fee buys one caddy
+   * course at a time and tearing it out frees the next, so a host with five
+   * hand-plotted courses and one of these has to be able to tell which is
+   * which. Delete the wrong one and nothing is freed.
+   */
+  byCaddy: boolean;
+  /** Put to the back of the book rather than torn out. */
+  archived: boolean;
 }
 
 /** The viewer's saved courses, newest first. */
@@ -21,15 +31,24 @@ export async function getMyCourses(): Promise<MyCourse[]> {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data } = await supabase
-    .from("courses")
-    .select("id, name, created_at, course_holes(par, walk_minutes_to_next)")
-    .order("created_at", { ascending: false });
+  const [{ data }, { data: planned }] = await Promise.all([
+    supabase
+      .from("courses")
+      .select("id, name, created_at, archived_at, course_holes(par, walk_minutes_to_next)")
+      .order("created_at", { ascending: false }),
+    // Which courses came off the caddy, read from the sessions that filed
+    // them rather than from a flag on the course. There is no second copy of
+    // the truth to drift: the link is the same one the allowance counts.
+    supabase.from("caddy_sessions").select("course_id").not("course_id", "is", null),
+  ]);
+  const byCaddy = new Set((planned ?? []).map((row) => row.course_id));
 
   return (data ?? []).map((course) => ({
     id: course.id,
     name: course.name,
     created_at: course.created_at,
+    byCaddy: byCaddy.has(course.id),
+    archived: course.archived_at != null,
     hole_count: course.course_holes.length,
     par: course.course_holes.reduce((sum, hole) => sum + hole.par, 0),
     walk_minutes: course.course_holes.reduce(
@@ -89,26 +108,4 @@ export async function getCourseForEdit(
       walk_minutes_to_next: hole.walk_minutes_to_next,
     })),
   };
-}
-
-/** A course with its holes in order (RLS: owner only). */
-export async function getCourseWithHoles(courseId: string): Promise<{
-  course: Tables<"courses">;
-  holes: Tables<"course_holes">[];
-} | null> {
-  const supabase = await createClient();
-  const { data: course } = await supabase
-    .from("courses")
-    .select("*")
-    .eq("id", courseId)
-    .maybeSingle();
-  if (!course) return null;
-
-  const { data: holes } = await supabase
-    .from("course_holes")
-    .select("*")
-    .eq("course_id", courseId)
-    .order("number");
-
-  return { course, holes: holes ?? [] };
 }

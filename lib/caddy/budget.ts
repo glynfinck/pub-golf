@@ -1,0 +1,236 @@
+import { TARIFF } from "@/lib/tariff";
+
+/**
+ * What the caddy is allowed to cost, and how that is counted.
+ *
+ * The green fee is one price for a day of caddy. The caddy's own bill is
+ * per-token and unbounded by nature — a host who rolls a fresh card thirty
+ * times is buying thirty cards at wholesale — so without a ceiling the
+ * arithmetic runs the wrong way and a heavy user costs more than they paid.
+ * This module is that ceiling, and it is expressed in money rather than in
+ * turns, because turns are not what varies: an eighteen-hole plan with a tool
+ * loop behind it can cost twenty times a one-word tweak, and metering both as
+ * "one turn" prices neither.
+ *
+ * Three properties this is built for:
+ *
+ * **Integer arithmetic, all the way down.** Costs are micropence in `bigint`
+ * territory — never floats, never rounded per-token — because the total is
+ * summed in Postgres and compared against a limit, and a float sum that drifts
+ * is a limit that means something slightly different every day.
+ *
+ * **The budget follows the price.** It is a share of the tariff, not a number
+ * typed twice. Move the green fee and the allowance moves with it, in the same
+ * commit, with no second place to forget.
+ *
+ * **It is rounded against us.** The exchange rate below is deliberately
+ * pessimistic, so the recorded cost is never *less* than the real one. A
+ * ceiling that flatters itself is not a ceiling.
+ */
+
+/**
+ * Pence to the dollar, held as a constant on purpose.
+ *
+ * Anthropic bills in USD and the fee is set in GBP, so something has to bridge
+ * them. A live rate would make the allowance wobble daily and make a test
+ * impossible to write, so this is a fixed, deliberately unfavourable figure —
+ * higher than the rate has been, so every conversion overstates what we owe
+ * and the ceiling binds slightly early rather than slightly late. Worth a
+ * glance if sterling moves a long way; nothing breaks if it is stale, the
+ * caddy just gets marginally more or less rope than intended.
+ */
+export const PENCE_PER_USD = 80;
+
+/** A model's list price, in USD per million tokens, exactly as
+ * platform.claude.com/docs/en/about-claude/pricing states it. Kept in the
+ * vendor's own units so it can be diffed against that page without arithmetic. */
+export interface ModelPrice {
+  input: number;
+  /** The five-minute breakpoint, which is the one `client.ts` sets. */
+  cacheWrite: number;
+  cacheRead: number;
+  output: number;
+}
+
+/**
+ * The board. Note what the numbers say: output is five times input on every
+ * tier, and a cache read is a tenth of an ordinary one. Both facts are why the
+ * caddy is shaped the way it is — a stable cached prefix and a short structured
+ * answer — and both are why the cheap tiers are worth a look before the
+ * ceiling is.
+ *
+ * Sonnet 5 is listed at its **standard** price, not the introductory one that
+ * runs to 31 August 2026. Budgeting against a price that expires in weeks would
+ * build in a cliff.
+ */
+export const MODEL_PRICES: Record<string, ModelPrice> = {
+  "claude-opus-5": { input: 5, cacheWrite: 6.25, cacheRead: 0.5, output: 25 },
+  "claude-sonnet-5": { input: 3, cacheWrite: 3.75, cacheRead: 0.3, output: 15 },
+  "claude-haiku-4-5-20251001": { input: 1, cacheWrite: 1.25, cacheRead: 0.1, output: 5 },
+};
+
+/** The gateway prefixes a model id with its provider; the price is the same
+ * model's either way, so the lookup takes the prefix off first. */
+export function priceOf(model: string): ModelPrice | null {
+  const bare = model.includes("/") ? model.slice(model.indexOf("/") + 1) : model;
+  return MODEL_PRICES[bare] ?? null;
+}
+
+/**
+ * Micropence per token, from dollars per million tokens.
+ *
+ * The units line up exactly, which is the reason for choosing micropence:
+ * a million tokens at $1 costs 100 pence, so one token costs 100 millionths of
+ * a pence — and pence-per-million and micropence-per-token are the same number.
+ * `$5/MTok` is therefore `400` micropence a token, with no scaling factor to
+ * get backwards.
+ */
+export function microPencePerToken(usdPerMillion: number): number {
+  return Math.ceil(usdPerMillion * PENCE_PER_USD);
+}
+
+/** One call's usage, as the Messages API reports it. */
+export interface CaddyUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+export const NO_USAGE: CaddyUsage = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+
+/** Read the SDK's usage block, which names three of these differently and may
+ * omit the cache pair entirely on a call that did not touch cache. */
+export function readUsage(raw: unknown): CaddyUsage {
+  if (typeof raw !== "object" || raw === null) return { ...NO_USAGE };
+  const row = raw as Record<string, unknown>;
+  const count = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+  };
+  return {
+    input: count(row.input_tokens),
+    output: count(row.output_tokens),
+    cacheWrite: count(row.cache_creation_input_tokens),
+    cacheRead: count(row.cache_read_input_tokens),
+  };
+}
+
+/**
+ * Two calls' usage, added.
+ *
+ * Load-bearing the moment the caddy runs a tool loop. One *plan* is one thing
+ * the host asked for and must stay one `caddy_turns` row, but it is now many
+ * calls to the model — search, look, route, fix, look again. Write a row per
+ * call and a single plan burns the fair-use ceiling a dozen times over, and
+ * the host meets a wall they never went near.
+ *
+ * Adding rather than replacing also matters for what it costs: every call in a
+ * loop after the first is mostly cache *reads* of the same dossier, an order
+ * of magnitude cheaper than the write that seeded it — so a total that kept
+ * only the last call's usage would price a twelve-turn plan as a one-turn one,
+ * in the direction that undercharges.
+ */
+export function addUsage(a: CaddyUsage, b: CaddyUsage): CaddyUsage {
+  return {
+    input: a.input + b.input,
+    output: a.output + b.output,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheRead: a.cacheRead + b.cacheRead,
+  };
+}
+
+/**
+ * What a call cost, in micropence. Integer throughout.
+ *
+ * An unknown model is priced at the dearest tier we know rather than at zero.
+ * Free is the one wrong answer here: it would make an unrecognised model id —
+ * a typo, a new release, a gateway alias — silently uncapped, which is exactly
+ * the failure this module exists to prevent.
+ */
+export function costMicroPence(usage: CaddyUsage, model: string): number {
+  const price = priceOf(model) ?? dearest();
+  return (
+    usage.input * microPencePerToken(price.input) +
+    usage.output * microPencePerToken(price.output) +
+    usage.cacheWrite * microPencePerToken(price.cacheWrite) +
+    usage.cacheRead * microPencePerToken(price.cacheRead)
+  );
+}
+
+function dearest(): ModelPrice {
+  return Object.values(MODEL_PRICES).reduce((worst, price) =>
+    price.output > worst.output ? price : worst,
+  );
+}
+
+// ————————————————— the ceiling —————————————————
+
+/**
+ * How much of a green fee may go on the caddy's own bill.
+ *
+ * Twelve per cent of the sticker, which after tax and the card fee is roughly
+ * fifteen of what actually lands. That is a real cost of goods and it is meant
+ * to be: the caddy is the thing being sold. What it is not is open-ended — the
+ * point of a share rather than a number is that a heavy day cannot cost more
+ * than a light one earns.
+ *
+ * What that buys, measured on the ledger rather than guessed: a fresh plan —
+ * the agentic loop, several turns, a patch written to cache and read back —
+ * has averaged **21.4p** across real runs (19.8p to 22.2p), a roll **6.4p**
+ * and a tweak **5.2p**. So the worst case a fee can reach — one plan, four
+ * re-designs, sixty tweaks — is about £3.92 against £12 taken, and the
+ * ordinary night is a fraction of that. The share is not the binding
+ * constraint on spend and is not meant to be: the *credits* are, and this is
+ * the runaway breaker behind them.
+ *
+ * If that headroom ever feels tight, the first lever is the model and not this
+ * number. Output is five times input on every tier and dominates the bill, so
+ * moving the caddy to Sonnet takes about forty per cent off without touching
+ * the ceiling.
+ */
+export const CADDY_BUDGET_SHARE = 0.12;
+
+/** The day's allowance in micropence, from the fee in pence. A share rather
+ * than a number, so moving the price moves the allowance and there is no
+ * second place to forget. */
+export function caddyBudgetMicroPence(
+  feePence: number = TARIFF.greenFee.amounts.gbp,
+): number {
+  return Math.floor(feePence * CADDY_BUDGET_SHARE * 1_000_000);
+}
+
+/**
+ * There was a per-conversation share here, and it is gone on purpose.
+ *
+ * It capped one plan at a third of the day and *truncated* the loop to fit —
+ * which looks like generosity and is the opposite. A host who paid for a
+ * re-design and got a four-turn card that was never route-checked has been
+ * quietly handed a lesser product and cannot tell, and this repo already has
+ * the rule: no silent caps.
+ *
+ * Work is bounded in **turns** now (`MAX_TOOL_TURNS`), which is an honest
+ * bound the caddy is told about, and what a turn costs is ours to absorb —
+ * absorbing variance is what a fixed price is for. The only money ceiling left
+ * in the loop is a runaway breaker set far above any honest plan, and it
+ * shouts when it fires because it means something is wrong.
+ */
+
+/**
+ * Three things stood here and none of them were called: `withinBudget`, which
+ * compared two numbers; `sumUsage`, which folded `addUsage` over a list the
+ * loop already folds one call at a time; and `CADDY_BUDGET_NOTE`, the third
+ * copy of the full-shift sentence.
+ *
+ * The note is the instructive one. The identical sentence existed in three
+ * places — here, in `fair-use.ts`, and as a literal in `run.ts` — and only the
+ * literal was ever rendered, so the two that were kept carefully in step were
+ * the two nobody could read. That is the exact failure `run.ts` documents one
+ * constant above it. The sentence now lives in `fair-use.ts`, which owns the
+ * ceiling that raises it, and `run.ts` imports it.
+ *
+ * `withinBudget` and `sumUsage` went out with the money budget in
+ * `20260904000000`. Their tests outlived them by a release, which is what
+ * keeps a dead function looking alive.
+ */
+

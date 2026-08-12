@@ -17,13 +17,37 @@ export default function TermsPage() {
 
       <Section heading="What this is">
         <p>
-          {APP_NAME} keeps score for a pub golf round. It is free, it is a
-          personal project rather than a company, and there is nothing to buy
-          anywhere in it.
+          {APP_NAME} keeps score for a pub golf round. It is a personal project
+          rather than a company. Playing, joining and scoring are free and stay
+          free; a host can pay for extras if they want them, and nobody at the
+          table is ever asked for anything.
         </p>
         <p>
           Using it means accepting what is on this page and in the{" "}
           <a href="/legal/privacy">privacy notice</a>.
+        </p>
+      </Section>
+
+      <Section heading="If you buy something">
+        <p>
+          There are three things a host can pay for, all of them one-off and
+          none of them a subscription: the <b>green fee</b>, a day pass
+          covering every round you host once you tee one off; <b>more caddy</b>,
+          which adds courses or changes to what the caddy will plan for you;
+          and the <b>honesty box</b>, which is a tip and buys nothing. Every
+          price is on <a href="/tariff">the tariff</a>.
+        </p>
+        <p>
+          Payment goes through <b>Stripe</b>, on Stripe&apos;s own page — card
+          numbers never reach this app. What you buy is granted by Stripe
+          telling us the payment went through, so closing the tab mid-payment
+          buys nothing and charges nothing.
+        </p>
+        <p>
+          Rounds already covered stay covered: a pass runs out, the rounds it
+          granted do not. Refunds, delivery and disputes are in{" "}
+          <a href="/small-print">the small print</a>, and the short version is
+          money back, no questions.
         </p>
       </Section>
 

@@ -108,11 +108,12 @@ export default async function ClubhousePage() {
         </Card>
       )}
 
-      {/* The pass while it runs; the league for good once a round has teed
-          off on one. Never both — the card carries the league's own door. */}
-      {pass ? (
-        <DayPassCard pass={pass} />
-      ) : leagueRounds > 0 ? (
+      {/* Both, now, and independently: the pass is a clock on something being
+          bought, the league is the table's own history. They used to be one
+          door because the fee was what let a round into the league; it isn't
+          any more. */}
+      {pass ? <DayPassCard pass={pass} /> : null}
+      {leagueRounds > 0 ? (
         <Link
           href="/league"
           className="flex items-center justify-between rounded-xl bg-card px-4 py-3.5 ring-1 ring-foreground/10"
@@ -121,7 +122,7 @@ export default async function ClubhousePage() {
           <span>
             <span className="eyebrow block text-fairway">Members&apos; league</span>
             <span className="mt-0.5 block text-xs text-muted-foreground">
-              The order of merit across {leagueRounds} covered{" "}
+              The order of merit across {leagueRounds}{" "}
               {leagueRounds === 1 ? "round" : "rounds"}
             </span>
           </span>

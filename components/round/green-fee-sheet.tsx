@@ -93,10 +93,17 @@ export function GreenFeeSheet({
             />
           </button>
 
+          {/* The clock. It used to say "the next 24 hours", which described
+              the behaviour before the day was moved to tee-off — so the
+              sentence with the most commercial consequence in the app was
+              telling a buyer their fee started the moment they paid. It is
+              the reason somebody planning Saturday's crawl on Wednesday would
+              close this sheet, and it was wrong. */}
           <p className="text-center text-[11px] text-muted-foreground">
             Apple Pay, Google Pay or card, on Stripe&apos;s own page — and in
-            your own currency. One payment, no subscription: every round you
-            host for the next {DAY_PASS_HOURS} hours. Rained off? Money back,
+            your own currency. One payment, no subscription. The day starts
+            when you tee a round off, not when you pay, and then covers every
+            round you host for {DAY_PASS_HOURS} hours. Rained off? Money back,
             no questions.
           </p>
 

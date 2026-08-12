@@ -9,7 +9,9 @@ import { MAX_LOCAL_RULES } from "@/lib/rules";
 import { createClient } from "@/lib/supabase/server";
 
 export type CourseActionResult = { error?: string };
-/** Copy actions hand back the new course so the client can open its editor. */
+/** Actions that mint a course hand its id back — the copy actions so the
+ * client can open its editor, `createCourse` so a table that is still being
+ * worked on files over the same row next time. */
 export type CourseCopyResult = CourseActionResult & { id?: string };
 
 const courseSchema = z.object({
@@ -71,7 +73,7 @@ function holeRows(
 
 export async function createCourse(
   input: CreateCourseInput,
-): Promise<CourseActionResult> {
+): Promise<CourseCopyResult> {
   const parsed = courseSchema.safeParse(input);
   if (!parsed.success) return { error: "Check the course — something's off" };
 
@@ -98,7 +100,10 @@ export async function createCourse(
   }
 
   revalidatePath("/courses");
-  return {};
+  // The id goes back so a caller that is going to keep editing can file its
+  // next version over the top rather than minting a second course. The caddy's
+  // drafting table is the one that does (`course-builder.tsx`).
+  return { id: course.id };
 }
 
 export async function updateCourse(
@@ -265,4 +270,39 @@ export async function copyCuratedCourse(
 
   revalidatePath("/courses");
   return { id: copy.id };
+}
+
+/**
+ * Put a course to the back of the book, or bring it forward again.
+ *
+ * The soft half of tearing out, and it exists because a caddy-planned course
+ * costs a credit that deleting does not give back. Losing the course *and* the
+ * credit from a button whose affordance is "undoable-ish" is not a trade
+ * anybody agreed to — hold-to-confirm is a speed bump, not a receipt.
+ *
+ * Ordinary owner update: `courses` already scopes writes to its owner, so this
+ * needs no door of its own, and RLS filtering the row out returns no error and
+ * no rows exactly as it does everywhere else.
+ */
+export async function archiveCourse(
+  courseId: string,
+  archived: boolean,
+): Promise<CourseActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/signin");
+
+  const { data, error } = await supabase
+    .from("courses")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", courseId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "That course isn't in your book." };
+
+  revalidatePath("/courses");
+  return {};
 }

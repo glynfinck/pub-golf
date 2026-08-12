@@ -1,0 +1,128 @@
+import type { PlannedCourse } from "@/lib/caddy/plan";
+
+/**
+ * Which door answers a refusal that is about money rather than about failure.
+ *
+ * The covenant lets a price speak only in answer to a refusal the host walked
+ * into, never unprompted — so the refusal itself has to carry the door, and
+ * the two doors are genuinely different rooms. `"fee"` is a host who has never
+ * paid: the green fee, at its one price. `"more"` is a host whose fee is spent
+ * or whose day has ended: top-ups, with the free ways on named above them.
+ *
+ * This was a boolean called `spent`, which could say *that* money was the
+ * answer but never *which* — so the commonest refusal of all, a host with no
+ * fee at all, arrived as an error toast with nothing behind it while the price
+ * they needed sat on a badge they had not asked for.
+ *
+ * It lives here, in the wire vocabulary, because both sides of the refusal
+ * read it: `lib/caddy/run.ts` decides the door and `components/course/
+ * caddy-group.tsx` opens it.
+ */
+export type CaddyOffer = "fee" | "more";
+
+/**
+ * What the caddy says while it is still working, and how that crosses the wire.
+ *
+ * The plan used to be one server action: twenty seconds of nothing, then a
+ * finished card. Everything interesting had already happened by the time the
+ * host saw anything — the patch was gathered, forty pubs were read, nine were
+ * chosen and a walk was routed through them, and none of it was visible.
+ *
+ * So the plan streams. This module is the vocabulary and nothing else: pure,
+ * shared by the route handler that writes the events and the drafting table
+ * that reads them, and unit-tested on both sides of the wire. The transport is
+ * NDJSON rather than SSE — one JSON object per line — because the payloads are
+ * already JSON and `text/event-stream`'s framing would only be a second
+ * encoding to get wrong.
+ *
+ * **Order is a promise.** `patch` always arrives first and `card` or `failed`
+ * always arrives last. Everything between is optional and may not arrive at
+ * all, which is the whole point of it being a narration: a reader that ignored
+ * every middle event would still get a correct result.
+ */
+export type CaddyEvent =
+  /** The patch, gathered. Every pub the caddy is about to choose from, so the
+   * map can frame the neighbourhood before a single hole exists. Carries the
+   * candidate id with each pin, which is what lets a later `picked` light one
+   * up — the two events are useless apart. */
+  | { type: "patch"; pins: { id: string; lat: number; lng: number }[] }
+  /** The caddy reasoning, as it reasons. Summarised by the model, never the
+   * raw chain of thought — and never load-bearing: it is a window, and a
+   * window that stays dark costs nothing but the view. */
+  | { type: "thinking"; text: string }
+  /** What the caddy is doing right now, in four words — "Looking for beer
+   * gardens", "Walking the route". Better narration than raw reasoning: it is
+   * the work the host is paying for, named. */
+  | { type: "doing"; text: string }
+  /** Pubs chosen so far, by candidate id, in the order the caddy named them.
+   * Not the walking order — that is decided after the answer is complete
+   * (`lib/caddy/route.ts`), which is exactly why these land as pins and the
+   * numbers arrive with the finished card. */
+  | { type: "picked"; ids: string[] }
+  /** The card, routed and dressed, and the two ids behind it: the
+   * conversation, and the turn that produced *this* card. A report needs the
+   * second — a session runs to sixty-five turns and only one of them is the
+   * one that went wrong. */
+  | {
+      type: "card";
+      course: PlannedCourse;
+      sessionId: string;
+      turnId?: string | null;
+    }
+  /** The end of a bad one. `error` is the line the host reads; `detail` is
+   * for the staging note and the log, and is never shown to a player. */
+  | { type: "failed"; error: string; detail?: string; offer?: CaddyOffer };
+
+/** One event, as a line on the wire. */
+export function encodeEvent(event: CaddyEvent): string {
+  return `${JSON.stringify(event)}\n`;
+}
+
+/**
+ * Pull whole events out of a buffer, and hand back what was left over.
+ *
+ * A chunk off the network splits wherever TCP felt like splitting it, which is
+ * regularly mid-object. The caller keeps `rest` and prepends it to the next
+ * chunk; a line that does not parse is dropped rather than thrown, because a
+ * narration is not worth failing a plan over.
+ */
+export function decodeEvents(buffer: string): {
+  events: CaddyEvent[];
+  rest: string;
+} {
+  const lines = buffer.split("\n");
+  // The last piece is either an empty string (the buffer ended on a newline)
+  // or a partial line. Either way it is not ours to parse yet.
+  const rest = lines.pop() ?? "";
+  const events: CaddyEvent[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      events.push(JSON.parse(line) as CaddyEvent);
+    } catch {
+      // A malformed line is a dropped frame of narration, nothing more.
+    }
+  }
+  return { events, rest };
+}
+
+/**
+ * How much of the caddy's thinking to keep on screen.
+ *
+ * A window, not a transcript. The reasoning runs to thousands of words and
+ * nobody is reading it — what it is there for is the difference between a
+ * spinner and something visibly working, which the last line provides as well
+ * as the whole thing and without turning the drafting table into a log viewer.
+ *
+ * Sized down from 240 after the first real run overflowed the panel it sits
+ * in. Two clamps, not one: this bounds the string and `line-clamp` bounds the
+ * box, because a window that depends on how wide somebody's phone is will
+ * eventually meet a phone it does not fit.
+ */
+export const THINKING_WINDOW = 130;
+
+/** The tail of the thinking, tidied for a single line on screen. */
+export function thinkingTail(text: string, max = THINKING_WINDOW): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `…${flat.slice(flat.length - max)}`;
+}

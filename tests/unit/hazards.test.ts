@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { HAZARDS, hazardsOn, readHazard } from "@/lib/hazards";
+import {
+  drinkForHazard,
+  HAZARDS,
+  hazardsOn,
+  readHazard,
+  type HazardId,
+} from "@/lib/hazards";
 import { INVITATIONAL_COURSE } from "@/lib/course-templates";
 import { PENALTY_PRESETS, QUICK_PENALTIES } from "@/lib/rules";
 
@@ -85,5 +91,50 @@ describe("hazards", () => {
     for (const { hazard } of played) {
       expect(hazard.meaning).toBeTruthy();
     }
+  });
+});
+
+describe("drinkForHazard", () => {
+  it("leaves the caddy's own words alone almost always", () => {
+    // The guard is a backstop, not an editor. Anything it cannot positively
+    // identify as the forbidden pairing goes through untouched.
+    [
+      ["bunker", "Irish whiskey shot"],
+      ["bunker", "Sambuca"],
+      ["bunker", "Half of stout"],
+      ["bunker", "Half pint of bitter"],
+      ["water", "Pint of rotating cask ale"],
+      ["dogleg", "Pint of stout"],
+      [null, "Pint of anything you like"],
+    ].forEach(([hazard, drink]) => {
+      expect(drinkForHazard(hazard as HazardId | null, drink as string)).toBe(drink);
+    });
+  });
+
+  it("will not put a pint under a down-in-one", () => {
+    // The failure the real model actually produced, having been told in plain
+    // words not to: a bunker on "Pint of rotating cask ale".
+    ["Pint of rotating cask ale", "Pint of stout", "A jug of cider", "Two pints"].forEach(
+      (drink) => {
+        const poured = drinkForHazard("bunker", drink);
+        expect(poured).not.toBe(drink);
+        expect(poured).toBe("Short of your choosing");
+      },
+    );
+  });
+
+  it("changes the drink rather than dropping the hazard", () => {
+    // A drink is dressing the host can retype in a tap; a hazard quietly
+    // vanishing reads as the caddy having forgotten it.
+    expect(drinkForHazard("bunker", "Pint of mild")).toBeTruthy();
+  });
+
+  it("says out loud what every hazard does to the glass", () => {
+    // Enforcement and prose are two statements of one rule, and the prompt is
+    // built from the prose. A hazard that grew a guard without a rule would be
+    // enforcing something the caddy was never told.
+    HAZARDS.forEach((hazard) => {
+      if (hazard.drinkGuard) expect(hazard.drinkRule).toBeTruthy();
+    });
   });
 });
