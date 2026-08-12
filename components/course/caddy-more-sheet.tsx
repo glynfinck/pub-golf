@@ -102,8 +102,9 @@ export function CaddyMoreSheet({
             Changing them is free, and so is plotting one by hand.
           </p>
           {/* The one place more caddy is ever offered.
-              `docs/CADDY-TOPUPS.md` argues the rule this obeys: the covenant
-              forbids money *interrupting*, not money *answering*. This appears
+              The rule it obeys: the covenant forbids money *interrupting*,
+              not money *answering*, and `tests/unit/covenant-money.test.ts`
+              is what holds the difference. This appears
               only because the host asked for a course and could not have one,
               it appears once, and the free ways on are named above it rather
               than below. No count, no clock, no second ask. */}

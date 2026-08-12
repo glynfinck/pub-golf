@@ -852,7 +852,7 @@ export async function runTurn(input: {
   // What bounds the work now is what a host was actually told: the re-design
   // quota, which is a count they can see, and the runaway breaker inside the
   // loop, which is not a ceiling anyone meets. Cost is still recorded on every
-  // turn — that is what prices the tariff (docs/CADDY-TOPUPS.md) — but it is
+  // turn — that is what prices the tariff — but it is
   // evidence, not a gate.
 
   const ask = {

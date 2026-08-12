@@ -40,7 +40,7 @@ describe("the top-up offers and the tariff agree", () => {
   it("never sells a round cheaper than the green fee does", () => {
     // The pricing rule, held where a typo would otherwise land it on a live
     // button. The bundle has to be the best rate anyone can get, or it is the
-    // option to avoid — see docs/CADDY-TOPUPS.md.
+    // option to avoid.
     const feePerRound = TARIFF.greenFee.amounts.gbp / 4;
     const rates = [
       TARIFF.caddyTopupOne.amounts.gbp / CADDY_TOPUPS.caddy_topup_1.redesign,
@@ -135,7 +135,7 @@ describe("the quotas a fee is made of", () => {
   });
 
   it("keeps the green fee the best rate on the board", () => {
-    // docs/CADDY-TOPUPS.md's standing rule: the bundle has to be the best rate
+    // The standing rule: the bundle has to be the best rate
     // anyone can get, or it is the option to avoid. Checked per whole card,
     // which is the unit a host is really buying.
     const feeCards = CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign;

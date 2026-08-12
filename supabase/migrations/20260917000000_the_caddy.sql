@@ -33,11 +33,9 @@
 --   rows that existed on the branch project mid-flight. A squash runs from
 --   empty and has nothing to repair.
 --
--- What is *not* here, deliberately: the reasoning. Each of the twenty-two
--- carried an argument for what it did, and those arguments are the valuable
--- part — they are preserved in the comments below, which is why this file is
--- long. Read `docs/CADDY-DESIGN-AUDIT.md` for the design they add up to and
--- `docs/CADDY-MIGRATION-SQUASH.md` for how this file was built and checked.
+-- Each of the twenty-two carried an argument for what it did, and those
+-- arguments are the valuable part — they are preserved in the comments below,
+-- which is why this file is long.
 --
 -- Verified before it landed: every object it creates matches the preview
 -- project's own inventory after the twenty-two (4 tables, 20 functions less
@@ -188,7 +186,7 @@ create policy "caddy turns: append to your own session"
 --   * the runaway breaker in the loop — an incident detector, not a ceiling
 --
 -- `cost_micropence` is still computed on every row, and that is deliberate: it
--- is what prices the tariff (docs/CADDY-TOPUPS.md). Evidence, not a gate.
+-- is what prices the tariff. Evidence, not a gate.
 --
 -- Additive per DEPLOYMENT.md: `create or replace` on an existing trigger
 -- function, same signature. `caddy_budget_micropence` is left in place — it is
@@ -1176,7 +1174,7 @@ $$;
 -- purchase rather than per person** — so a course top-up is its own
 -- entitlement and gets its own slot by the rule as it already stands.
 --
--- The arithmetic, from docs/CADDY-TOPUPS.md's standing rule that the fee must
+-- The arithmetic, from the standing rule that the fee must
 -- be the best rate anyone can get:
 --
 --   green fee   £12   5 cards   £2.40/card   60 tweaks (12/card)   + a round

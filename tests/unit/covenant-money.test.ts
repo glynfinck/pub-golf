@@ -13,10 +13,9 @@ import { describe, expect, it } from "vitest";
  * on a page whose entire other half is the free hand-plotting builder. Neither
  * was argued for; both simply accreted, because there was nothing to fail.
  *
- * The audit (`docs/CADDY-DESIGN-AUDIT.md` §7.1) settled the rule as: **a price
- * may render only in answer to a refusal the host walked into, or on the two
- * surfaces that exist to talk about money.** That is checkable, and this is
- * the check.
+ * So the rule was settled as: **a price may render only in answer to a
+ * refusal the host walked into, or on the two surfaces that exist to talk
+ * about money.** That is checkable, and this is the check.
  *
  * It works on imports rather than on rendered output, which is the only honest
  * place to put it: a price reaches a screen exactly one way — through

@@ -53,7 +53,7 @@ const PRICES = [
   // *goes at the course in the book*, `caddy_topup_course` sells a second
   // course to keep. All three price a whole card above the £2.40 the green fee
   // implies, so the bundle stays the obvious buy — the standing rule in
-  // docs/CADDY-TOPUPS.md, and there is a unit test holding it. Mirrors
+  // the tariff, and there is a unit test holding it. Mirrors
   // TARIFF.caddyTopup* in lib/tariff.ts.
   {
     lookup_key: "caddy_topup_1",

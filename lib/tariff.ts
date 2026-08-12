@@ -56,7 +56,7 @@ export const TARIFF = {
    * untrue in the middle of its own ladder.
    *
    * The fee stays the best rate anyone can get at £2.40 a card, which is the
-   * standing rule in docs/CADDY-TOPUPS.md, and is still the only purchase that
+   * standing rule, held by a unit test, and it is still the only purchase that
    * also covers the round itself. There is a unit test on both properties.
    */
   caddyTopupCourse: {

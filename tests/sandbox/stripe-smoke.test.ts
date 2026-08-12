@@ -165,7 +165,7 @@ describe.skipIf(!key)("stripe sandbox", () => {
     // The load-bearing one, and the reason it lives against real Stripe rather
     // than against the constants: the rule is about what a host can actually
     // buy. The bundle has to be the best rate anyone can get, or it is the
-    // option to avoid — see docs/CADDY-TOPUPS.md.
+    // option to avoid.
     const fee = await priceByLookup(TARIFF.greenFee.lookupKey);
     const feePerRound = (fee.unit_amount ?? 0) / CADDY_GRANT_SIZE.redesign;
     expect(feePerRound).toBeGreaterThan(0);

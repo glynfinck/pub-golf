@@ -13,7 +13,7 @@ export const GREEN_FEE_LOOKUP_KEY = "green_fee";
  * most hosts need none — so the list stays short and the ladder stays legible:
  * £5 a card, £4 a card, £4 a card with a slot.
  *
- * See docs/CADDY-TOPUPS.md for the arithmetic and for the rule none of them
+ * `tests/unit/caddy-credits.test.ts` holds the arithmetic and the rule none of them
  * may break: the green fee is the best rate anyone can get, or the bundle is
  * the option to avoid.
  *

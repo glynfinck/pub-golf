@@ -50,7 +50,7 @@ export const CADDY_GRANT_SIZE: Record<CaddyQuota, number> = {
   course: 1,
   // Four revisions of that course, so the fee is a discount rather than merely
   // a bundle: £12 over five goes is £2.40 a go, where the smallest top-up is
-  // £5 for one. See docs/CADDY-TOPUPS.md — the bundle has to be the best rate
+  // £5 for one. The bundle has to be the best rate
   // anyone can get, or it is the option to avoid.
   redesign: 4,
   tweak: 60,
@@ -247,10 +247,10 @@ export function tearOutNotice(input: {
  * honest tariff turns into a pricing page.
  *
  * Prices are derived from `TARIFF` rather than written here, so the board and
- * the button cannot disagree; `docs/CADDY-TOPUPS.md` carries the arithmetic
- * behind them and the rule that no rung may sell a card below what the fee
- * implies. `/tariff` lists all three as well, which is disclosure rather than
- * offering — see `tests/unit/covenant-money.test.ts`.
+ * the button cannot disagree. `tests/unit/caddy-credits.test.ts` holds the
+ * arithmetic behind them and the rule that no rung may sell a card below what
+ * the fee implies. `/tariff` lists all three as well, which is disclosure
+ * rather than offering — see `tests/unit/covenant-money.test.ts`.
  *
  * The rounds are described, never counted down. A host reads "3 rounds"
  * because that is what they are buying, not because anything is running out.

@@ -8,7 +8,7 @@ import { haversineKm } from "@/lib/geo";
  * tool, get a slice of the map, call again — and every call dragged the whole
  * dossier back through the context. One such plan burned 160k cache reads and
  * 29.20p and timed out with no card, which is more than a successful plan
- * costs. See docs/CADDY-ROUTE-GRAPH.md for that evidence.
+ * costs — measured against real patches while this was built.
  *
  * The search was never necessary. By the time the model runs, the candidate set
  * is fixed — Places has already returned its forty pubs — so the problem is

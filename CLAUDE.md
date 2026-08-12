@@ -249,9 +249,11 @@ true; the card it produced is never swept.
 The green fee's day **starts at tee-off, not at purchase** (`activate_day_pass`,
 `entitlements.activated_at`) — a null `expires_at` means dormant, not expired,
 and every point-of-sale sentence has to say so. Three top-up SKUs sit above it
-and never expire, because cost is incurred at redemption. `docs/CADDY-DESIGN-AUDIT.md`
-is the design of record for all of this; `docs/CADDY-TOPUPS.md` carries the
-measured cost of a plan, a roll and a tweak.
+and never expire, because cost is incurred at redemption. A plan costs about
+21p to serve, a roll 6p and a tweak 5p, so the worst a fee can cost — every
+credit spent — is about £4 against £12 taken; `lib/caddy/budget.ts` carries
+that arithmetic and `tests/unit/caddy-credits.test.ts` holds the rule that no
+top-up may ever sell a card cheaper than the fee does.
 
 Two hosted environments, both deployed by the platforms rather than from this
 repo — Vercel's git integration builds the app, Supabase's GitHub integration
