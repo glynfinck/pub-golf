@@ -521,6 +521,9 @@ export async function askCaddyLooped(
   const traced: TracedCall[] = [];
   let stopReason = "none";
   let turnsTaken = 0;
+  /** Whether the caddy has already been asked to name the card. Once only —
+   * see the nudge below, and the fallback it exists to keep as a floor. */
+  let askedForName = false;
   const aim = {
     from: input.brief.aimFrom,
     to: input.brief.aimTo,
@@ -609,6 +612,31 @@ export async function askCaddyLooped(
       // Nothing more to do: the caddy has stopped reaching for tools, which is
       // how it says the card is finished.
       if (response.stop_reason !== "tool_use") {
+        /**
+         * Unless it forgot to name it, and there is still a turn to name it in.
+         *
+         * `parsePlan` falls back to "Shoreditch, nine holes", and that fallback
+         * is doing honest work — it is a great deal better than the same four
+         * words on every unnamed card. But it was also silently absorbing the
+         * failure: a card the caddy never named looked, from the outside,
+         * exactly like a card it named badly, and the house formula quietly
+         * became the product on some fraction of runs.
+         *
+         * So the formula is a floor rather than a substitute. Ask once, and
+         * only once — a caddy that will not name a course after being asked is
+         * not going to name it on the third ask either, and the fallback is
+         * there precisely so that this can give up cheaply.
+         */
+        if (board.holes.length > 0 && !board.name.trim() && !askedForName) {
+          askedForName = true;
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content:
+              "That card has no name on it. Call name_course once, with this round's own name — the patch, the shape of the night, a joke the group would get — and then hand it over.",
+          });
+          continue;
+        }
         stopReason = response.stop_reason ?? "end_turn";
         break;
       }

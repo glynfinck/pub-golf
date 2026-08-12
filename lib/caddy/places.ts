@@ -227,7 +227,6 @@ export interface Gathered {
 
 export async function gatherPubs(input: GatherInput): Promise<Gathered> {
   const { key, language } = input;
-  const found: GooglePlace[] = [];
 
   /**
    * Turn an area's name into a point, by asking what pubs are in it.
@@ -235,6 +234,21 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
    * The mean of the answers rather than the first: "Covent Garden" returns
    * pubs *around* Covent Garden and the first can sit at its edge, which drags
    * a corridor end off by a few hundred metres before anything else happens.
+   *
+   * **What it returns is a point, and nothing else.** These results used to be
+   * pushed onto `found` alongside the Nearby rings, and that put them through
+   * the one gap in `isDrinkingPlace`: a result carrying no `primaryType` at
+   * all is admitted, deliberately, because dropping a genuine pub over a thin
+   * response is the worse failure. That argument holds for Nearby, whose
+   * *request* already said `includedPrimaryTypes: pub, bar, wine_bar` — an
+   * untyped row from there was asked for as a pub. It does not hold here.
+   * This leg asks Google an English sentence, `pubs in Shoreditch`, with no
+   * type restriction at all, so an untyped row is a row nothing has ever
+   * checked. A card that sends nine people to a hotel lobby is the same
+   * failure as one that sends them to a door that isn't there.
+   *
+   * So this leg locates the area and steps back. Filling the patch is Nearby's
+   * job, under Nearby's restriction.
    */
   const locate = async (query: string, bias: { lat: number; lng: number } | null) => {
     if (!query.trim()) return null;
@@ -257,7 +271,6 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       },
       language,
     );
-    found.push(...places);
     const placed = places
       .filter((place) => place.location)
       .slice(0, 5)
@@ -318,11 +331,9 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       ),
     ),
   );
-  rings.forEach((ring) => found.push(...ring));
-
   const seen = new Set<string>();
   const gathered: GatheredPub[] = [];
-  for (const place of found) {
+  for (const place of rings.flat()) {
     const pub = toGathered(place);
     if (!pub || seen.has(pub.googlePlaceId)) continue;
     seen.add(pub.googlePlaceId);

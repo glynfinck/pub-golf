@@ -335,7 +335,14 @@ export const CADDY_TOOLS = [
   {
     name: TOOL_ROUTE,
     description:
-      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to try a set you have not committed to, or with nothing to measure what is on the table. This is the same router the finished card goes through, so what it reports is what the group will walk — use it before you hand a card over, and again after you change one.",
+      // The last sentence used to read "use it before you hand a card over,
+      // and again after you change one", which contradicted the prompt above
+      // it: every route in <routes> arrives already measured, and <swaps>
+      // states the walk to each alternative. Told to measure what it had just
+      // been told, the caddy spent a turn re-reading its own inputs. What is
+      // left is the one use that is still real — a combination it assembled
+      // itself, which nothing has measured yet.
+      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to measure a combination you put together yourself. This is the same router the finished card goes through, so what it reports is what the group will walk. The routes you were offered have already been through it, and so has every swap's walk — measuring one of those again tells you what you were told.",
     input_schema: {
       type: "object" as const,
       additionalProperties: false,
