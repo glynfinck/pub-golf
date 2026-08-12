@@ -326,6 +326,7 @@ describe("what a host is told before a fresh course", () => {
     // A fee files one course, so planning again replaces it. Doing that
     // silently would throw away an evening's work without asking.
     const lines = freshCourseNotice({
+      dormant: false,
       timeLeft: "9h left",
       replacing: true,
       cardsLeftAfter: 2,
@@ -335,6 +336,7 @@ describe("what a host is told before a fresh course", () => {
 
   it("says nothing about replacing when there is nothing to replace", () => {
     const lines = freshCourseNotice({
+      dormant: false,
       timeLeft: "9h left",
       replacing: false,
       cardsLeftAfter: 4,
@@ -347,9 +349,25 @@ describe("what a host is told before a fresh course", () => {
     // not when they plan, so a host planning ahead needs to know before they
     // start rather than after.
     expect(
-      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 4 })
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 4 })
         .join(" "),
     ).toContain("9h left");
+  });
+
+  it("says planning starts no clock while the fee is dormant", () => {
+    // The whole point of the change underneath this sheet, and the sentence a
+    // host planning ahead needs: their fee's day begins when they tee off, so
+    // planning on Wednesday for Saturday costs them nothing.
+    const lines = freshCourseNotice({
+      dormant: true,
+      timeLeft: null,
+      replacing: false,
+      cardsLeftAfter: 4,
+    }).join(" ");
+    expect(lines).toMatch(/starts no clock/i);
+    expect(lines).toMatch(/tee the round off/i);
+    // And it must not also claim a day is running, which is the old copy.
+    expect(lines).not.toMatch(/already running|to run/i);
   });
 
   it("states the fact without a figure before the first client tick", () => {
@@ -357,25 +375,26 @@ describe("what a host is told before a fresh course", () => {
     // flash of the wrong number is worse than none. The sentence still has to
     // say the fee is on a clock.
     const lines = freshCourseNotice({
+      dormant: false,
       timeLeft: null,
       replacing: false,
       cardsLeftAfter: 4,
     });
-    expect(lines.join(" ")).toMatch(/day's clock/i);
+    expect(lines.join(" ")).toMatch(/day is already running/i);
     expect(lines.join(" ")).not.toMatch(/null|NaN|undefined/);
   });
 
   it("counts down what is left after this one", () => {
     expect(
-      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 3 })
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 3 })
         .join(" "),
     ).toContain("3 more after this one");
     expect(
-      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 1 })
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 1 })
         .join(" "),
     ).toContain("One more after this one");
     expect(
-      freshCourseNotice({ timeLeft: "9h left", replacing: true, cardsLeftAfter: 0 })
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: true, cardsLeftAfter: 0 })
         .join(" "),
     ).toMatch(/last whole card/i);
   });
@@ -387,6 +406,7 @@ describe("what a host is told before a fresh course", () => {
     for (const replacing of [true, false]) {
       for (const cardsLeftAfter of [0, 1, 4]) {
         const note = freshCourseNotice({
+          dormant: false,
           timeLeft: "2h left",
           replacing,
           cardsLeftAfter,

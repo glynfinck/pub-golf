@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_GRANT_SIZE, CADDY_QUOTAS } from "@/lib/caddy/credits";
+import { DAY_PASS_HOURS } from "@/lib/billing";
 import { adminClient, signedInUser, type Actor } from "@/tests/support/clients";
 
 import { expectDenied } from "./helpers/assert";
@@ -40,16 +41,43 @@ import { expectDenied } from "./helpers/assert";
 
 const HOUR = 3_600_000;
 
-/** A green fee the way the webhook writes one. `grant_caddy_package` fires on
- * insert, so the grants below are the trigger's work, never the fixture's. */
-async function seedFee(buyer: Actor, hours = 24) {
+/**
+ * A green fee the way the webhook writes one — **with no clock on it**.
+ *
+ * That is the fixture's whole point since `20260908000000`: a fee is dormant
+ * when bought and the day starts when a round tees off. Seeding one with an
+ * expiry would be testing a shape production no longer produces, and would
+ * hide the case this file cares most about.
+ *
+ * `grant_caddy_package` fires on insert, so the grants are the trigger's work
+ * and never the fixture's.
+ */
+async function seedFee(buyer: Actor) {
   const { data, error } = await adminClient()
     .from("entitlements")
     .insert({
       user_id: buyer.userId,
       kind: "green_fee",
       stripe_event_id: `evt_quota_${randomUUID()}`,
-      expires_at: new Date(Date.now() + hours * HOUR).toISOString(),
+      expires_at: null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+/** A fee whose day has already been started and has since run out — what a
+ * host looks like the morning after. */
+async function seedSpentFee(buyer: Actor) {
+  const { data, error } = await adminClient()
+    .from("entitlements")
+    .insert({
+      user_id: buyer.userId,
+      kind: "green_fee",
+      stripe_event_id: `evt_quota_${randomUUID()}`,
+      activated_at: new Date(Date.now() - 25 * HOUR).toISOString(),
+      expires_at: new Date(Date.now() - HOUR).toISOString(),
     })
     .select("id")
     .single();
@@ -193,28 +221,46 @@ describe("what a green fee grants", () => {
     }
   });
 
-  it("expires everything with the fee, because a day pass is a day", async () => {
+  it("starts no clock at the till", async () => {
+    // The whole of `20260908000000`. A fee is consumed at two moments that are
+    // rarely the same day — planning, which people do in advance, and playing,
+    // which is a specific evening — and dating it at the charge forced them
+    // into one. Buy Wednesday to plan a Saturday crawl and the pass was dead
+    // by Thursday.
     const { data, error } = await adminClient()
+      .from("entitlements")
+      .select("expires_at, activated_at")
+      .eq("user_id", host.userId)
+      .eq("kind", "green_fee")
+      .single();
+    if (error) throw error;
+    expect(data.expires_at).toBeNull();
+    expect(data.activated_at).toBeNull();
+
+    const { data: grants } = await adminClient()
       .from("caddy_grants")
       .select("quota, expires_at")
       .eq("host", host.userId);
-    if (error) throw error;
-    expect(data).toHaveLength(CADDY_QUOTAS.length);
-    for (const grant of data ?? []) {
-      expect(grant.expires_at, `${grant.quota} never expires`).not.toBeNull();
+    expect(grants).toHaveLength(CADDY_QUOTAS.length);
+    for (const grant of grants ?? []) {
+      expect(grant.expires_at, `${grant.quota} was dated at purchase`).toBeNull();
     }
   });
 
-  it("counts nothing from a fee that has run out", async () => {
+  it("covers its holder while it is still dormant", async () => {
+    // A dormant fee has a null expiry, and `holds_day_pass` reads null as live
+    // — the column's own contract, and the reason this change needed no guard
+    // rewritten. A host who has paid is covered from the moment they pay.
+    const { data, error } = await host.db.rpc("holds_day_pass", {
+      who: host.userId,
+    });
+    expect(error).toBeNull();
+    expect(data).toBe(true);
+  });
+
+  it("counts nothing from a fee whose day has been and gone", async () => {
     const spent = await signedInUser("Yesterday's Host");
-    await adminClient()
-      .from("entitlements")
-      .insert({
-        user_id: spent.userId,
-        kind: "green_fee",
-        stripe_event_id: `evt_quota_${randomUUID()}`,
-        expires_at: new Date(Date.now() - HOUR).toISOString(),
-      });
+    await seedSpentFee(spent);
     expect(await balance(spent, "course")).toBe(0);
     expect(await balance(spent, "redesign")).toBe(0);
   });
@@ -317,6 +363,119 @@ describe("the spend ladder", () => {
     const landed = both.filter((r) => r.error === null);
     expect(landed, "exactly one card should get the last credit").toHaveLength(1);
     expect(await balance(solo, "redesign")).toBe(0);
+  });
+});
+
+/**
+ * The day starts when the round does.
+ *
+ * A fee is consumed at two moments that are rarely the same day — planning,
+ * which people do in advance, and playing, which is a specific evening. Running
+ * the clock from the charge forced them into one: buy on Wednesday to plan a
+ * Saturday crawl and the pass was dead by Thursday, with nothing on the way in
+ * saying so.
+ *
+ * Worth noting how little the clock was holding up, because it is the argument
+ * for moving it. The caddy half is bounded by counts. The round half is
+ * `guard_round_members` stamping `members` once. And "do not hold Google's data
+ * indefinitely" is answered by the twelve-hour dossier window, somewhere else
+ * entirely.
+ */
+describe("when the green fee's day starts", () => {
+  let host: Actor;
+  let fee: string;
+
+  beforeEach(async () => {
+    host = await signedInUser("Planning Ahead");
+    fee = await seedFee(host);
+  });
+
+  async function feeRow() {
+    const { data, error } = await adminClient()
+      .from("entitlements")
+      .select("activated_at, expires_at")
+      .eq("id", fee)
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  it("agrees with the copy about how long a day is", async () => {
+    // `DAY_PASS_HOURS` and `day_pass_hours()` decide the same thing from
+    // different sides, and a host whose screen and database disagree about
+    // when their pass ends has been lied to by one of them.
+    const { data, error } = await adminClient().rpc("day_pass_hours");
+    expect(error).toBeNull();
+    expect(Number(data)).toBe(DAY_PASS_HOURS);
+  });
+
+  it("starts the day, once, and dates the credits with it", async () => {
+    const { error } = await host.db.rpc("activate_day_pass", {
+      who: host.userId,
+    });
+    expect(error).toBeNull();
+
+    const started = await feeRow();
+    expect(started.activated_at).not.toBeNull();
+    expect(started.expires_at).not.toBeNull();
+    const hours =
+      (Date.parse(started.expires_at!) - Date.parse(started.activated_at!)) /
+      HOUR;
+    expect(Math.round(hours)).toBe(DAY_PASS_HOURS);
+
+    // The credits were minted durable — `grant_caddy_package` copies the
+    // entitlement's expiry, and a dormant fee has none — so without the
+    // cascade they would outlive the day they belong to.
+    const { data: grants } = await adminClient()
+      .from("caddy_grants")
+      .select("quota, expires_at")
+      .eq("entitlement_id", fee);
+    for (const grant of grants ?? []) {
+      expect(grant.expires_at, `${grant.quota} outlives the day`).not.toBeNull();
+    }
+  });
+
+  it("does not restart a day already running", async () => {
+    // Idempotent by construction: it only ever matches a row with a null
+    // `activated_at`. A second round the same night must not buy another day.
+    await host.db.rpc("activate_day_pass", { who: host.userId });
+    const first = await feeRow();
+    await host.db.rpc("activate_day_pass", { who: host.userId });
+    expect((await feeRow()).activated_at).toBe(first.activated_at);
+    expect((await feeRow()).expires_at).toBe(first.expires_at);
+  });
+
+  it("starts the oldest dormant fee first", async () => {
+    // Somebody holding two spends the one they bought first.
+    const second = await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: host.userId,
+        kind: "green_fee",
+        stripe_event_id: `evt_quota_${randomUUID()}`,
+        expires_at: null,
+      })
+      .select("id")
+      .single();
+    await host.db.rpc("activate_day_pass", { who: host.userId });
+
+    expect((await feeRow()).activated_at).not.toBeNull();
+    const { data: newer } = await adminClient()
+      .from("entitlements")
+      .select("activated_at")
+      .eq("id", second.data!.id)
+      .single();
+    expect(newer?.activated_at).toBeNull();
+  });
+
+  it("does nothing for a host with no dormant fee", async () => {
+    // Not an error — a round teeing off uncovered reaches this and must not
+    // fail because of it.
+    const nobody = await signedInUser("No Fee At All");
+    const { error } = await nobody.db.rpc("activate_day_pass", {
+      who: nobody.userId,
+    });
+    expect(error).toBeNull();
   });
 });
 

@@ -7,17 +7,26 @@ export const GREEN_FEE_LOOKUP_KEY = "green_fee";
 /**
  * More caddy, for a host whose fee has planned everything it holds.
  *
- * Two rungs and no third. Demand here is lopsided — most hosts need none,
- * some need one — and a third rung turns one honest tariff into a pricing
- * page. See docs/CADDY-TOPUPS.md for the arithmetic and for why neither
- * undercuts the fee's own £3 a round.
+ * Three rungs, and they answer two different questions. `caddy_topup_1` and
+ * `caddy_topup_3` sell more *goes at the course in the book*;
+ * `caddy_topup_course` sells a second course to keep. Demand is lopsided —
+ * most hosts need none — so the list stays short and the ladder stays legible:
+ * £5 a card, £4 a card, £4 a card with a slot.
+ *
+ * See docs/CADDY-TOPUPS.md for the arithmetic and for the rule none of them
+ * may break: the green fee is the best rate anyone can get, or the bundle is
+ * the option to avoid.
  *
  * The lookup key is also the entitlement `kind` and the reason stamped on the
  * grants, so one string identifies the purchase from Stripe through to the
  * ledger row. Add a rung here, add it to `CADDY_TOPUPS` and to
  * `caddy_topup_size()`, or it sells and grants nothing.
  */
-export const CADDY_TOPUP_LOOKUP_KEYS = ["caddy_topup_1", "caddy_topup_3"] as const;
+export const CADDY_TOPUP_LOOKUP_KEYS = [
+  "caddy_topup_1",
+  "caddy_topup_3",
+  "caddy_topup_course",
+] as const;
 export type CaddyTopupKey = (typeof CADDY_TOPUP_LOOKUP_KEYS)[number];
 
 /** What each rung grants, mirrored from `public.caddy_topup_size()` and proved
@@ -25,10 +34,26 @@ export type CaddyTopupKey = (typeof CADDY_TOPUP_LOOKUP_KEYS)[number];
  * is incurred at redemption and an unredeemed round costs nothing to hold. */
 export const CADDY_TOPUPS: Record<
   CaddyTopupKey,
-  { redesign: number; tweak: number }
+  { course?: number; redesign: number; tweak: number }
 > = {
   caddy_topup_1: { redesign: 1, tweak: 10 },
   caddy_topup_3: { redesign: 3, tweak: 30 },
+  /**
+   * The only rung that buys a second course *kept*, rather than more goes at
+   * the one in the book.
+   *
+   * A fee files one course, and the rule is per **purchase** —
+   * `caddy_sessions_one_course_per_fee` is keyed on `entitlement_id` — so this
+   * needs no exception written for it anywhere. Its own entitlement gets its
+   * own slot, which is what "another course" has to mean to be worth £8.
+   *
+   * The revision is not optional garnish. `liveFee` resolves which purchase a
+   * session works under by walking the same ladder the spend does, and a rung
+   * granting a course and nothing else would leave a host with one card and
+   * then no way to revise it. One revision makes it a usable little pack; the
+   * ladder in `liveFee` is what makes it correct.
+   */
+  caddy_topup_course: { course: 1, redesign: 1, tweak: 20 },
 };
 
 /** Billing is off until the key exists — the maps-key pattern: no secret,
@@ -67,9 +92,21 @@ export function honestyBoxHref(
  */
 export const DAY_PASS_HOURS = 24;
 
-/** When a pass paid at this instant runs out. */
-export function dayPassExpiry(paidAtMs: number): string {
-  return new Date(paidAtMs + DAY_PASS_HOURS * 3_600_000).toISOString();
+/**
+ * When a pass *started* at this instant runs out.
+ *
+ * Started, not bought — and the distinction is the whole of `20260908000000`.
+ * The webhook used to call this and write the answer at purchase, which ran
+ * the day from the charge: a host buying on Wednesday to plan a Saturday crawl
+ * had a dead pass by Thursday. The day now begins when a round tees off
+ * covered, and Postgres does the arithmetic in `activate_day_pass`.
+ *
+ * Kept because the number has to exist on this side too — a screen that wants
+ * to say when a pass will run out should not have to ask the database — and
+ * because it is the mirror `DAY_PASS_HOURS` is proved against.
+ */
+export function dayPassExpiry(startedAtMs: number): string {
+  return new Date(startedAtMs + DAY_PASS_HOURS * 3_600_000).toISOString();
 }
 
 /** Is this pass still running? `null` expiry never runs out — the column's

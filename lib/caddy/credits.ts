@@ -86,10 +86,12 @@ export function coursesLeftNote(left: number): string {
  *
  * Two facts, and both of them are things somebody has found out the hard way.
  *
- *   **The fee is on a clock.** It is a day pass, and the day is already
- *   running — it started when they paid, not when they plan. A host who buys
- *   on Wednesday to plan a Saturday crawl needs to know that before they
- *   start, not after.
+ *   **Planning starts no clock.** This sheet was written when it did — the
+ *   day ran from the charge, so a host buying on Wednesday to plan a Saturday
+ *   crawl had a dead pass by Thursday. `20260908000000` moved the start to
+ *   tee-off, and the sheet now says so, because "am I burning my fee by
+ *   planning this now" is the question a host is actually asking when they
+ *   hesitate over the button.
  *
  *   **A fresh course replaces the one they have.** A fee files one course
  *   (`caddy_sessions_one_course_per_fee`), so planning again writes over it.
@@ -104,6 +106,13 @@ export function coursesLeftNote(left: number): string {
  * nothing worth stopping for.
  */
 export function freshCourseNotice(input: {
+  /**
+   * Whether the fee's day has started. A dormant fee is the ordinary case for
+   * somebody planning ahead — bought, covering them, no clock running — and it
+   * is the reassurance worth leading with, because the old model made this
+   * exact moment the one that quietly cost them their pass.
+   */
+  dormant: boolean;
   /** From `formatTimeLeft`, or null before the first client tick — in which
    * case the fact is stated without the figure rather than with a wrong one. */
   timeLeft: string | null;
@@ -119,9 +128,11 @@ export function freshCourseNotice(input: {
     );
   }
   lines.push(
-    input.timeLeft
-      ? `Your green fee has ${input.timeLeft} to run, and the caddy works inside it.`
-      : "Your green fee is on a day's clock, and the caddy works inside it.",
+    input.dormant
+      ? "Planning starts no clock. Your fee's day begins when you tee the round off, so plan as far ahead as you like."
+      : input.timeLeft
+        ? `Your green fee's day has ${input.timeLeft} to run, and the caddy works inside it.`
+        : "Your green fee's day is already running, and the caddy works inside it.",
   );
   if (input.cardsLeftAfter <= 0) {
     lines.push("This is the last whole card on it — tweaks will still be free.");
@@ -193,8 +204,13 @@ export function tearOutWarning(input: {
 export const CADDY_TOPUP_OFFERS = [
   TARIFF.caddyTopupOne,
   TARIFF.caddyTopupThree,
+  TARIFF.caddyTopupCourse,
 ].map((sku) => {
-  const rounds = CADDY_TOPUPS[sku.lookupKey].redesign;
+  const grant = CADDY_TOPUPS[sku.lookupKey];
+  // Every whole card the rung buys, both rungs of the ladder together, because
+  // `guard_caddy_spend` spends them in order and a host cannot tell which one
+  // paid for the card in front of them.
+  const cards = (grant.course ?? 0) + grant.redesign;
   return {
     lookupKey: sku.lookupKey,
     price: sticker(sku.amounts.gbp),
@@ -202,6 +218,14 @@ export const CADDY_TOPUP_OFFERS = [
     // Both numbers were written by hand a moment ago, which is precisely how
     // the refusal came to promise one course from a fee that grants four: a
     // number in two places stays right only until one of them moves.
-    rounds: rounds === 1 ? "1 round" : `${rounds} rounds`,
+    rounds: cards === 1 ? "1 round" : `${cards} rounds`,
+    /**
+     * Whether this rung buys a course to *keep*, rather than another go at the
+     * one in the book. The difference a host is actually choosing between, and
+     * invisible from the price and the round count alone — two rungs cost £8
+     * and £12 for two and three cards, and only one of them leaves you with a
+     * second course.
+     */
+    keepsACourse: (grant.course ?? 0) > 0,
   };
 });

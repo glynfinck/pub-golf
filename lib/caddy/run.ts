@@ -150,10 +150,19 @@ async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data, error } = await supabase.rpc("caddy_next_grant", {
+  // The same ladder `guard_caddy_spend` walks, and it has to be: that trigger
+  // takes the course credit first and a re-design after, so asking only about
+  // re-designs would tell a host holding nothing *but* a course credit that
+  // they have no fee at all. A course top-up is exactly that shape on its first
+  // card, which is why it also grants a revision — but the ladder is the real
+  // fix, and the grant is belt and braces.
+  const course = await supabase.rpc("caddy_next_grant", {
     who: userId,
-    quota: "redesign",
+    quota: "course",
   });
+  const { data, error } = course.data
+    ? course
+    : await supabase.rpc("caddy_next_grant", { who: userId, quota: "redesign" });
   if (!error) {
     if (!data) return null;
     // `caddy_next_grant` answers with a **grant** id, where its predecessor

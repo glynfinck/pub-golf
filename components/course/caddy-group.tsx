@@ -446,6 +446,9 @@ export function CaddyGroup({
         </SheetHeader>
         <div className="flex flex-col gap-2 px-4 pb-6">
           {freshCourseNotice({
+            // No expiry on the row means the day has not started. That is the
+            // ordinary case now, and the one worth saying out loud.
+            dormant: passExpiresAt === null,
             timeLeft: formatTimeLeft(passLeftMs),
             replacing: filed,
             cardsLeftAfter: Math.max(0, (allowance?.left ?? 1) - 1),
@@ -530,6 +533,15 @@ export function CaddyGroup({
                   <span className="text-[10px] font-normal text-muted-foreground">
                     {offer.rounds}
                   </span>
+                  {/* The difference a host is actually choosing between, and
+                      the one the price and the round count cannot show: two of
+                      these rungs buy more goes at the course in the book, and
+                      one buys a second course to keep. */}
+                  {offer.keepsACourse ? (
+                    <span className="text-[9px] font-normal text-fairway">
+                      + a course to keep
+                    </span>
+                  ) : null}
                 </Button>
               ))}
             </div>

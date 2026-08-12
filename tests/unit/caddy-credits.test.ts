@@ -66,8 +66,13 @@ describe("the button counts what the purchase grants", () => {
     // every copy bug on this branch: a number in two places is right until one
     // of them moves. Changing the grant must move the label with it.
     for (const offer of CADDY_TOPUP_OFFERS) {
-      const granted = CADDY_TOPUPS[offer.lookupKey].redesign;
-      expect(offer.rounds).toContain(String(granted));
+      const grant = CADDY_TOPUPS[offer.lookupKey];
+      // Both rungs of the card ladder, because `guard_caddy_spend` spends them
+      // in order and a host cannot tell which one paid for the card in front
+      // of them. Counting only the re-designs would price "another course" as
+      // one card when it buys two.
+      const cards = (grant.course ?? 0) + grant.redesign;
+      expect(offer.rounds).toContain(String(cards));
     }
   });
 
@@ -102,18 +107,63 @@ describe("the quotas a fee is made of", () => {
     expect(CADDY_COURSES_PER_FEE).toBe(5);
   });
 
-  it("never lets a top-up buy a second saved course", () => {
-    // The invariant seen from the top-up ladder, and the reason it is worth
-    // stating: a fee files one course (`caddy_sessions_one_course_per_fee`),
-    // and a top-up grants re-designs and tweaks — never a course credit. So
-    // "another round" is another go at the card in hand, not a second card to
-    // keep. A course credit appearing in `CADDY_TOPUPS` would quietly make the
-    // rule per-purchase instead of per-fee.
+  it("sells exactly one rung that buys a course to keep", () => {
+    // The two questions the ladder answers, kept distinct. `caddy_topup_1` and
+    // `caddy_topup_3` sell more *goes at the course in the book*; only
+    // `caddy_topup_course` leaves a host with a second card. A course credit
+    // wandering onto one of the others would turn "another round" into
+    // "another course" without the price moving.
+    const keepers = CADDY_TOPUP_OFFERS.filter((offer) => offer.keepsACourse);
+    expect(keepers).toHaveLength(1);
+    expect(keepers[0].lookupKey).toBe("caddy_topup_course");
     for (const offer of CADDY_TOPUP_OFFERS) {
+      expect(offer.keepsACourse, `${offer.lookupKey}`).toBe(
+        (CADDY_TOPUPS[offer.lookupKey].course ?? 0) > 0,
+      );
+    }
+  });
+
+  it("gives a course rung a revision to go with it", () => {
+    // Load-bearing rather than generous. `liveFee` resolves which purchase a
+    // session works under by walking the same ladder the spend does, so a rung
+    // granting a course and nothing else would leave a host one card in with
+    // no way to revise it.
+    for (const offer of CADDY_TOPUP_OFFERS) {
+      if (!offer.keepsACourse) continue;
+      expect(CADDY_TOPUPS[offer.lookupKey].redesign).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the green fee the best rate on the board", () => {
+    // docs/CADDY-TOPUPS.md's standing rule: the bundle has to be the best rate
+    // anyone can get, or it is the option to avoid. Checked per whole card,
+    // which is the unit a host is really buying.
+    const feeCards = CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign;
+    const feePerCard = TARIFF.greenFee.amounts.gbp / feeCards;
+    for (const sku of [
+      TARIFF.caddyTopupOne,
+      TARIFF.caddyTopupThree,
+      TARIFF.caddyTopupCourse,
+    ]) {
+      const grant = CADDY_TOPUPS[sku.lookupKey];
+      const cards = (grant.course ?? 0) + grant.redesign;
       expect(
-        Object.keys(CADDY_TOPUPS[offer.lookupKey]),
-        `${offer.lookupKey} grants`,
-      ).not.toContain("course");
+        sku.amounts.gbp / cards,
+        `${sku.lookupKey} undercuts the fee`,
+      ).toBeGreaterThan(feePerCard);
+    }
+  });
+
+  it("gives the fee more tweaks per card than any top-up", () => {
+    const feeCards = CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign;
+    const feeTweaks = CADDY_GRANT_SIZE.tweak / feeCards;
+    for (const offer of CADDY_TOPUP_OFFERS) {
+      const grant = CADDY_TOPUPS[offer.lookupKey];
+      const cards = (grant.course ?? 0) + grant.redesign;
+      expect(
+        grant.tweak / cards,
+        `${offer.lookupKey} is more generous than the fee`,
+      ).toBeLessThanOrEqual(feeTweaks);
     }
   });
 });

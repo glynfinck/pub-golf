@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CADDY_FAIR_USE_PER_DAY } from "@/lib/caddy/fair-use";
-import { CADDY_TOPUP_LOOKUP_KEYS, CADDY_TOPUPS } from "@/lib/billing";
+import {
+  CADDY_TOPUP_LOOKUP_KEYS,
+  CADDY_TOPUPS,
+  type CaddyTopupKey,
+} from "@/lib/billing";
 import { CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import { caddyBudgetMicroPence, MODEL_PRICES } from "@/lib/caddy/budget";
 import {
@@ -655,7 +659,7 @@ describe("the ledger: granted, spent, and expired", () => {
 
   /** A purchase, minted by the trigger. Returns the entitlement so a test can
    * refund it — deleting the row is what a refund does to this schema. */
-  async function seedTopup(buyer: Actor, kind: "caddy_topup_1" | "caddy_topup_3") {
+  async function seedTopup(buyer: Actor, kind: CaddyTopupKey) {
     const { data, error } = await adminClient()
       .from("entitlements")
       .insert({
@@ -678,7 +682,7 @@ describe("the ledger: granted, spent, and expired", () => {
     return Number(data ?? 0);
   }
 
-  it("accepts both top-up kinds through the entitlements gate", async () => {
+  it("accepts every top-up kind through the entitlements gate", async () => {
     // The regression for a bug the whole pyramid missed: `entitlements.kind`
     // is CHECK-constrained, so before the constraint was restated a top-up row
     // could not be inserted at all. The grant logic was perfect and the

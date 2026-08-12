@@ -350,6 +350,7 @@ export type Database = {
       }
       entitlements: {
         Row: {
+          activated_at: string | null
           amount_total: number | null
           created_at: string
           currency: string | null
@@ -362,6 +363,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -374,6 +376,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -827,7 +830,9 @@ export type Database = {
         }
         Returns: number
       }
+      activate_day_pass: { Args: { who: string }; Returns: undefined }
       caddy_fair_use_cap: { Args: never; Returns: number }
+      day_pass_hours: { Args: never; Returns: number }
       dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
       get_round_card: {

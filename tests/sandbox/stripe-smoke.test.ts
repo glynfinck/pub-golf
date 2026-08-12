@@ -121,7 +121,11 @@ describe.skipIf(!key)("stripe sandbox", () => {
    * lib/tariff.ts, the Stripe account, and caddy_topup_size in SQL), and the
    * only one of those a typecheck can see is the first two.
    */
-  for (const sku of [TARIFF.caddyTopupOne, TARIFF.caddyTopupThree]) {
+  for (const sku of [
+    TARIFF.caddyTopupOne,
+    TARIFF.caddyTopupThree,
+    TARIFF.caddyTopupCourse,
+  ]) {
     it(`${sku.lookupKey} reads back exactly as the tariff prints it`, async () => {
       const price = await priceByLookup(sku.lookupKey);
       expect(price.unit_amount).toBe(sku.amounts.gbp);

@@ -48,11 +48,13 @@ const PRICES = [
       aud: { unit_amount: 2400, tax_behavior: "inclusive" },
     },
   },
-  // More caddy, and the only thing here that does not expire. Two rungs and no
-  // third: demand is lopsided, and a third turns one honest tariff into a
-  // pricing page. Both sell a round well clear of the £3 the green fee implies,
-  // so the bundle stays the obvious buy. Mirrors TARIFF.caddyTopup* in
-  // lib/tariff.ts.
+  // More caddy, and the only things here that do not expire. Three rungs
+  // answering two questions: `caddy_topup_1` and `caddy_topup_3` sell more
+  // *goes at the course in the book*, `caddy_topup_course` sells a second
+  // course to keep. All three price a whole card above the £2.40 the green fee
+  // implies, so the bundle stays the obvious buy — the standing rule in
+  // docs/CADDY-TOPUPS.md, and there is a unit test holding it. Mirrors
+  // TARIFF.caddyTopup* in lib/tariff.ts.
   {
     lookup_key: "caddy_topup_1",
     nickname: "Another round — one more course from the caddy",
@@ -79,6 +81,20 @@ const PRICES = [
       eur: { unit_amount: 1500, tax_behavior: "inclusive" },
       cad: { unit_amount: 2100, tax_behavior: "inclusive" },
       aud: { unit_amount: 2400, tax_behavior: "inclusive" },
+    },
+  },
+  {
+    lookup_key: "caddy_topup_course",
+    nickname: "Another course — a second card to keep, with a revision",
+    product: { name: "Another course", metadata: { kind: "caddy_topup_course" } },
+    metadata: { kind: "caddy_topup_course" },
+    currency: "gbp",
+    unit_amount: 800,
+    currency_options: {
+      usd: { unit_amount: 1000, tax_behavior: "inclusive" },
+      eur: { unit_amount: 1000, tax_behavior: "inclusive" },
+      cad: { unit_amount: 1400, tax_behavior: "inclusive" },
+      aud: { unit_amount: 1600, tax_behavior: "inclusive" },
     },
   },
   {

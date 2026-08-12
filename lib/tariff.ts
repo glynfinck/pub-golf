@@ -44,6 +44,23 @@ export const TARIFF = {
     taxCode: "txcd_10103000",
     amounts: { gbp: 1200, usd: 1500, eur: 1500, cad: 2100, aud: 2400 },
   },
+  /**
+   * Another course, kept — the rung that buys a second saved card rather than
+   * another attempt at the first.
+   *
+   * £8 for two whole cards is £4.00 each, the same rate as the three-pack and
+   * comfortably above the fee's £2.40. That ordering is the rule
+   * docs/CADDY-TOPUPS.md sets: the bundle has to be the best rate anyone can
+   * get, or it is the option to avoid. And the fee is still the better buy on
+   * every axis — cheapest per card, more tweaks per card, and the only one of
+   * them that also covers the round itself.
+   */
+  caddyTopupCourse: {
+    lookupKey: CADDY_TOPUP_LOOKUP_KEYS[2],
+    productName: "Another course",
+    taxCode: "txcd_10103000",
+    amounts: { gbp: 800, usd: 1000, eur: 1000, cad: 1400, aud: 1600 },
+  },
   honestyBox: {
     lookupKey: "honesty_box",
     productName: "The honesty box",
