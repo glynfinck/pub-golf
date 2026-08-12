@@ -46,6 +46,17 @@ const reportSchema = z.object({
     .regex(/^[A-Za-z0-9]{4,12}$/)
     .nullish(),
   hole: z.number().int().min(1).max(18).nullish(),
+  /**
+   * The caddy conversation this is about, when the report was filed from the
+   * drafting table. Private to the row, exactly like `roundCode` — the public
+   * issue goes on carrying nothing but the report's own id, and whoever
+   * triages it follows the link from there.
+   *
+   * This is the feedback loop's join: from a complaint to the session, from
+   * the session to its turns, and from a turn's `trace` to what the caddy
+   * actually did.
+   */
+  caddySessionId: z.string().uuid().nullish(),
   phase: z.string().trim().max(20).nullish(),
   /** Path only — a query string can carry more than the player thinks. */
   route: z.string().trim().max(200).nullish(),
@@ -114,6 +125,11 @@ export async function reportBug(
       area: report.area,
       body: report.body,
       round_code: report.roundCode ?? null,
+      // RLS decides whether this is theirs to point at: the FK only proves the
+      // session exists, and `caddy_sessions` is visible to its host alone. A
+      // stranger's id would be refused by the constraint on a row they cannot
+      // read, which is the same answer either way.
+      caddy_session_id: report.caddySessionId ?? null,
       context: { ...context, roundCode: null },
     })
     .select("id, created_at")

@@ -769,6 +769,11 @@ export async function runTurn(input: {
       output_tokens: outcome.usage.output,
       cache_write_tokens: outcome.usage.cacheWrite,
       cache_read_tokens: outcome.usage.cacheRead,
+      // What the caddy actually did, where there were tools to trace. Null on
+      // a roll or a tweak rather than an empty object, so "this path has no
+      // tools" and "the tools did nothing" stay different facts — see
+      // lib/caddy/trace.ts for why it holds inputs and never replies.
+      trace: (outcome.trace ?? null) as never,
     });
 
   if (!outcome.ok) {

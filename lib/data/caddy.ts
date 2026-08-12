@@ -72,8 +72,9 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
  * beside a course is the one that wrote it.
  *
  * Null is an ordinary answer — a hand-built course never had a session, and a
- * caddy course older than the window has had its patch swept. Both mean the
- * same thing on screen: this is the manual table, as it always was.
+ * caddy course older than the window has had its patch swept. The second of
+ * those is not the end of the conversation, only of Google's copy of the pub
+ * data: `caddyReopenable` picks it up from there.
  */
 export async function resumeCaddyForCourse(
   courseId: string,
@@ -140,10 +141,10 @@ export async function feeFiledCourse(): Promise<string | null> {
  * identical from outside and mean opposite things to a host with tweaks left
  * on their fee.
  *
- * Deliberately narrow: in the window, about this course, has produced a card,
- * and has no patch. Anything else answers null and the screen shows what it
- * showed before. Returns the session id, which is all `reopenCaddyPatch`
- * needs — everything it re-gathers from is already on the row.
+ * Narrow, but not time-bounded: about this course, has produced a card, and has
+ * no patch. Anything else answers null and the screen shows what it showed
+ * before. Returns the session id, which is all `reopenCaddyPatch` needs —
+ * everything it re-gathers from is already on the row.
  */
 export async function caddyReopenable(courseId: string): Promise<string | null> {
   const supabase = await createClient();
@@ -151,7 +152,17 @@ export async function caddyReopenable(courseId: string): Promise<string | null> 
     .from("caddy_sessions")
     .select("id, brief, dossier")
     .eq("course_id", courseId)
-    .gt("created_at", resumableSince(Date.now()))
+    // **No window here, deliberately, and it is the difference between the two
+    // questions.** `resumeCaddyForCourse` hands back a live patch, so it is
+    // bounded by how long that patch may be held. This hands back nothing —
+    // it says a conversation *could* be picked up, and picking it up goes to
+    // Google for a fresh patch, which is a fetch rather than a retention.
+    //
+    // Binding this to the same twelve hours conflated the two and killed the
+    // conversation with the data: a host coming back on Wednesday to tweak
+    // Saturday's course found no caddy at all, and their remaining tweaks were
+    // unreachable. The brief, the card and the trace are all ours and all still
+    // there. What bounds a re-open is the fee, which `reopenCaddyPatch` checks.
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -37,6 +37,7 @@ export type Database = {
       bug_reports: {
         Row: {
           area: string
+          caddy_session_id: string | null
           body: string
           context: Json
           created_at: string
@@ -48,6 +49,7 @@ export type Database = {
         }
         Insert: {
           area?: string
+          caddy_session_id?: string | null
           body: string
           context?: Json
           created_at?: string
@@ -59,6 +61,7 @@ export type Database = {
         }
         Update: {
           area?: string
+          caddy_session_id?: string | null
           body?: string
           context?: Json
           created_at?: string
@@ -298,6 +301,7 @@ export type Database = {
           output_tokens: number
           result: Json
           session_id: string
+          trace: Json | null
         }
         Insert: {
           ask?: string | null
@@ -314,6 +318,7 @@ export type Database = {
           output_tokens?: number
           result: Json
           session_id: string
+          trace?: Json | null
         }
         Update: {
           ask?: string | null
@@ -330,6 +335,7 @@ export type Database = {
           output_tokens?: number
           result?: Json
           session_id?: string
+          trace?: Json | null
         }
         Relationships: [
           {

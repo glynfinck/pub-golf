@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { HouseMark } from "@/components/ui/house-mark";
+import { ReportBugSheet } from "@/components/support/report-bug-sheet";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { useAction } from "@/hooks/use-action";
 import {
@@ -177,6 +178,8 @@ export function CourseBuilder({
    * point the route takes the same frame over.
    */
   const [patch, setPatch] = useState<LivePatch | null>(null);
+  /** The report door, when the caddy planned what is on the table. */
+  const [reporting, setReporting] = useState(false);
   /**
    * The row a caddy-planned course was filed into the moment it arrived.
    *
@@ -733,6 +736,32 @@ export function CourseBuilder({
           pendingLabel={filed ? "Refiling the course" : "Filing the course"}
         />
       </Button>
+
+      {/* The report door, and only where there is a conversation to point at.
+          A complaint about a hand-plotted course is a complaint about the
+          player's own typing; a complaint about a caddy course can be answered,
+          because the session behind it holds the brief, the card and the trace
+          of what the caddy actually did. That is the whole feedback loop, and
+          it is why this sits here rather than only on Profile. */}
+      {caddySession ? (
+        <div className="border-t border-dotted border-border pt-4">
+          <button
+            type="button"
+            onClick={() => setReporting(true)}
+            aria-haspopup="dialog"
+            data-testid="report-course-open"
+            className="min-h-11 w-full text-center text-xs font-bold text-fairway"
+          >
+            Something wrong with this course?
+          </button>
+          <ReportBugSheet
+            open={reporting}
+            onOpenChange={setReporting}
+            caddySessionId={caddySession}
+            area="courses"
+          />
+        </div>
+      ) : null}
 
       {editing ? (
         <div className="flex flex-col gap-2 border-t border-dotted border-border pt-4">

@@ -41,6 +41,8 @@ export function ReportBugSheet({
   roundCode,
   hole,
   phase,
+  caddySessionId,
+  area: initialArea,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,9 +50,20 @@ export function ReportBugSheet({
   roundCode?: string | null;
   hole?: number | null;
   phase?: string | null;
+  /**
+   * The caddy conversation this is about, when the sheet is opened from the
+   * drafting table. Private to the row — the public issue carries nothing but
+   * the report's own id — and it is what turns a complaint about a course into
+   * a question with an answer: from here to the session, from the session to
+   * its turns, from a turn's trace to what the caddy actually did.
+   */
+  caddySessionId?: string | null;
+  /** Where the report is being filed from, so the door picks the right one and
+   * the player is not asked a question the screen already answers. */
+  area?: BugArea;
 }) {
   const { run, pending, busy } = useAction();
-  const [area, setArea] = useState<BugArea>("other");
+  const [area, setArea] = useState<BugArea>(initialArea ?? "other");
   const [text, setText] = useState("");
   const [filed, setFiled] = useState<{
     url: string | null;
@@ -66,7 +79,7 @@ export function ReportBugSheet({
     if (!next) {
       setFiled(null);
       setText("");
-      setArea("other");
+      setArea(initialArea ?? "other");
     }
     onOpenChange(next);
   }
@@ -77,6 +90,7 @@ export function ReportBugSheet({
         area,
         body: text,
         roundCode: roundCode ?? null,
+        caddySessionId: caddySessionId ?? null,
         hole: hole ?? null,
         phase: phase ?? null,
         // Read at the tap, never in render — the route and the viewport are

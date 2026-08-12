@@ -26,6 +26,7 @@ import {
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { dispatchTool } from "@/lib/caddy/session";
+import { trimTrace, type CaddyTrace, type TracedCall } from "@/lib/caddy/trace";
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
@@ -155,6 +156,13 @@ export type CaddyOutcome = (
   /** Why it failed, redacted and one line. Never shown to a player — it exists
    * for the server log and for the staging note. */
   detail?: string;
+  /**
+   * What the caddy did, for the audit row. Only the looped plan produces one —
+   * it is the only path with tools to trace — and a turn without one stores
+   * null rather than an empty object, so "no trace" and "traced nothing" stay
+   * different facts.
+   */
+  trace?: CaddyTrace;
 };
 
 /**
@@ -466,6 +474,17 @@ export async function askCaddyLooped(
    */
   const excluded = new Map<string, string>();
   const drafts: { note: string; board: CaddyBoard }[] = [];
+  /**
+   * The decision trail, for `caddy_turns.trace`.
+   *
+   * Inputs and reply *sizes* only — the rule that makes this safe to keep is
+   * argued in `lib/caddy/trace.ts`, and it is short: a tool call is the
+   * caddy's decision, a tool result is mostly Google's data, and only the
+   * first of those belongs in a row that outlives the dossier.
+   */
+  const traced: TracedCall[] = [];
+  let stopReason = "none";
+  let turnsTaken = 0;
   const aim = {
     from: input.brief.aimFrom,
     to: input.brief.aimTo,
@@ -475,12 +494,14 @@ export async function askCaddyLooped(
   const startedAt = Date.now();
   try {
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
+      turnsTaken = turn + 1;
       // Out of time is a reason to hand over, never a reason to fail. The
       // board is whatever the last completed turn left, which is a card.
       if (outOfLoopTime(turn, Date.now() - startedAt)) {
         console.warn(
           `[caddy] loop stopped on the clock after ${turn} turns with ${board.holes.length} holes`,
         );
+        stopReason = "clock";
         break;
       }
       // A circuit breaker, not a budget — and the distinction is the whole
@@ -500,6 +521,7 @@ export async function askCaddyLooped(
         console.error(
           `[caddy] RUNAWAY: loop broke after ${turn} turns and ${spentSoFar} micropence (breaker ${deps.breaker}) with ${board.holes.length} holes — investigate`,
         );
+        stopReason = "breaker";
         break;
       }
       // Streamed, not awaited whole. The loop shipped using `messages.create`
@@ -543,13 +565,17 @@ export async function askCaddyLooped(
           `[caddy] turn ${turn} overran ${TURN_TIMEOUT_MS}ms with ${board.holes.length} holes`,
           error,
         );
+        stopReason = "overran";
         break;
       }
       usage = addUsage(usage, readUsage(response.usage));
 
       // Nothing more to do: the caddy has stopped reaching for tools, which is
       // how it says the card is finished.
-      if (response.stop_reason !== "tool_use") break;
+      if (response.stop_reason !== "tool_use") {
+        stopReason = response.stop_reason ?? "end_turn";
+        break;
+      }
 
       messages.push({ role: "assistant", content: response.content });
       const results: Anthropic.ToolResultBlockParam[] = [];
@@ -589,6 +615,14 @@ export async function askCaddyLooped(
             `[caddy] ${block.name} changed nothing on turn ${turn}. keys=[${keys.join(",")}] reply=${answered.reply.slice(0, 120)}`,
           );
         }
+        traced.push({
+          name: block.name,
+          input: block.input,
+          replyBytes: answered.reply.length,
+          ...(isDraftTool(block.name)
+            ? { changed: board.holes.length !== before || board !== answered.board }
+            : {}),
+        });
         if (answered.added.length) candidates = [...candidates, ...answered.added];
         if (answered.narration) narrate({ doing: answered.narration });
         results.push({
@@ -603,7 +637,21 @@ export async function askCaddyLooped(
     // Tokens already spent are still owed, so the usage so far goes back with
     // the failure rather than being written off — unlike a call that never
     // reached the model at all.
-    return { ...lostBall(cause, call, "loop "), usage };
+    return {
+      ...lostBall(cause, call, "loop "),
+      usage,
+      // The evidence is owed with the bill. A failed plan is precisely the one
+      // worth being able to read afterwards, and throwing the trace away here
+      // would lose it for exactly the runs it was built for.
+      trace: trimTrace({
+        turns: turnsTaken,
+        stopReason: "threw",
+        calls: traced,
+        candidates: candidates.length,
+        excluded: Object.fromEntries(excluded),
+        fallback: false,
+      }),
+    };
   }
 
   // The board, through the one parser. Everything the single-shot plan gets —
@@ -635,6 +683,7 @@ export async function askCaddyLooped(
       `named=${board.name ? "yes" : "no"}`,
   );
 
+  let fallback = false;
   if (board.holes.length === 0) {
     const rescue = fallbackBoard(candidates, input.brief);
     if (rescue.holes.length > 0) {
@@ -642,8 +691,20 @@ export async function askCaddyLooped(
         `[caddy] loop drafted nothing; handing over the precomputed route with ${rescue.holes.length} holes`,
       );
       board = rescue;
+      fallback = true;
     }
   }
+
+  /** The audit row's version of everything above. Trimmed here rather than at
+   * the insert, so the bound is enforced by the module that documents it. */
+  const trace = trimTrace({
+    turns: turnsTaken,
+    stopReason,
+    calls: traced,
+    candidates: candidates.length,
+    excluded: Object.fromEntries(excluded),
+    fallback,
+  });
 
   const parsed = parsePlan(
     {
@@ -661,7 +722,7 @@ export async function askCaddyLooped(
     candidates,
     input.brief,
   );
-  return { ...parsed, usage, model: call.model };
+  return { ...parsed, usage, model: call.model, trace };
 }
 
 /**
