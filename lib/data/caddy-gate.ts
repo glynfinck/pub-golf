@@ -21,6 +21,8 @@ import type { CaddyAllowance } from "@/lib/data/caddy";
 export interface CaddyStand {
   ready: boolean;
   hasPass: boolean;
+  /** When the fee's day runs out, so a screen can say rather than imply. */
+  passExpiresAt: string | null;
   allowance: CaddyAllowance;
   /** Only ever off production, and only when the deploy is misconfigured —
    * the gate names the variable that is missing rather than making somebody
@@ -81,6 +83,7 @@ export async function caddyStand(): Promise<CaddyStand> {
   return {
     ready,
     hasPass: pass != null,
+    passExpiresAt: pass?.expiresAt ?? null,
     allowance,
     gates:
       !ready && showCaddyDiagnostics(process.env)

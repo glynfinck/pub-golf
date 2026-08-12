@@ -4,6 +4,7 @@ import {
   CADDY_GRANT_SIZE,
   coursesLeftNote,
   CADDY_COURSES_PER_FEE,
+  freshCourseNotice,
   tearOutWarning,
 } from "@/lib/caddy/credits";
 import {
@@ -317,6 +318,82 @@ describe("what a green fee buys", () => {
     expect(CADDY_COURSES_PER_FEE).toBe(
       CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign,
     );
+  });
+});
+
+describe("what a host is told before a fresh course", () => {
+  it("warns that a fresh card writes over the one in the book", () => {
+    // A fee files one course, so planning again replaces it. Doing that
+    // silently would throw away an evening's work without asking.
+    const lines = freshCourseNotice({
+      timeLeft: "9h left",
+      replacing: true,
+      cardsLeftAfter: 2,
+    });
+    expect(lines[0]).toMatch(/writes over/i);
+  });
+
+  it("says nothing about replacing when there is nothing to replace", () => {
+    const lines = freshCourseNotice({
+      timeLeft: "9h left",
+      replacing: false,
+      cardsLeftAfter: 4,
+    });
+    expect(lines.join(" ")).not.toMatch(/writes over/i);
+  });
+
+  it("names how long the fee has to run", () => {
+    // The fact the whole sheet exists for: the day started when they paid,
+    // not when they plan, so a host planning ahead needs to know before they
+    // start rather than after.
+    expect(
+      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 4 })
+        .join(" "),
+    ).toContain("9h left");
+  });
+
+  it("states the fact without a figure before the first client tick", () => {
+    // `formatTimeLeft` answers null until the countdown has ticked, and a
+    // flash of the wrong number is worse than none. The sentence still has to
+    // say the fee is on a clock.
+    const lines = freshCourseNotice({
+      timeLeft: null,
+      replacing: false,
+      cardsLeftAfter: 4,
+    });
+    expect(lines.join(" ")).toMatch(/day's clock/i);
+    expect(lines.join(" ")).not.toMatch(/null|NaN|undefined/);
+  });
+
+  it("counts down what is left after this one", () => {
+    expect(
+      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 3 })
+        .join(" "),
+    ).toContain("3 more after this one");
+    expect(
+      freshCourseNotice({ timeLeft: "9h left", replacing: false, cardsLeftAfter: 1 })
+        .join(" "),
+    ).toContain("One more after this one");
+    expect(
+      freshCourseNotice({ timeLeft: "9h left", replacing: true, cardsLeftAfter: 0 })
+        .join(" "),
+    ).toMatch(/last whole card/i);
+  });
+
+  it("keeps a price and a countdown out of a confirmation", () => {
+    // The covenant: money speaks at round creation and the results afterglow,
+    // and there are no countdown sales clocks. A confirmation is neither of
+    // those moments — "9h left" is the fee's own fact, never an offer.
+    for (const replacing of [true, false]) {
+      for (const cardsLeftAfter of [0, 1, 4]) {
+        const note = freshCourseNotice({
+          timeLeft: "2h left",
+          replacing,
+          cardsLeftAfter,
+        }).join(" ");
+        expect(note).not.toMatch(/£|\$|buy|top up|hurry|don't miss/i);
+      }
+    }
   });
 });
 

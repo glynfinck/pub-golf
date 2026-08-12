@@ -111,6 +111,7 @@ export function CourseBuilder({
   resumed = null,
   reopen = null,
   filedCourseId = null,
+  passExpiresAt = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -134,6 +135,10 @@ export function CourseBuilder({
    * session is on top.
    */
   filedCourseId?: string | null;
+  /** When the green fee's day runs out, for the confirmation before a fresh
+   * card. The day is already running when a host reaches this screen — it
+   * started when they paid — so this is a fact to state, not a clock to start. */
+  passExpiresAt?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -544,6 +549,8 @@ export function CourseBuilder({
           onSession={setCaddySession}
           session={caddySession}
           reopen={reopen}
+          passExpiresAt={passExpiresAt}
+          filed={savedId !== null}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
           onReach={setReach}

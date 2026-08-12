@@ -18,6 +18,7 @@ import {
 import { PendingLabel } from "@/components/ui/pending-label";
 import { Putt } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
+import { useCountdown } from "@/hooks/use-countdown";
 import {
   DEFAULT_HOLES,
   DEFAULT_STRETCH,
@@ -37,11 +38,12 @@ import {
   reopenCaddyPatch,
 } from "@/lib/actions/caddy";
 import { startCaddyTopupCheckout } from "@/lib/actions/billing";
-import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
+import { CADDY_TOPUP_OFFERS, freshCourseNotice } from "@/lib/caddy/credits";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
 import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
+import { formatTimeLeft } from "@/lib/time";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +71,8 @@ export function CaddyGroup({
   reach,
   session = null,
   reopen = null,
+  passExpiresAt = null,
+  filed = false,
   className,
 }: {
   /** A live green fee on this host. The form is identical either way — only
@@ -107,6 +111,12 @@ export function CaddyGroup({
    * for work already done. One trip back to Google puts the patch back.
    */
   reopen?: string | null;
+  /** When the green fee's day runs out, so the confirmation can say. Null when
+   * there is no pass — the form below already says what one costs. */
+  passExpiresAt?: string | null;
+  /** Whether this fee has already filed a course. A fresh plan writes over it,
+   * and doing that silently would throw away an evening's work without asking. */
+  filed?: boolean;
   /** How far the round reaches, for the ring on the drafting table's map.
    * Null while there is nothing to draw. */
   onReach?: (reach: Reach | null) => void;
@@ -122,6 +132,21 @@ export function CaddyGroup({
   // ask box rather than on the form that would plan the patch again.
   const [sessionId, setSessionId] = useState<string | null>(session);
   const [ask, setAsk] = useState("");
+  // The fresh-course confirmation. Held rather than fired from a `confirm()`
+  // so it can carry the two facts a host actually needs — what it replaces and
+  // how long the fee has left.
+  const [confirming, setConfirming] = useState(false);
+  /**
+   * How long the fee has to run, as a live figure.
+   *
+   * `useCountdown` rather than a `Date.now()` in render — the house rule, and
+   * the hydration guard that comes with it: it answers null until the first
+   * client tick, and `formatTimeLeft` renders the fact without the figure
+   * rather than a flash of the wrong one.
+   */
+  const passLeftMs = useCountdown(
+    passExpiresAt ? Date.parse(passExpiresAt) : null,
+  );
   // The caddy's own reasoning while it works, trimmed to a line. Narration
   // only: nothing reads it, and a run where it never arrives is a run that
   // looks exactly like the old one.
@@ -400,6 +425,57 @@ export function CaddyGroup({
    * should look the same either way. Two doors and no price: the course they
    * have, and the table below that never cost anything.
    */
+  /**
+   * Before a fresh card: what it replaces, and how long the fee has to run.
+   *
+   * A sheet rather than a `confirm()` because there are two facts to carry and
+   * a browser dialog can carry neither well. It is the only thing standing
+   * between a host and writing over an evening's work — a fee files one course,
+   * so planning again replaces the one in the book.
+   */
+  const freshSheet = (
+    <Sheet open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
+      <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
+        <SheetHeader className="pb-0 text-center">
+          <SheetTitle className="eyebrow text-center text-fairway">
+            The caddy
+          </SheetTitle>
+          <SheetDescription className="font-serif text-xl text-foreground not-italic">
+            {filed ? "Plan a different course?" : "Ready when you are"}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-col gap-2 px-4 pb-6">
+          {freshCourseNotice({
+            timeLeft: formatTimeLeft(passLeftMs),
+            replacing: filed,
+            cardsLeftAfter: Math.max(0, (allowance?.left ?? 1) - 1),
+          }).map((line) => (
+            <p key={line} className="text-center text-xs text-muted-foreground">
+              {line}
+            </p>
+          ))}
+          <Button
+            className="mt-1 w-full"
+            onClick={() => {
+              setConfirming(false);
+              plan();
+            }}
+            data-testid="confirm-fresh-course"
+          >
+            {filed ? "Plan it anyway" : "Plan the round"}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="min-h-11 text-xs font-semibold text-muted-foreground hover:text-fairway"
+          >
+            Not yet
+          </button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+
   const spentSheet = (
     <Sheet open={spent !== null} onOpenChange={(open) => !open && setSpent(null)}>
       <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
@@ -845,7 +921,11 @@ export function CaddyGroup({
         </p>
       )}
 
-      <Button onClick={plan} disabled={pending || !where.trim()}>
+      {freshSheet}
+      <Button
+        onClick={() => setConfirming(true)}
+        disabled={pending || !where.trim()}
+      >
         <PendingLabel
           pending={pending}
           busy={busy}

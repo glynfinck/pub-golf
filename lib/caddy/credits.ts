@@ -82,6 +82,58 @@ export function coursesLeftNote(left: number): string {
 }
 
 /**
+ * What a host should know before the caddy starts a fresh course.
+ *
+ * Two facts, and both of them are things somebody has found out the hard way.
+ *
+ *   **The fee is on a clock.** It is a day pass, and the day is already
+ *   running — it started when they paid, not when they plan. A host who buys
+ *   on Wednesday to plan a Saturday crawl needs to know that before they
+ *   start, not after.
+ *
+ *   **A fresh course replaces the one they have.** A fee files one course
+ *   (`caddy_sessions_one_course_per_fee`), so planning again writes over it.
+ *   That is the rule working, but it is destructive, and doing it silently
+ *   would be the app throwing away an evening's work without asking.
+ *
+ * Coarse on the time, via `formatTimeLeft`, and for its reason: a day pass is
+ * not a shot clock and a minute-accurate figure reads as pressure. No price
+ * and no offer here either — this is a confirmation, not a checkout.
+ *
+ * Returns the lines in the order they should be read. Empty means there is
+ * nothing worth stopping for.
+ */
+export function freshCourseNotice(input: {
+  /** From `formatTimeLeft`, or null before the first client tick — in which
+   * case the fact is stated without the figure rather than with a wrong one. */
+  timeLeft: string | null;
+  /** Whether a course from this fee is already in the book. */
+  replacing: boolean;
+  /** Whole cards left after this one, so a host knows what they are down to. */
+  cardsLeftAfter: number;
+}): string[] {
+  const lines: string[] = [];
+  if (input.replacing) {
+    lines.push(
+      "This writes over the course your fee already filed. The old one goes.",
+    );
+  }
+  lines.push(
+    input.timeLeft
+      ? `Your green fee has ${input.timeLeft} to run, and the caddy works inside it.`
+      : "Your green fee is on a day's clock, and the caddy works inside it.",
+  );
+  if (input.cardsLeftAfter <= 0) {
+    lines.push("This is the last whole card on it — tweaks will still be free.");
+  } else if (input.cardsLeftAfter === 1) {
+    lines.push("One more after this one.");
+  } else {
+    lines.push(`${input.cardsLeftAfter} more after this one.`);
+  }
+  return lines;
+}
+
+/**
  * What a host should know before tearing out a course the caddy planned.
  *
  * A fee files one course (`caddy_sessions_one_course_per_fee`), and tearing it
