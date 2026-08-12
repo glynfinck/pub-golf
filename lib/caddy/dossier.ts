@@ -26,9 +26,9 @@ import { neutralise } from "@/lib/bug-report";
 export const MAX_CANDIDATES = 40;
 
 /** Review snippets are colour, not evidence — a sentence each, no more. */
-export const REVIEW_SNIPPET_MAX = 160;
-export const REVIEWS_PER_PUB = 2;
-export const EDITORIAL_MAX = 200;
+const REVIEW_SNIPPET_MAX = 160;
+const REVIEWS_PER_PUB = 2;
+const EDITORIAL_MAX = 200;
 
 /**
  * The facts, exactly as Places (New) names them.
@@ -97,6 +97,22 @@ export interface CandidateDossier extends PubSource {
 export function buildCandidates(
   sources: PubSource[],
   pinned: string[] = [],
+  /**
+   * The namespace these ids live in. `p` for the gather; `s` for anything a
+   * mid-conversation search brings back.
+   *
+   * **Two namespaces because one collided.** A search returned a fresh list
+   * numbered from `p1` again, and the loop appends it to the candidates the
+   * caddy is already working from — so after one `search_pubs` there were two
+   * different real pubs called `p3`. Every consumer builds a `Map`, in which
+   * the later duplicate silently wins: `set_hole p3` put a pub on the card
+   * that the caddy had not chosen, `boardBlock` read the wrong name back to
+   * it, and `buildRouteGraph` received duplicate ids.
+   *
+   * The unit suite missed it by hand-picking fixture ids that never collide,
+   * which is the hazard of choosing your own test data.
+   */
+  prefix: "p" | "s" = "p",
 ): CandidateDossier[] {
   const seen = new Set<string>();
   const unique = sources.filter((source) => {
@@ -108,7 +124,7 @@ export function buildCandidates(
   const ordered = [...unique.filter(isPinned), ...unique.filter((s) => !isPinned(s))];
   return ordered
     .slice(0, MAX_CANDIDATES)
-    .map((source, index) => ({ ...source, id: `p${index + 1}` }));
+    .map((source, index) => ({ ...source, id: `${prefix}${index + 1}` }));
 }
 
 /** The dossier's own lookup, for resolution. */
@@ -188,12 +204,3 @@ export function dossierBlock(candidates: CandidateDossier[]): string {
   ].join("\n");
 }
 
-/** Coordinates, for the walk. Null where a pub has none — a hole with no
- * coordinates simply prints no walking time, which is `estimateWalkMinutes`'s
- * own contract. */
-export function coordsOf(candidate: CandidateDossier): {
-  lat: number | null;
-  lng: number | null;
-} {
-  return { lat: candidate.lat, lng: candidate.lng };
-}

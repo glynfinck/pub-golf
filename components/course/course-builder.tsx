@@ -2,11 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Copy, Map as MapIcon, Plus } from "lucide-react";
+import { Copy, Map as MapIcon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
+import type { Reach } from "@/lib/caddy/reach";
 import {
   RoutePreview,
   type LivePatch,
@@ -18,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { FieldLabel, Input } from "@/components/ui/input";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { HouseMark } from "@/components/ui/house-mark";
+import { ReportBugSheet } from "@/components/support/report-bug-sheet";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { useAction } from "@/hooks/use-action";
 import {
@@ -37,6 +39,9 @@ import {
   type DraftHole,
 } from "@/lib/course-draft";
 import type { CaddyAllowance, ResumedCaddy } from "@/lib/data/caddy";
+import { CADDY_CREDITS_SPENT, tearOutNotice } from "@/lib/caddy/credits";
+import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
+import { TearOutSheet } from "@/components/course/tear-out-sheet";
 import { closeCaddySession, rememberCaddyCourse } from "@/lib/actions/caddy";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -107,6 +112,9 @@ export function CourseBuilder({
   caddy = false,
   hasPass = false,
   resumed = null,
+  reopen = null,
+  filedCourseId = null,
+  passExpiresAt = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -115,6 +123,26 @@ export function CourseBuilder({
    * and — the part that matters — knows which course it already filed, so the
    * next card writes over that one instead of minting a second. */
   resumed?: ResumedCaddy | null;
+  /** A conversation about this course whose patch has been swept, and so needs
+   * one trip back to Google before it can be spoken to. The id is all the
+   * caddy needs; everything else is already on the session row. */
+  reopen?: string | null;
+  /**
+   * The course this host's live fee has already filed, if any.
+   *
+   * Separate from `resumed.courseId` because they answer different questions
+   * and only one of them survives a second plan. A host who plans twice has
+   * two sessions; the newest has filed nothing yet, so resuming it hands back
+   * a null course and the next card mints a *second* course on a fee that
+   * bought one. This is asked of the fee instead, so it is right whichever
+   * session is on top.
+   */
+  filedCourseId?: string | null;
+  /** When the green fee's day runs out, for the confirmation before a fresh
+   * card. **Null is the ordinary case**: the day starts at tee-off, so a host
+   * planning on Wednesday for Saturday has a fee with no clock on it at all.
+   * `freshCourseNotice` says which of those two a host is looking at. */
+  passExpiresAt?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -137,9 +165,22 @@ export function CourseBuilder({
   const [caddySession, setCaddySession] = useState<string | null>(
     resumed?.sessionId ?? null,
   );
+  /**
+   * The turn that produced what is on the table, when this page watched it
+   * arrive.
+   *
+   * Null on a resumed session, and honestly so: the card was restored from the
+   * book rather than handed over, and pointing a report at the session's
+   * *latest* turn would be a guess dressed as evidence. The session id is
+   * still there and still says which conversation — this only ever narrows it.
+   */
+  const [caddyTurn, setCaddyTurn] = useState<string | null>(null);
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
+  /** How far the round reaches, resolved from the brief's two areas. Held
+   * here rather than in the group so the map and the form read one value. */
+  const [reach, setReach] = useState<Reach | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -150,6 +191,12 @@ export function CourseBuilder({
    * point the route takes the same frame over.
    */
   const [patch, setPatch] = useState<LivePatch | null>(null);
+  /** The report door, when the caddy planned what is on the table. */
+  const [reporting, setReporting] = useState(false);
+  // The tear-out sheet, and the caddy's money door behind it. Held here
+  // rather than inside either sheet so only one is ever open at a time.
+  const [tearing, setTearing] = useState(false);
+  const [wantsMore, setWantsMore] = useState(false);
   /**
    * The row a caddy-planned course was filed into the moment it arrived.
    *
@@ -164,7 +211,12 @@ export function CourseBuilder({
    * all. A card that filed itself is still a draft being worked on, with the
    * caddy still sitting beside it.
    */
-  const [savedId, setSavedId] = useState<string | null>(resumed?.courseId ?? null);
+  // The fee's answer first. `resumed.courseId` is the same fact seen through
+  // one session, and it is null exactly when a host has planned twice — which
+  // is the case that used to file a duplicate.
+  const [savedId, setSavedId] = useState<string | null>(
+    filedCourseId ?? resumed?.courseId ?? null,
+  );
   const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -304,8 +356,16 @@ export function CourseBuilder({
     // button still says "Save the course", because `savedId` is what that
     // wording reads and it stays null. Shouting about it would be an error
     // message for a step they never asked for.
-    if (editing) return;
     const draft = draftOf(rows, named);
+    // Opened from the book: the course already exists and the caddy's change
+    // belongs on it. This used to return early instead, from back when the
+    // caddy never appeared on a saved course at all — leaving it would mean a
+    // tweak that showed on screen and filed nowhere, which is the same missing
+    // card the file-on-arrival rule exists to prevent.
+    if (editing) {
+      await updateCourse(course.id, draft);
+      return;
+    }
     if (savedId) {
       await updateCourse(savedId, draft);
       return;
@@ -396,6 +456,18 @@ export function CourseBuilder({
     });
   }
 
+  // What tearing this out would cost, and which ways on are open. Null for a
+  // hand-plotted course, which costs nothing to rebuild.
+  const tearNote = allowance
+    ? tearOutNotice({
+        // The caddy is on this page only when a session for this course was
+        // found, which is the same fact — so this needs no extra query.
+        caddyPlanned: caddy && editing,
+        cardsLeft: allowance.left,
+        tweaksLeft: allowance.tweaks,
+      })
+    : null;
+
   const par = holes.reduce((sum, hole) => sum + hole.par, 0);
   // In the book by either door: opened from it, or filed there on arrival by
   // the caddy. Only the save button's wording turns on this — `editing` still
@@ -456,6 +528,11 @@ export function CourseBuilder({
         stops={holes}
         live={patch}
         drawKey={drawKey}
+        ring={
+          reach
+            ? { lat: reach.centre.lat, lng: reach.centre.lng, km: reach.km, warn: reach.warn }
+            : null
+        }
         onOpen={
           MAPS_BROWSER_KEY
             ? () => {
@@ -479,14 +556,26 @@ export function CourseBuilder({
 
       {/* The caddy: one group above the free search, and nothing at all when
           it is off duty. Everything below it is the builder as it has always
-          been — the fee buys the planning, never the table. */}
-      {caddy && !editing ? (
+          been — the fee buys the planning, never the table.
+          Whether it is on duty is the page's call, not this table's. It used
+          to be `caddy && !editing`, which quietly meant a saved course could
+          never be tweaked — the door you came in by is not a fact about the
+          caddy. `/courses/[id]` passes `caddy` only when the conversation that
+          wrote that course is still open. */}
+      {caddy ? (
         <CaddyGroup
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
+          onTurn={setCaddyTurn}
+          session={caddySession}
+          reopen={reopen}
+          passExpiresAt={passExpiresAt}
+          filed={savedId !== null}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
+          onReach={setReach}
+          reach={reach}
           onPicked={(ids) =>
             setPatch((current) =>
               current ? { ...current, picked: [...current.picked, ...ids] } : current,
@@ -666,17 +755,83 @@ export function CourseBuilder({
         />
       </Button>
 
+      {/* The report door, and only where there is a conversation to point at.
+          A complaint about a hand-plotted course is a complaint about the
+          player's own typing; a complaint about a caddy course can be answered,
+          because the session behind it holds the brief, the card and the trace
+          of what the caddy actually did. That is the whole feedback loop, and
+          it is why this sits here rather than only on Profile. */}
+      {caddySession ? (
+        <div className="border-t border-dotted border-border pt-4">
+          <button
+            type="button"
+            onClick={() => setReporting(true)}
+            aria-haspopup="dialog"
+            data-testid="report-course-open"
+            className="min-h-11 w-full text-center text-xs font-bold text-fairway"
+          >
+            Something wrong with this course?
+          </button>
+          <ReportBugSheet
+            open={reporting}
+            onOpenChange={setReporting}
+            caddySessionId={caddySession}
+            caddyTurnId={caddyTurn}
+            area="courses"
+          />
+        </div>
+      ) : null}
+
       {editing ? (
         <div className="flex flex-col gap-2 border-t border-dotted border-border pt-4">
           <Button variant="outline" onClick={copy} disabled={pending}>
             <Copy aria-hidden /> File a copy beside it
           </Button>
-          <HoldToConfirm
-            label="Hold to tear out of the book"
-            holdingLabel="Keep holding — tearing it out"
-            disabled={pending}
-            onConfirm={tearOut}
-          />
+          {/* A caddy-planned course is torn out through a sheet, because a
+              fee files one course and this is the button that spends it — the
+              count, and the ways on, belong beside the decision rather than in
+              a line of small print above it. A hand-plotted one costs nothing
+              to rebuild and keeps the plain hold it always had. */}
+          {tearNote ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setTearing(true)}
+                disabled={pending}
+                className="text-hazard"
+              >
+                <Trash2 aria-hidden /> Tear out of the book
+              </Button>
+              <TearOutSheet
+                open={tearing}
+                onOpenChange={setTearing}
+                notice={tearNote}
+                courseName={name.trim() || course?.name || "This course"}
+                pending={pending}
+                onConfirm={tearOut}
+                onMore={() => {
+                  // One sheet at a time: this closes as the caddy's own door
+                  // opens, the way the round's rules sheet hands over to the
+                  // report sheet.
+                  setTearing(false);
+                  setWantsMore(true);
+                }}
+              />
+              <CaddyMoreSheet
+                open={wantsMore}
+                onOpenChange={setWantsMore}
+                courseId={allowance?.courseId}
+                standing={CADDY_CREDITS_SPENT}
+              />
+            </>
+          ) : (
+            <HoldToConfirm
+              label="Hold to tear out of the book"
+              holdingLabel="Keep holding — tearing it out"
+              disabled={pending}
+              onConfirm={tearOut}
+            />
+          )}
           <p className="text-center text-[11px] text-muted-foreground">
             The copy is the course as last saved. Tearing it out never touches
             a round already played on it.

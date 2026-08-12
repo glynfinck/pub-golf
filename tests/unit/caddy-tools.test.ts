@@ -8,15 +8,16 @@ import {
 import {
   CADDY_LOOP_MS,
   CADDY_TOOLS,
-  TOOL_MOVE,
   TOOL_NAME,
   TOOL_READ,
   TOOL_REMOVE,
   TOOL_SEARCH,
   TOOL_SET,
   TURN_HEADROOM_MS,
+  TURN_TIMEOUT_MS,
   applyDraftTool,
   boardBlock,
+  freshPicks,
   isDraftTool,
   outOfLoopTime,
   readSearchCall,
@@ -108,6 +109,17 @@ describe("the caddy cannot name a pub", () => {
       // the course's own name, and a plain-words search
       "name",
       "query",
+      // the curator's own vocabulary: how many stops to plan, which end to
+      // pin (by id — `startNear` and `finishNear` take the same ids as
+      // `candidateId` and are refused the same way), why a pub was ruled out,
+      // and how to recognise a kept draft. None of them can say *what a pub
+      // is*, which is the line this list defends.
+      "holes",
+      "startNear",
+      "finishNear",
+      "why",
+      "note",
+      "draft",
     ]);
     const names = new Set(propertyNames(CADDY_TOOLS.map((t) => t.input_schema)));
     expect([...names].filter((n) => !allowed.has(n))).toEqual([]);
@@ -295,30 +307,21 @@ describe("remove_hole and move_hole", () => {
     expect(applyDraftTool(TOOL_REMOVE, { hole: 9 }, BOARD, CANDIDATES).ok).toBe(false);
   });
 
-  it("moves a hole and keeps its dressing", () => {
-    const dressed: CaddyBoard = {
-      ...BOARD,
-      holes: [{ ...hole("p1"), drink: "Negroni", par: 2 }, hole("p2"), hole("p3")],
-    };
-    const outcome = applyDraftTool(TOOL_MOVE, { from: 1, to: 3 }, dressed, CANDIDATES);
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.board.holes.map((h) => h.candidateId)).toEqual(["p2", "p3", "p1"]);
-    expect(outcome.board.holes[2].drink).toBe("Negroni");
-  });
-
-  it("clamps a move past the end rather than refusing it", () => {
-    const outcome = applyDraftTool(TOOL_MOVE, { from: 1, to: 40 }, BOARD, CANDIDATES);
-    expect(outcome.ok).toBe(true);
-    if (outcome.ok) {
-      expect(outcome.board.holes.map((h) => h.candidateId)).toEqual(["p2", "p3", "p1"]);
-    }
+  it("offers the model no way to reorder the card", () => {
+    // The prompt told it "the walking order is not yours — leave the sequence
+    // alone" and then handed it `move_hole`, and `parsePlan` overwrote
+    // whatever it did anyway. A tool that contradicts its own instruction and
+    // cannot affect the outcome is tokens spent on confusion. The walk is
+    // arithmetic's; the model is a curator.
+    expect(CADDY_TOOLS.map((tool) => tool.name)).not.toContain("move_hole");
+    expect(isDraftTool("move_hole")).toBe(false);
+    const outcome = applyDraftTool("move_hole", { from: 1, to: 3 }, BOARD, CANDIDATES);
+    expect(outcome.ok).toBe(false);
   });
 
   it("never mutates the board it was given", () => {
     const before = JSON.stringify(BOARD);
     applyDraftTool(TOOL_REMOVE, { hole: 1 }, BOARD, CANDIDATES);
-    applyDraftTool(TOOL_MOVE, { from: 1, to: 3 }, BOARD, CANDIDATES);
     applyDraftTool(TOOL_SET, { hole: 1, candidateId: "p4", drink: "x", par: 3 }, BOARD, CANDIDATES);
     expect(JSON.stringify(BOARD)).toBe(before);
   });
@@ -408,7 +411,7 @@ describe("CADDY_TOOLS", () => {
     const names = CADDY_TOOLS.map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(
-      expect.arrayContaining([TOOL_READ, TOOL_SEARCH, TOOL_SET, TOOL_REMOVE, TOOL_MOVE, TOOL_NAME]),
+      expect.arrayContaining([TOOL_READ, TOOL_SEARCH, TOOL_SET, TOOL_REMOVE, TOOL_NAME]),
     );
   });
 
@@ -457,5 +460,94 @@ describe("the loop's own clock", () => {
     // the mechanism, and it has to come in under it with room for the reply.
     const ROUTE_MAX_MS = 300_000;
     expect(CADDY_LOOP_MS + TURN_HEADROOM_MS).toBeLessThan(ROUTE_MAX_MS);
+  });
+});
+
+describe("the loop fits inside the function that runs it", () => {
+  /** `app/api/caddy/plan/route.ts`. Duplicated deliberately: Next reads that
+   * export at build time and nothing can import it back out, so the number is
+   * restated here and this test is what keeps the two honest. */
+  const MAX_DURATION_MS = 300_000;
+
+  it("cannot start a turn that outlives the platform's ceiling", () => {
+    // The bug this encodes, which cost a real plan and left no trace of it:
+    // `outOfLoopTime` is consulted *between* turns while a single turn was
+    // unbounded, so the loop could look at the clock, decide it had room, and
+    // start a turn that ran past the ceiling. The function was killed mid-call
+    // — before the loop exited, before the fallback board, before the ledger
+    // row was written. The money was spent and nothing recorded it.
+    //
+    // The worst case is now the loop's own budget plus one full turn, and that
+    // has to leave room for the fallback and the ledger write afterwards.
+    const worstCase = CADDY_LOOP_MS + TURN_TIMEOUT_MS;
+    expect(worstCase).toBeLessThan(MAX_DURATION_MS);
+    // A minute of headroom for parsing, the fallback route and the write. Not
+    // a round number chosen for comfort: everything after the loop has to
+    // happen inside it, and a killed function is the one outcome with no
+    // evidence at all.
+    expect(MAX_DURATION_MS - worstCase).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it("still refuses a new turn once the budget is gone", () => {
+    // Unchanged behaviour, restated because the constant moved underneath it.
+    expect(outOfLoopTime(1, CADDY_LOOP_MS)).toBe(true);
+    expect(outOfLoopTime(1, 0)).toBe(false);
+    // The first turn always runs: a loop that refuses before it has drafted
+    // anything is the empty-board failure this whole area exists to stop.
+    expect(outOfLoopTime(0, CADDY_LOOP_MS * 2)).toBe(false);
+  });
+});
+
+/**
+ * The picks the map lights, and the high-water mark behind them.
+ *
+ * This is the seam that was silently broken for a release. The picks used to
+ * be read out of the streamed text of a one-shot answer, and the plan became a
+ * tool loop — which streams tool calls and never writes an answer. The regex
+ * went on compiling, the event went on being typed, the map went on listening,
+ * and nothing was ever sent. Every consumer stayed live and idle.
+ */
+describe("freshPicks", () => {
+  const board: CaddyBoard = {
+    name: "",
+    holes: ["p3", "p7", "p1"].map((candidateId) => ({
+      candidateId,
+      drink: "Pint",
+      par: 3,
+      hazard: null,
+      hazardNote: null,
+      fitNote: null,
+      localRules: [],
+    })),
+  };
+
+  it("sends the whole board when nothing has been announced", () => {
+    expect(freshPicks(board, 0)).toEqual(["p3", "p7", "p1"]);
+  });
+
+  it("sends only what is new", () => {
+    // The bytes matter: re-announcing the whole board after every tool call
+    // is most of what would be on that stream.
+    expect(freshPicks(board, 2)).toEqual(["p1"]);
+  });
+
+  it("sends nothing when the board has not grown", () => {
+    expect(freshPicks(board, 3)).toEqual([]);
+  });
+
+  it("does not go backwards on a board that shrank", () => {
+    // `remove_hole` is a tool. A negative slice index would re-announce the
+    // tail of the board as though it were new.
+    expect(freshPicks(board, 9)).toEqual([]);
+    expect(freshPicks({ name: "", holes: [] }, 4)).toEqual([]);
+  });
+
+  it("carries candidate ids, never names", () => {
+    // The whole safety rule in one assertion: what crosses the wire is an id
+    // the server minted from a real Places result, and the name is attached
+    // on the way out of the dossier.
+    for (const id of freshPicks(board, 0)) {
+      expect(id).toMatch(/^[ps]\d+$/);
+    }
   });
 });

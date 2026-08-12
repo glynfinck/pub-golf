@@ -14,11 +14,14 @@ import Stripe from "stripe";
  * crypto. That keeps the whole payment loop inside the PR gate's rules —
  * deterministic, no third-party network, nothing to flake.
  *
- * What is fulfilled is a **day pass**: a row on the buyer with no round on
- * it and 24 hours on the clock. No round is seeded here because none is
- * involved — the pass is bought from the new-round form before a round
- * exists, and what a round keeps is the members' flag stamped into its own
- * ruleset at tee-off (proved in tests/db/rls-day-pass.test.ts).
+ * What is fulfilled is a **dormant day pass**: a row on the buyer with no
+ * round on it and *no clock running*. The day starts at tee-off, not at
+ * purchase (`20260908000000`), so the webhook writes a null `expires_at` and
+ * `activate_day_pass` stamps the twenty-four hours when a round actually tees
+ * off. No round is seeded here because none is involved — the pass is bought
+ * from the new-round form before a round exists, and what a round keeps is
+ * the members' flag stamped into its own ruleset at tee-off (proved in
+ * tests/db/rls-day-pass.test.ts).
  */
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -39,7 +42,6 @@ const stripe = new Stripe("sk_test_never_called");
 
 /** Fixed so the expiry is arithmetic rather than a race with the clock. */
 const PAID_AT = Math.floor(Date.parse("2026-08-09T19:30:00.000Z") / 1000);
-const DAY_MS = 24 * 3_600_000;
 
 function signedEvent(input: {
   eventId: string;
@@ -81,7 +83,9 @@ const admin = () =>
 async function passesFor(userId: string) {
   const { data, error } = await admin()
     .from("entitlements")
-    .select("id, stripe_event_id, round_id, amount_total, currency, expires_at")
+    .select(
+      "id, stripe_event_id, round_id, amount_total, currency, expires_at, activated_at",
+    )
     .eq("user_id", userId)
     .eq("kind", "green_fee");
   if (error) throw error;
@@ -145,7 +149,7 @@ test("refuses a forged signature", async ({ request }) => {
   expect(await passesFor(quiet)).toEqual([]);
 });
 
-test("mints one 24-hour day pass, however often Stripe redelivers", async ({
+test("mints one dormant day pass, however often Stripe redelivers", async ({
   request,
 }) => {
   const { payload, signature } = signedEvent({
@@ -178,9 +182,19 @@ test("mints one 24-hour day pass, however often Stripe redelivers", async ({
   // The paid amount rides along, so purchase history reads from Postgres.
   expect(rows[0].amount_total).toBe(400);
   expect(rows[0].currency).toBe("gbp");
-  // Dated from the event, not from delivery — a slow retry must not hand
-  // out a longer day than the one that was paid for.
-  expect(Date.parse(rows[0].expires_at as string)).toBe(PAID_AT * 1000 + DAY_MS);
+  /**
+   * **No clock on it yet**, and that is the whole of what `20260908000000`
+   * changed. This used to assert `expires_at === PAID_AT + 24h`, dated from
+   * the event so a slow Stripe retry could not hand out a longer day than was
+   * paid for. Since the day starts at tee-off the webhook writes null, and
+   * `Date.parse(null)` is `NaN` — so the assertion failed rather than quietly
+   * passing, which is the one good thing about it having gone stale.
+   *
+   * A host buying on a Wednesday for Saturday's crawl is the case this
+   * protects: nothing is burning until they tee a round off.
+   */
+  expect(rows[0].expires_at).toBeNull();
+  expect(rows[0].activated_at).toBeNull();
 });
 
 test("writes nothing for a tip, an unpaid session, or a session with no buyer", async ({

@@ -18,7 +18,27 @@ const NEARBY_SEARCH_URL =
 
 /** Everything either Places (New) endpoint is asked to return. */
 export const PLACES_FIELD_MASK =
-  "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount";
+  "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.primaryType";
+
+/**
+ * What a place has to *be* to go on a card.
+ *
+ * `includedPrimaryTypes` asks Google for these, and this list checks the
+ * answer, because a request parameter is a preference and this is a promise.
+ * A club and a tapas restaurant reached a real crawl through `includedTypes`,
+ * which matches any type a place carries — and Google hangs "bar" on anything
+ * with a bar in it.
+ *
+ * A missing `primaryType` passes. Google omits it on some places, and dropping
+ * a genuine pub for a thin response is a worse failure than the one this
+ * guards: the group still gets a pub, they just get a different one.
+ */
+export const PUB_PRIMARY_TYPES = ["pub", "bar", "wine_bar"] as const;
+
+export function isDrinkingPlace(primaryType: string | null | undefined): boolean {
+  if (!primaryType) return true;
+  return (PUB_PRIMARY_TYPES as readonly string[]).includes(primaryType);
+}
 
 // How wide to aim when the only fix on the player is their IP city: a text
 // query is a name worth finding anywhere nearby, the bare what's-here case
@@ -117,7 +137,13 @@ export function buildPlacesSearch({
   return {
     url: NEARBY_SEARCH_URL,
     body: {
-      includedTypes: ["pub", "bar"],
+      // `includedPrimaryTypes`, not `includedTypes`, and the difference is the
+    // whole rule. `includedTypes` matches *any* type a place carries, and
+    // Google hangs "bar" on plenty of places that are not one — a nightclub
+    // with a bar in it, a restaurant with a bar in it. That is how a club and
+    // a tapas restaurant ended up on a crawl. The primary type is what the
+    // place mostly *is*, which is the question being asked.
+    includedPrimaryTypes: ["pub", "bar", "wine_bar"],
       maxResultCount: 20,
       rankPreference: "POPULARITY",
       ...languageCode,

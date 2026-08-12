@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   decodeEvents,
   encodeEvent,
-  pickedIds,
   thinkingTail,
   THINKING_WINDOW,
   type CaddyEvent,
@@ -53,30 +52,6 @@ describe("the caddy's narration on the wire", () => {
   });
 });
 
-describe("pickedIds", () => {
-  it("reads the picks out of a document that is still being written", () => {
-    const partial = '{"courseName":"The Crawl","holes":[{"candidateId":"p3","drink":"Pint of stout","par":4},{"candidateId":"p11","dri';
-    expect(pickedIds(partial)).toEqual(["p3", "p11"]);
-  });
-
-  it("keeps the caddy's own order and says each pub once", () => {
-    const text = '"candidateId": "p9" "candidateId":"p2" "candidateId" : "p9"';
-    expect(pickedIds(text)).toEqual(["p9", "p2"]);
-  });
-
-  it("finds nothing in a document that has not got there yet", () => {
-    expect(pickedIds("")).toEqual([]);
-    expect(pickedIds('{"courseName":"Half a n')).toEqual([]);
-  });
-
-  it("cannot put a pub on a card, whatever it reads", () => {
-    // The safety argument for using a regex here rather than a partial JSON
-    // parser: this is not in the path that builds a card. `parsePlan` reads
-    // the finished document and resolves every id against the dossier, so the
-    // worst a wrong answer here can do is light a pin up early.
-    expect(pickedIds('"candidateId":"nonsense"')).toEqual(["nonsense"]);
-  });
-});
 
 describe("thinkingTail", () => {
   it("flattens the reasoning onto one line", () => {

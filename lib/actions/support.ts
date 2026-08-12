@@ -46,6 +46,18 @@ const reportSchema = z.object({
     .regex(/^[A-Za-z0-9]{4,12}$/)
     .nullish(),
   hole: z.number().int().min(1).max(18).nullish(),
+  /**
+   * The caddy conversation this is about, when the report was filed from the
+   * drafting table. Private to the row, exactly like `roundCode` — the public
+   * issue goes on carrying nothing but the report's own id, and whoever
+   * triages it follows the link from there.
+   *
+   * This is the feedback loop's join: from a complaint to the session, from
+   * the session to its turns, and from a turn's `trace` to what the caddy
+   * actually did.
+   */
+  caddySessionId: z.string().uuid().nullish(),
+  caddyTurnId: z.string().uuid().nullish(),
   phase: z.string().trim().max(20).nullish(),
   /** Path only — a query string can carry more than the player thinks. */
   route: z.string().trim().max(200).nullish(),
@@ -114,6 +126,19 @@ export async function reportBug(
       area: report.area,
       body: report.body,
       round_code: report.roundCode ?? null,
+      // Both ids are checked by the insert policy — `owns_caddy_session` and
+      // `owns_caddy_turn` — and neither by the foreign key. The comment that
+      // used to sit here said the opposite, that "a stranger's id would be
+      // refused by the constraint on a row they cannot read", which is a
+      // reasonable thing to assume about foreign keys and not how they behave:
+      // **a foreign key check runs with row security off.** It proves the row
+      // exists and says nothing about whose it is.
+      //
+      // The turn is the useful one. A session is up to sixty-five cards, so a
+      // report that names only the conversation leaves whoever reads it
+      // guessing which card the complaint is about.
+      caddy_session_id: report.caddySessionId ?? null,
+      caddy_turn_id: report.caddyTurnId ?? null,
       context: { ...context, roundCode: null },
     })
     .select("id, created_at")

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildPlacesSearch, parseBounds } from "@/lib/pub-search";
+import {
+  buildPlacesSearch,
+  isDrinkingPlace,
+  parseBounds,
+  PUB_PRIMARY_TYPES,
+} from "@/lib/pub-search";
 
 const SOHO = { north: 51.517, south: 51.51, east: -0.128, west: -0.14 };
 const IP = { lat: 51.5, lng: -0.12 };
@@ -90,7 +95,10 @@ describe("buildPlacesSearch", () => {
     });
     expect(search?.url).toContain("searchNearby");
     expect(search?.body).toMatchObject({
-      includedTypes: ["pub", "bar"],
+      // Primary types, not any-types. Google hangs "bar" on a nightclub with
+      // a bar in it and on a restaurant with a bar in it, and both reached a
+      // real crawl through the old parameter.
+      includedPrimaryTypes: ["pub", "bar", "wine_bar"],
       maxResultCount: 20,
       languageCode: "en-GB",
     });
@@ -126,5 +134,25 @@ describe("buildPlacesSearch", () => {
         language: "en-GB",
       }),
     ).toBeNull();
+  });
+});
+
+describe("isDrinkingPlace", () => {
+  it("keeps pubs and bars, refuses a club or a restaurant", () => {
+    // The real failure: a nightclub and a tapas restaurant on a crawl, both
+    // let through because Google hangs "bar" on anything with a bar in it and
+    // `includedTypes` matches any type a place carries.
+    for (const type of PUB_PRIMARY_TYPES) expect(isDrinkingPlace(type)).toBe(true);
+    expect(isDrinkingPlace("night_club")).toBe(false);
+    expect(isDrinkingPlace("restaurant")).toBe(false);
+    expect(isDrinkingPlace("cafe")).toBe(false);
+  });
+
+  it("keeps a place Google gave no primary type", () => {
+    // Dropping a genuine pub for a thin response is the worse failure of the
+    // two: the group still gets a pub either way, they just get a different
+    // one — whereas an over-strict filter can empty a patch.
+    expect(isDrinkingPlace(undefined)).toBe(true);
+    expect(isDrinkingPlace(null)).toBe(true);
   });
 });

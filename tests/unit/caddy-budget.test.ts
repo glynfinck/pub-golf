@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   CADDY_GRANT_SIZE,
   coursesLeftNote,
+  CADDY_COURSES_PER_FEE,
+  freshCourseNotice,
+  tearOutNotice,
 } from "@/lib/caddy/credits";
 import {
-  CADDY_BUDGET_NOTE,
   CADDY_BUDGET_SHARE,
   MODEL_PRICES,
   NO_USAGE,
@@ -16,9 +18,7 @@ import {
   microPencePerToken,
   priceOf,
   readUsage,
-  sumUsage,
   type CaddyUsage,
-  withinBudget,
 } from "@/lib/caddy/budget";
 import { TARIFF } from "@/lib/tariff";
 
@@ -178,35 +178,31 @@ describe("the ceiling", () => {
 
   it("does bind on a tail that would otherwise outrun the fee", () => {
     // Thirty full plans is what "unlimited rolls" quietly means, and at Opus
-    // prices that is real money against a single fee.
+    // prices that is real money against a single fee. The comparison is the
+    // loop's own — `spentSoFar >= deps.breaker` in `askCaddyLooped` — rather
+    // than a `withinBudget` helper, which existed only to be tested.
     const plan = costMicroPence(
       { input: 500, output: 3_000, cacheWrite: 12_000, cacheRead: 0 },
       "claude-opus-5",
     );
-    expect(withinBudget(plan * 30, caddyBudgetMicroPence(400))).toBe(false);
-  });
-
-  it("spends up to the line and not past it", () => {
-    expect(withinBudget(0, 100)).toBe(true);
-    expect(withinBudget(99, 100)).toBe(true);
-    expect(withinBudget(100, 100)).toBe(false);
-    expect(withinBudget(101, 100)).toBe(false);
+    expect(plan * 30).toBeGreaterThanOrEqual(caddyBudgetMicroPence(400));
   });
 });
 
-describe("CADDY_BUDGET_NOTE", () => {
-  it("names no number", () => {
-    // Same discipline as the fair-use note: the covenant lets money speak at
-    // round creation and the results afterglow, and nowhere else.
-    expect(CADDY_BUDGET_NOTE).not.toMatch(/\d/);
-  });
 
-  it("says the table is still theirs", () => {
-    expect(CADDY_BUDGET_NOTE).toMatch(/free/i);
-  });
-});
-
+/**
+ * A tool loop is many calls and one ledger row, and `addUsage` is what makes
+ * those the same number.
+ *
+ * Folded the way `askCaddyLooped` folds it — `usage = addUsage(usage, ...)` on
+ * every turn — rather than through a `sumUsage` helper that took the whole
+ * list. There was one, it was a `reduce`, and nothing but these tests called
+ * it: a shape that lets the tests pass while the production fold is different.
+ */
 describe("summing a tool loop into one bill", () => {
+  const fold = (calls: CaddyUsage[]): CaddyUsage =>
+    calls.reduce(addUsage, { ...NO_USAGE });
+
   const call = (over: Partial<CaddyUsage> = {}): CaddyUsage => ({
     input: 100,
     output: 200,
@@ -225,7 +221,7 @@ describe("summing a tool loop into one bill", () => {
   });
 
   it("sums an empty loop to nothing rather than to undefined", () => {
-    expect(sumUsage([])).toEqual(NO_USAGE);
+    expect(fold([])).toEqual(NO_USAGE);
   });
 
   it("keeps the cache write the first call paid for", () => {
@@ -235,7 +231,7 @@ describe("summing a tool loop into one bill", () => {
     // plan as a one-turn one — undercharging, which is the direction that
     // silently breaks the budget.
     const loop = [call({ cacheWrite: 20_000, cacheRead: 0 }), call(), call()];
-    const total = sumUsage(loop);
+    const total = fold(loop);
     expect(total.cacheWrite).toBe(20_000);
     expect(costMicroPence(total, "claude-sonnet-5")).toBeGreaterThan(
       costMicroPence(call(), "claude-sonnet-5"),
@@ -246,14 +242,14 @@ describe("summing a tool loop into one bill", () => {
     // One plan is one thing the host asked for and stays one ledger row. What
     // must not happen is the row understating what the loop actually spent.
     const loop = Array.from({ length: 8 }, () => call());
-    const total = sumUsage(loop);
+    const total = fold(loop);
     expect(costMicroPence(total, "claude-sonnet-5")).toBe(
       8 * costMicroPence(call(), "claude-sonnet-5"),
     );
   });
 
   it("leaves a loop of one exactly where a single call already was", () => {
-    expect(sumUsage([call()])).toEqual(call());
+    expect(fold([call()])).toEqual(call());
   });
 });
 
@@ -287,8 +283,246 @@ describe("what a fee buys, counted", () => {
   });
 
   it("says how many are left in words, never as a bare digit", () => {
-    expect(coursesLeftNote(0)).toMatch(/no courses left/i);
-    expect(coursesLeftNote(1)).toMatch(/one course left/i);
-    expect(coursesLeftNote(3)).toMatch(/^3 courses left/i);
+    expect(coursesLeftNote(0)).toMatch(/no goes left/i);
+    expect(coursesLeftNote(1)).toMatch(/one more go/i);
+    expect(coursesLeftNote(3)).toMatch(/^3 more goes/i);
+  });
+
+  it("counts goes, never courses — a fee keeps exactly one course", () => {
+    // The conflation this app most needs its words to keep straight. A fee
+    // gives four more *attempts*, each writing over the last; saying "5
+    // courses left" promised five saved cards and delivered one.
+    for (const left of [0, 1, 3, 12]) {
+      expect(coursesLeftNote(left)).not.toMatch(/course/i);
+    }
+  });
+
+  it("never says the balance belongs to this fee", () => {
+    // It is summed across durable top-up grants as well, so "on this fee"
+    // told a host who bought a pack that their permanent credits die tonight.
+    for (const left of [0, 1, 3, 12]) {
+      expect(coursesLeftNote(left)).not.toMatch(/this fee/i);
+    }
+  });
+});
+
+/**
+ * What a fee buys, and what tearing the course out of it costs.
+ *
+ * The rule: a green fee is one caddy course plus four revisions of it, and the
+ * host keeps **one** course. Four revisions amounting to four saved courses
+ * would be four evenings' work for the price of one — and until
+ * `caddy_sessions_one_course_per_fee` that is exactly what a fee could produce,
+ * with a real one on preview to prove it.
+ */
+describe("what a green fee buys", () => {
+  it("is one course and four revisions of it", () => {
+    expect(CADDY_GRANT_SIZE.course).toBe(1);
+    expect(CADDY_GRANT_SIZE.redesign).toBe(4);
+  });
+
+  it("counts both rungs as goes at the card", () => {
+    // `guard_caddy_spend` takes the course credit first and re-designs after,
+    // so a host cannot tell which one paid for the card in front of them.
+    // Quoting only the re-designs would be one short of what they bought.
+    expect(CADDY_COURSES_PER_FEE).toBe(
+      CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign,
+    );
+  });
+});
+
+describe("what a host is told before a fresh course", () => {
+  it("warns that a fresh card writes over the one in the book", () => {
+    // A fee files one course, so planning again replaces it. Doing that
+    // silently would throw away an evening's work without asking.
+    const lines = freshCourseNotice({
+      dormant: false,
+      timeLeft: "9h left",
+      replacing: true,
+      cardsLeftAfter: 2,
+    });
+    expect(lines[0]).toMatch(/writes over/i);
+  });
+
+  it("says nothing about replacing when there is nothing to replace", () => {
+    const lines = freshCourseNotice({
+      dormant: false,
+      timeLeft: "9h left",
+      replacing: false,
+      cardsLeftAfter: 4,
+    });
+    expect(lines.join(" ")).not.toMatch(/writes over/i);
+  });
+
+  it("names how long the fee has to run", () => {
+    // The fact the whole sheet exists for: the day started when they paid,
+    // not when they plan, so a host planning ahead needs to know before they
+    // start rather than after.
+    expect(
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 4 })
+        .join(" "),
+    ).toContain("9h left");
+  });
+
+  it("says planning starts no clock while the fee is dormant", () => {
+    // The whole point of the change underneath this sheet, and the sentence a
+    // host planning ahead needs: their fee's day begins when they tee off, so
+    // planning on Wednesday for Saturday costs them nothing.
+    const lines = freshCourseNotice({
+      dormant: true,
+      timeLeft: null,
+      replacing: false,
+      cardsLeftAfter: 4,
+    }).join(" ");
+    expect(lines).toMatch(/starts no clock/i);
+    expect(lines).toMatch(/tee the round off/i);
+    // And it must not also claim a day is running, which is the old copy.
+    expect(lines).not.toMatch(/already running|to run/i);
+  });
+
+  it("states the fact without a figure before the first client tick", () => {
+    // `formatTimeLeft` answers null until the countdown has ticked, and a
+    // flash of the wrong number is worse than none. The sentence still has to
+    // say the fee is on a clock.
+    const lines = freshCourseNotice({
+      dormant: false,
+      timeLeft: null,
+      replacing: false,
+      cardsLeftAfter: 4,
+    });
+    expect(lines.join(" ")).toMatch(/day is already running/i);
+    expect(lines.join(" ")).not.toMatch(/null|NaN|undefined/);
+  });
+
+  it("counts down what is left after this one", () => {
+    expect(
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 3 })
+        .join(" "),
+    ).toContain("3 more after this one");
+    expect(
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: false, cardsLeftAfter: 1 })
+        .join(" "),
+    ).toContain("One more after this one");
+    expect(
+      freshCourseNotice({ dormant: false, timeLeft: "9h left", replacing: true, cardsLeftAfter: 0 })
+        .join(" "),
+    ).toMatch(/last whole card/i);
+  });
+
+  it("keeps a price and a countdown out of a confirmation", () => {
+    // The covenant: money speaks at round creation and the results afterglow,
+    // and there are no countdown sales clocks. A confirmation is neither of
+    // those moments — "9h left" is the fee's own fact, never an offer.
+    for (const replacing of [true, false]) {
+      for (const cardsLeftAfter of [0, 1, 4]) {
+        const note = freshCourseNotice({
+          dormant: false,
+          timeLeft: "2h left",
+          replacing,
+          cardsLeftAfter,
+        }).join(" ");
+        expect(note).not.toMatch(/£|\$|buy|top up|hurry|don't miss/i);
+      }
+    }
+  });
+});
+
+describe("what tearing out a caddy course costs", () => {
+  it("says nothing about a course somebody plotted by hand", () => {
+    // Revisions have nothing to do with it, and a warning here would be the
+    // fee's machinery leaking onto the free table.
+    expect(
+      tearOutNotice({ caddyPlanned: false, cardsLeft: 0, tweaksLeft: 0 }),
+    ).toBeNull();
+  });
+
+  it("names the goes left when there are some", () => {
+    const many = tearOutNotice({
+      caddyPlanned: true,
+      cardsLeft: 3,
+      tweaksLeft: 20,
+    });
+    expect(many?.line).toContain("3 more goes");
+    expect(many?.line).toMatch(/frees your fee/i);
+  });
+
+  it("counts one properly, in words", () => {
+    expect(
+      tearOutNotice({ caddyPlanned: true, cardsLeft: 1, tweaksLeft: 5 })?.line,
+    ).toContain("one more go");
+  });
+
+  it("warns when there is nothing left to rebuild with", () => {
+    // The case the warning exists for. Finding this out after the course is
+    // gone is the worst possible order to learn it in.
+    const notice = tearOutNotice({
+      caddyPlanned: true,
+      cardsLeft: 0,
+      tweaksLeft: 12,
+    });
+    expect(notice?.line).toMatch(/no more courses/i);
+    // Tweaks are named here and nowhere else: an answer to a question the host
+    // is asking by reaching for the button, rather than a meter.
+    expect(notice?.line).toMatch(/tweaks left/i);
+  });
+
+  it("says so plainly when neither is left", () => {
+    const notice = tearOutNotice({
+      caddyPlanned: true,
+      cardsLeft: 0,
+      tweaksLeft: 0,
+    });
+    expect(notice?.line).toMatch(/no more courses and no tweaks/i);
+    // Still no guilt and no sales clock — the covenant holds inside a warning.
+    expect(notice?.line).toMatch(/free/i);
+  });
+
+  it("never puts a countdown or a price in front of a destructive button", () => {
+    for (const cardsLeft of [0, 1, 4]) {
+      for (const tweaksLeft of [0, 30]) {
+        const notice = tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft });
+        expect(notice?.line).not.toMatch(/£|\$|hurry|expires? in|only .* left today/i);
+      }
+    }
+  });
+
+  /**
+   * The doors, which are the half of this that was missing.
+   *
+   * The requirement asked for a warning that offered a way on — buy more, or
+   * just tweak — and for a release the code produced the sentence and no
+   * doors at all. So the doors are decided here, next to the sentence, and
+   * asserted here too: a screen that re-derived them would be a second place
+   * for them to disagree with the words above them.
+   */
+  it("offers more caddy only when the caddy cannot replace what is going", () => {
+    // Goes left: the fee they hold already covers this, so nothing is sold.
+    expect(tearOutNotice({ caddyPlanned: true, cardsLeft: 2, tweaksLeft: 0 }))
+      .toMatchObject({ canReplace: true });
+    // No goes left: the refusal is real, and this is where money may answer.
+    expect(tearOutNotice({ caddyPlanned: true, cardsLeft: 0, tweaksLeft: 4 }))
+      .toMatchObject({ canReplace: false });
+  });
+
+  it("offers the tweak door exactly when tweaks remain", () => {
+    for (const cardsLeft of [0, 1, 4]) {
+      expect(
+        tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft: 0 })?.canTweak,
+      ).toBe(false);
+      expect(
+        tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft: 1 })?.canTweak,
+      ).toBe(true);
+    }
+  });
+
+  it("agrees with its own sentence about tweaks", () => {
+    // The failure this guards is the sentence saying "there are tweaks left"
+    // beside a sheet that offers no way to spend them, or the reverse.
+    for (const cardsLeft of [0, 3]) {
+      for (const tweaksLeft of [0, 7]) {
+        const notice = tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft });
+        expect(notice?.canTweak).toBe(tweaksLeft > 0);
+      }
+    }
   });
 });

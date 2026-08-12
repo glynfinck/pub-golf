@@ -80,7 +80,7 @@ export function caddyGates(env: CaddyEnv, input: CaddyReadinessInput): CaddyGate
     {
       label: "Places key",
       ok: Boolean(env.GOOGLE_PLACES_API_KEY?.trim()),
-      fix: "GOOGLE_PLACES_API_KEY is unset, so there are no pubs to plan from. The group will render and then refuse honestly.",
+      fix: "GOOGLE_PLACES_API_KEY is unset, so there are no pubs to plan from. This is the server's Places key — separate from the browser maps key and from the model credential, and a deploy can have those two and still be missing this one.",
     },
   ];
 }
@@ -101,6 +101,13 @@ export function shutGates(env: CaddyEnv, input: CaddyReadinessInput): CaddyGate[
 export function caddyReady(env: CaddyEnv, input: CaddyReadinessInput): boolean {
   return (
     caddyCredentials(env) !== null &&
+    // The Places key belongs here, not only in the gate list. Leaving it out
+    // was deliberate once — the group would "render and then refuse honestly"
+    // — but honest is not the same as legible: the builder came up looking
+    // ready, the host pressed Plan, and got a sentence that named none of it.
+    // A deploy with the model credential and no Places key has no pubs to
+    // plan from and is not ready, so it now says so before the press.
+    Boolean(env.GOOGLE_PLACES_API_KEY?.trim()) &&
     input.signedIn &&
     !input.anonymous &&
     (billingEnabled(env.STRIPE_SECRET_KEY) || input.hasPass) &&

@@ -236,3 +236,34 @@ export function walkRoute(holes: PreviewHole[], progress: number): WalkedRoute {
   }
   return { path, reached };
 }
+
+/**
+ * A circle on the map, as points.
+ *
+ * Drawn rather than dropped in as a `Circle`, for two reasons. The house
+ * already draws its own walking line as a dotted polyline, so a ring built the
+ * same way matches it exactly instead of arriving in Google's default stroke.
+ * And a radius that animates has to be interpolated somewhere — doing it here
+ * keeps the maths pure and testable, and leaves the component holding nothing
+ * but a number that changes.
+ *
+ * Longitude is divided by the cosine of the latitude so the ring is round on
+ * the ground rather than round in degrees, which at London's latitude is an
+ * ellipse a third too wide.
+ */
+export function ringPath(
+  centre: { lat: number; lng: number },
+  km: number,
+  points = 72,
+): { lat: number; lng: number }[] {
+  if (!(km > 0)) return [];
+  const dLat = km / 111.32;
+  const dLng = dLat / Math.max(Math.cos((centre.lat * Math.PI) / 180), 1e-6);
+  return Array.from({ length: points + 1 }, (_, i) => {
+    const angle = (i / points) * Math.PI * 2;
+    return {
+      lat: centre.lat + Math.sin(angle) * dLat,
+      lng: centre.lng + Math.cos(angle) * dLng,
+    };
+  });
+}

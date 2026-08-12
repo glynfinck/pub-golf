@@ -46,10 +46,19 @@ describe("caddyReady", () => {
     expect(caddyReady(OPEN, { ...HOST, tablesPresent: false })).toBe(false);
   });
 
-  it("does not need a Places key", () => {
-    // A patch with no pubs is a refusal in words, which tells the host more
-    // than the group silently not existing does.
-    expect(caddyReady({ ...OPEN, GOOGLE_PLACES_API_KEY: "" }, HOST)).toBe(true);
+  it("is not ready without a Places key", () => {
+    // This assertion used to run the other way, and the argument for it was
+    // decent: a plan that refuses in words tells the host more than a group
+    // that silently does not exist. What it missed is that the refusal named
+    // nothing. A deploy carrying the model credential but no Places key put a
+    // builder on screen that looked ready, took the press, and answered "the
+    // caddy isn't on duty here" — the same sentence a missing model key gives,
+    // and the same one a refused insert gives. Three causes, one shrug.
+    //
+    // So the key joins readiness. The host gets absence rather than a dead
+    // button, and whoever deployed gets the gate list naming the variable.
+    expect(caddyReady({ ...OPEN, GOOGLE_PLACES_API_KEY: "" }, HOST)).toBe(false);
+    expect(caddyReady({ ...OPEN, GOOGLE_PLACES_API_KEY: "   " }, HOST)).toBe(false);
   });
 });
 

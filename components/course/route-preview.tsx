@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   AdvancedMarker,
@@ -9,6 +9,7 @@ import {
   ColorScheme,
   Map,
   Polyline,
+  useMap,
 } from "@vis.gl/react-google-maps";
 
 import { useDrawIn } from "@/hooks/use-draw-in";
@@ -16,6 +17,7 @@ import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
   patchFrame,
+  ringPath,
   previewFrame,
   walkRoute,
   type PreviewFrame,
@@ -84,6 +86,7 @@ export function RoutePreview({
   stops,
   live,
   onOpen,
+  ring,
   drawKey = 0,
   className,
 }: {
@@ -104,6 +107,11 @@ export function RoutePreview({
    * "nothing has been handed over" — a course loaded from the database is
    * simply there, and animating it on every page load would be scenery.
    */
+  /** How far the round reaches, drawn from the first tee and eased as the
+   * host types a destination. `warn` turns it amber at the same threshold
+   * `stretchWarning` fires, so the ring and the sentence agree by
+   * construction. */
+  ring?: { lat: number; lng: number; km: number; warn?: boolean } | null;
   drawKey?: number;
   className?: string;
 }) {
@@ -142,6 +150,15 @@ export function RoutePreview({
           keyboardShortcuts={false}
           clickableIcons={false}
         >
+          <Reframe bounds={frame.bounds} />
+          {ring ? (
+            <PatchRing
+              centre={{ lat: ring.lat, lng: ring.lng }}
+              km={ring.km}
+              warn={ring.warn === true}
+              dark={dark}
+            />
+          ) : null}
           {route ? (
             /* Remounted whenever the caddy hands over a card, which is what
                replays the walk. The map itself stays put — remounting *that*
@@ -252,8 +269,54 @@ function WalkedLine({
  * a decision that has not been taken.
  */
 function PatchPins({ live, picked }: { live: LivePatch; picked: Set<string> }) {
+  // The walk as it is being decided.
+  //
+  // `picked` arrives in the caddy's own order, which is the order it means to
+  // walk them, so the line can be drawn long before the card exists. It grows
+  // a stop at a time and re-routes visibly when the caddy changes its mind
+  // about a hole — which is a far better answer to "what is it doing for three
+  // minutes" than any amount of reasoning text.
+  //
+  // It also makes a broken stream survivable. A host who has watched nine
+  // stops land has seen their course, so a connection that dies on the way
+  // back is a rough ending rather than a loss.
+  //
+  // Built from `live.pins`, so a picked id with no pin behind it is simply
+  // skipped rather than drawn at the origin.
+  //
+  // A record rather than a `Map`, because `Map` in this file is the Google
+  // one: the component import shadows the global constructor, and `new Map()`
+  // here compiles to an attempt to construct a React component.
+  const byId: Record<string, LivePatch["pins"][number]> = {};
+  for (const pin of live.pins) byId[pin.id] = pin;
+  const walked = live.picked
+    .map((id) => byId[id])
+    .filter((pin): pin is LivePatch["pins"][number] => pin != null)
+    .map((pin) => ({ lat: pin.lat, lng: pin.lng }));
+
   return (
     <>
+      {walked.length > 1 ? (
+        <Polyline
+          path={walked}
+          strokeOpacity={0}
+          icons={[
+            {
+              // The same dotted walking line the finished card draws, so the
+              // route does not change costume when it stops being a draft.
+              icon: {
+                path: "M0,0m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0",
+                fillColor: "#1e4630",
+                fillOpacity: 0.5,
+                scale: 2,
+                strokeOpacity: 0,
+              },
+              offset: "0",
+              repeat: "10px",
+            },
+          ]}
+        />
+      ) : null}
       {live.pins.map((pin) => {
         const chosen = picked.has(pin.id);
         return (
@@ -273,6 +336,122 @@ function PatchPins({ live, picked }: { live: LivePatch; picked: Set<string> }) {
           </AdvancedMarker>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * Keep the map on the frame, not on the first frame it ever saw.
+ *
+ * `defaultBounds` is initial-only — every `default*` prop in
+ * @vis.gl/react-google-maps sets the view on mount and is never read again. So
+ * a host who planned Shoreditch and then changed the patch to Camden kept
+ * looking at Shoreditch: the pins moved, the map did not. It looked correct on
+ * a fresh load for the worst possible reason, which is that a fresh load *is* a
+ * mount.
+ *
+ * Re-framing imperatively rather than remounting the `<Map>`: a remount
+ * reloads the tiles, flashes, and bills another map load. This is the same
+ * thing `pub-map-sheet.tsx` already does with its viewport.
+ */
+function Reframe({ bounds }: { bounds: PreviewFrame["bounds"] }) {
+  const map = useMap();
+  // Depending on the four numbers rather than the object: `frame` is rebuilt on
+  // every render, so an object identity here would re-fit the map continuously.
+  const { north, south, east, west } = bounds;
+  useEffect(() => {
+    if (!map) return;
+    map.fitBounds({ north, south, east, west }, 48);
+  }, [map, north, south, east, west]);
+  return null;
+}
+
+/**
+ * The reach of the round, drawn and breathing.
+ *
+ * Two rings on the same centre. The solid one eases to the real distance
+ * between the host's two areas, so typing a destination *moves* it rather than
+ * redrawing it — the change is the information, and a number that jumps is a
+ * number nobody watches. The faint one repeats outward and fades, which is
+ * what makes the map feel alive while the host is still deciding rather than
+ * looking like a screenshot of a decision already made.
+ *
+ * It turns amber at the same threshold `stretchWarning` fires, so the ring and
+ * the sentence beneath the form are one fact shown two ways rather than two
+ * things that can disagree.
+ *
+ * All state is set inside the rAF callback, never in render, and the whole
+ * thing collapses to a static ring under `prefers-reduced-motion` — a pulse is
+ * decoration and decoration is the first thing that should stop moving.
+ */
+function PatchRing({
+  centre,
+  km,
+  warn,
+  dark,
+}: {
+  centre: { lat: number; lng: number };
+  km: number;
+  warn: boolean;
+  dark: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const [radius, setRadius] = useState(0);
+  const [pulse, setPulse] = useState(0);
+  // Where the ease started from, held in a ref so a re-target mid-flight
+  // continues from where the ring actually is rather than snapping back.
+  const fromRef = useRef(0);
+
+  useEffect(() => {
+    let raf = 0;
+    // Even the still case goes through a frame: the house rule is that state
+    // is never set in an effect body, and "it is only one assignment" is how
+    // that rule stops being a rule.
+    if (reducedMotion || !(km > 0)) {
+      raf = requestAnimationFrame(() => {
+        fromRef.current = km;
+        setRadius(km);
+        setPulse(0);
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+    const from = fromRef.current;
+    let started: number | null = null;
+    const tick = (now: number) => {
+      if (started === null) started = now;
+      const elapsed = now - started;
+      // Cubic ease-out over 700ms: quick enough to feel like a response to
+      // typing, slow enough to read as movement.
+      const t = Math.min(1, elapsed / 700);
+      const eased = from + (km - from) * (1 - (1 - t) ** 3);
+      fromRef.current = eased;
+      setRadius(eased);
+      // A 2.4s breath, offset so the pulse is never exactly the solid ring.
+      setPulse((elapsed % 2400) / 2400);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [km, reducedMotion]);
+
+  const ink = warn ? "#b4531f" : dark ? "#e9e2d0" : "#1e4630";
+  const solid = ringPath(centre, radius);
+  if (solid.length === 0) return null;
+  // The pulse starts inside the ring and passes through it, so the eye reads
+  // it as coming *from* the tee rather than as a second boundary.
+  const breathing = ringPath(centre, radius * (0.35 + pulse * 0.75));
+
+  return (
+    <>
+      {!reducedMotion && breathing.length > 0 ? (
+        <Polyline
+          path={breathing}
+          strokeColor={ink}
+          strokeOpacity={0.35 * (1 - pulse)}
+          strokeWeight={1.5}
+        />
+      ) : null}
+      <Polyline path={solid} strokeColor={ink} strokeOpacity={0.7} strokeWeight={2} />
     </>
   );
 }

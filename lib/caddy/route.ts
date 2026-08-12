@@ -67,6 +67,25 @@ export interface WalkStop {
 export type WalkShape = "path" | "loop";
 
 /**
+ * **Nothing sets `loop` today**, and it is left in rather than removed on
+ * purpose. `midConversation` builds `WalkPins` as `{ minLegMinutes }` and the
+ * brief has no field for a shape, so every route this app has ever produced is
+ * a path. That makes the loop arms — in `legsOf`, `routeCost`, `twoOpt` and
+ * `tryRoute` — unreached code, and the argument for deleting them is a good
+ * one.
+ *
+ * The argument against is stronger here than it would be for a dead component:
+ * the walk is the most safety-critical arithmetic in the caddy, it has no test
+ * tier below the unit one, and the loop is threaded through four functions as
+ * a boolean that changes what an *endpoint* means. Removing it is a rewrite of
+ * the router to delete a dozen lines of branch, at a moment when nobody has
+ * asked for it. The switch that would make it live is one chip on the brief.
+ *
+ * So: a stated absence rather than an unexplained one. If a shape chip is
+ * never coming, this is the note that says the deletion is safe.
+ */
+
+/**
  * The minimum a leg should be, and what happens when it is not.
  *
  * Shortest-total-distance is the classic objective and it is subtly the wrong
@@ -390,7 +409,20 @@ export function tryRoute<T extends WalkStop & { id: string }>(
   stops: T[],
   pins: WalkPins = {},
 ): RouteTrial {
-  const ordered = orderWalk(stops, pins);
+  /**
+   * Both passes, because the finished card gets both.
+   *
+   * This ran `orderWalk` alone while `parsePlan` runs `orderWalk` **and then**
+   * `forwardOrder` — so the tool's own description ("the same router the
+   * finished card goes through, so what it reports is what the group will
+   * walk") was false, and the caddy was optimising against a walk nobody
+   * takes. The test that claimed to pin this compared `tryRoute` against
+   * `orderWalk`: the half that agreed.
+   */
+  const ordered = forwardOrder(orderWalk(stops, pins), {
+    first: pins.first != null,
+    last: pins.last != null,
+  });
   const minKm = kmForWalkMinutes(Math.max(0, pins.minLegMinutes ?? 0));
   const legs: TrialLeg[] = [];
   let worstRun = 0;
@@ -421,4 +453,87 @@ export function tryRoute<T extends WalkStop & { id: string }>(
     worstRun,
     unplaced: ordered.filter((stop) => !placed(stop)).map((stop) => stop.id),
   };
+}
+
+/**
+ * Walk the middle in the order it is passed.
+ *
+ * `orderWalk` above answers "what is the shortest way round these pubs", which
+ * is the wrong question for a crawl: the shortest tour of a dense patch is a
+ * lap of one block. A real card came back covering 2.47km of walking to make
+ * 0.97km of ground, running forward and back along its own line three times.
+ *
+ * This fixes the ends and sorts everything between them by how far along the
+ * line from first to last each pub sits. With the endpoints held, a walk
+ * ordered by that projection **cannot** double back — it is monotone by
+ * construction rather than by penalty, which is the difference between this
+ * and every scoring term that tried to discourage the same thing.
+ *
+ * Distance is given up to buy it, on purpose. A hundred metres more walking is
+ * a fair price for a night that goes somewhere.
+ *
+ * Fewer than four stops has no interior worth sorting, and a first and last in
+ * the same spot has no line to sort along — both are returned untouched.
+ */
+export function forwardOrder<T extends WalkStop>(
+  stops: T[],
+  pins: { first?: boolean; last?: boolean } = {},
+): T[] {
+  if (stops.length < 4) return [...stops];
+  const placedStops = stops.filter(placed);
+  if (placedStops.length < 3) return [...stops];
+
+  // The line the night travels: between the two pubs furthest apart. Using
+  // first-to-last instead was the near miss — with nothing pinned there is no
+  // reason the pub that happens to be first is the one furthest back, and a
+  // real card opened by walking 200m the wrong way before settling down.
+  // Ties are broken on the coordinates themselves rather than on array order,
+  // and that is not tidiness. A shape with several equally-widest pairs — a
+  // ring is the plain example — otherwise picks a different axis depending on
+  // what order the stops arrive in, so ordering an ordered walk changes it
+  // again. Property tests caught it; the cost would have been cache misses on
+  // every turn of a plan, since the routes ride in the cached prefix.
+  const key = (stop: T) => `${stop.lat},${stop.lng}`;
+  let a = placedStops[0];
+  let b = placedStops[1];
+  let widest = -1;
+  let widestKey = "";
+  for (let i = 0; i < placedStops.length; i += 1) {
+    for (let j = i + 1; j < placedStops.length; j += 1) {
+      const scale = Math.cos((placedStops[i].lat as number) * (Math.PI / 180));
+      const dx = ((placedStops[j].lng as number) - (placedStops[i].lng as number)) * scale;
+      const dy = (placedStops[j].lat as number) - (placedStops[i].lat as number);
+      const span = dx * dx + dy * dy;
+      const pair = [key(placedStops[i]), key(placedStops[j])].sort().join("|");
+      const better =
+        span > widest + 1e-12 || (span > widest - 1e-12 && pair < widestKey);
+      if (better) {
+        widest = Math.max(span, widest);
+        widestKey = pair;
+        a = placedStops[i];
+        b = placedStops[j];
+      }
+    }
+  }
+  if (widest <= 0) return [...stops];
+
+  const scale = Math.cos((a.lat as number) * (Math.PI / 180));
+  const ax = ((b.lng as number) - (a.lng as number)) * scale;
+  const ay = (b.lat as number) - (a.lat as number);
+  const len = Math.hypot(ax, ay);
+  const along = (stop: T) => {
+    if (!placed(stop)) return Number.POSITIVE_INFINITY;
+    const dx = ((stop.lng as number) - (a.lng as number)) * scale;
+    const dy = (stop.lat as number) - (a.lat as number);
+    return (dx * ax + dy * ay) / len;
+  };
+
+  // Pinned tees stay at their ends and everything else is walked in the order
+  // the line passes it. With nothing pinned every stop is free to move, which
+  // is what makes the whole walk monotone rather than merely its middle.
+  const head = pins.first ? [stops[0]] : [];
+  const tail = pins.last ? [stops[stops.length - 1]] : [];
+  const middle = stops.slice(head.length, stops.length - tail.length);
+  const sorted = [...middle].sort((x, y) => along(x) - along(y));
+  return [...head, ...sorted, ...tail];
 }

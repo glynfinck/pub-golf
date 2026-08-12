@@ -14,6 +14,8 @@ import {
   type PlannedCourse,
 } from "@/lib/caddy/plan";
 import type { CaddyBrief } from "@/lib/caddy/brief";
+import { buildRouteGraph, targetKmFor } from "@/lib/caddy/route-graph";
+import { DEFAULT_DRINK, DEFAULT_PAR } from "@/lib/course-draft";
 import {
   addUsage,
   costMicroPence,
@@ -24,9 +26,18 @@ import {
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { dispatchTool } from "@/lib/caddy/session";
+import {
+  EMPTY_TRACE,
+  trimTrace,
+  type CaddyTrace,
+  type TracedCall,
+} from "@/lib/caddy/trace";
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
+  freshPicks,
+  isDraftTool,
+  TURN_TIMEOUT_MS,
   MAX_TOOL_TURNS,
   outOfLoopTime,
   type CaddyBoard,
@@ -151,6 +162,13 @@ export type CaddyOutcome = (
   /** Why it failed, redacted and one line. Never shown to a player — it exists
    * for the server log and for the staging note. */
   detail?: string;
+  /**
+   * What the caddy did, for the audit row. Only the looped plan produces one —
+   * it is the only path with tools to trace — and a turn without one stores
+   * null rather than an empty object, so "no trace" and "traced nothing" stay
+   * different facts.
+   */
+  trace?: CaddyTrace;
 };
 
 /**
@@ -165,54 +183,35 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
       ...requestOf(input, call.model),
       thinking: THINKING,
     });
-    return interpret(response, input, call.model);
+    return {
+      ...interpret(response, input, call.model),
+      trace: trimTrace({
+        ...EMPTY_TRACE,
+        turns: 1,
+        stopReason: response.stop_reason ?? "end_turn",
+        candidates: input.candidates.length,
+      }),
+    };
   } catch (cause) {
     return lostBall(cause, call, "");
   }
 }
 
 /**
- * Ask the caddy, and narrate the wait.
+ * `askCaddyStreamed` used to sit here: the same request as `askCaddy` with the
+ * stream on, handing the caller the half-written answer so the map could light
+ * pins as the caddy chose them.
  *
- * The same request as `askCaddy` — same system rules, same cached dossier,
- * same schema — with `stream` on and the thinking summary asked for. The
- * caller is handed the reasoning and the half-written answer as they arrive;
- * what it does with them is its business, and dropping every one of them would
- * still leave a correct card at the end.
+ * It became unreachable the day the plan became a tool loop. `runTurn` picks
+ * the streamed caddy only for a narrated turn that is *not* a plan, and there
+ * is no such caller — the streaming route always sends `kind: "plan"`, and
+ * rolls and tweaks are never narrated. So it was a second implementation of
+ * the same call, kept in step by hand, exercised by nothing.
  *
- * The two share everything except those two lines, which is the point: a
- * streamed plan and an unstreamed tweak must fail identically, bill
- * identically and parse identically, and the cheapest way to guarantee that is
- * for there to be one of each.
+ * The feature it existed for is not gone: `askCaddyLooped` announces picks off
+ * the board, which is where a loop's picks actually are.
  */
-export async function askCaddyStreamed(
-  input: CaddyAsk,
-  narrate: (update: { thinking?: string; answer?: string }) => void,
-): Promise<CaddyOutcome> {
-  const call = openCall();
-  if (!call) return unavailable();
-  try {
-    const stream = call.client.messages.stream({
-      ...requestOf(input, call.model),
-      thinking: THINKING_SHOWN,
-    });
-    // Two deltas matter and the rest is structure. `thinking` is the window;
-    // `text` is the answer being written, which the caller reads picks out of.
-    stream.on("streamEvent", (event) => {
-      if (event.type !== "content_block_delta") return;
-      if (event.delta.type === "thinking_delta") {
-        narrate({ thinking: event.delta.thinking });
-      } else if (event.delta.type === "text_delta") {
-        narrate({ answer: event.delta.text });
-      }
-    });
-    return interpret(await stream.finalMessage(), input, call.model);
-  } catch (cause) {
-    return lostBall(cause, call, "stream ");
-  }
-}
 
-/** An open line to the vendor, or null when this deploy has no credentials. */
 function openCall() {
   // Read per call, never at module load: a Vercel OIDC token rotates, and a
   // credential captured once at cold start goes stale under the deploy.
@@ -335,7 +334,7 @@ function buildMessages(input: CaddyAsk): Anthropic.MessageParam[] {
       content: [
         {
           type: "text",
-          text: patchBlock(input.candidates),
+          text: patchBlock(input.candidates, input.brief),
           // The breakpoint. Everything above is byte-identical for the life of
           // the session; everything below is cheap to re-send.
           cache_control: { type: "ephemeral" },
@@ -438,7 +437,25 @@ export async function askCaddyLooped(
      * that has gone wrong rather than one that was expensive. */
     breaker: number;
   },
-  narrate: (update: { thinking?: string; doing?: string }) => void,
+  narrate: (update: {
+    thinking?: string;
+    doing?: string;
+    /**
+     * Pubs the caddy has settled on so far, by candidate id.
+     *
+     * The map lights these several seconds before a hole exists, which is the
+     * difference between watching a plan happen and watching a spinner. They
+     * used to be read out of the streamed *text* of a one-shot answer by a
+     * regex, which stopped producing anything the moment the plan became a
+     * tool loop: a loop streams tool calls and no answer at all. The pins went
+     * dark and every consumer of them stayed live and idle.
+     *
+     * So they come off the board, which is where a loop's picks are. Not the
+     * walking order — that is decided after the answer is complete, which is
+     * exactly why these land as pins and the numbers arrive with the card.
+     */
+    picked?: string[];
+  }) => void,
 ): Promise<CaddyOutcome> {
   const call = openCall();
   if (!call) return unavailable();
@@ -448,15 +465,53 @@ export async function askCaddyLooped(
   let candidates = input.candidates;
   let usage: CaddyUsage = { ...NO_USAGE };
 
+  /**
+   * What the caddy remembers between turns.
+   *
+   * All three outlive a single tool call on purpose. A pub ruled out on turn
+   * two must still be out on turn five or "another walk, without those" means
+   * nothing; a draft kept before a rework must survive the rework; and the aim
+   * is the brief's, so a re-plan faces the same way the first one did.
+   *
+   * They live here rather than in the conversation because they are facts
+   * about this session rather than things the model said — and because the
+   * prefix above the cache breakpoint has to stay byte-identical every turn.
+   */
+  const excluded = new Map<string, string>();
+  const drafts: { note: string; board: CaddyBoard }[] = [];
+  /**
+   * The decision trail, for `caddy_turns.trace`.
+   *
+   * Inputs and reply *sizes* only — the rule that makes this safe to keep is
+   * argued in `lib/caddy/trace.ts`, and it is short: a tool call is the
+   * caddy's decision, a tool result is mostly Google's data, and only the
+   * first of those belongs in a row that outlives the dossier.
+   */
+  const traced: TracedCall[] = [];
+  let stopReason = "none";
+  let turnsTaken = 0;
+  /** Whether the caddy has already been asked to name the card. Once only —
+   * see the nudge below, and the fallback it exists to keep as a floor. */
+  let askedForName = false;
+  /** How many of the board's picks the caller has already been told about. */
+  let announcedPicks = 0;
+  const aim = {
+    from: input.brief.aimFrom,
+    to: input.brief.aimTo,
+    targetKm: targetKmFor(input.brief.stretch, input.brief.holes, input.brief.reachKm),
+  };
+
   const startedAt = Date.now();
   try {
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
+      turnsTaken = turn + 1;
       // Out of time is a reason to hand over, never a reason to fail. The
       // board is whatever the last completed turn left, which is a card.
       if (outOfLoopTime(turn, Date.now() - startedAt)) {
         console.warn(
           `[caddy] loop stopped on the clock after ${turn} turns with ${board.holes.length} holes`,
         );
+        stopReason = "clock";
         break;
       }
       // A circuit breaker, not a budget — and the distinction is the whole
@@ -476,6 +531,7 @@ export async function askCaddyLooped(
         console.error(
           `[caddy] RUNAWAY: loop broke after ${turn} turns and ${spentSoFar} micropence (breaker ${deps.breaker}) with ${board.holes.length} holes — investigate`,
         );
+        stopReason = "breaker";
         break;
       }
       // Streamed, not awaited whole. The loop shipped using `messages.create`
@@ -484,15 +540,21 @@ export async function askCaddyLooped(
       // until it finished, then a paragraph all at once. The narration is the
       // reason any of this streams — dropping it inside the loop dropped it
       // from the *only* turn long enough to need it.
-      const turnStream = call.client.messages.stream({
-        model: call.model,
-        max_tokens: MAX_TOKENS,
-        system: CADDY_SYSTEM_TOOLS,
-        thinking: THINKING_SHOWN,
-        output_config: { effort: EFFORT },
-        tools: CADDY_TOOLS,
-        messages,
-      });
+      const turnStream = call.client.messages.stream(
+        {
+          model: call.model,
+          max_tokens: MAX_TOKENS,
+          system: CADDY_SYSTEM_TOOLS,
+          thinking: THINKING_SHOWN,
+          output_config: { effort: EFFORT },
+          tools: CADDY_TOOLS,
+          messages,
+        },
+        // The bound that was missing. Without it a single turn could outlive
+        // the whole function: the loop's own clock is only consulted *between*
+        // turns, which is exactly when a turn is not the thing going wrong.
+        { timeout: TURN_TIMEOUT_MS },
+      );
       turnStream.on("streamEvent", (event) => {
         if (
           event.type === "content_block_delta" &&
@@ -501,26 +563,120 @@ export async function askCaddyLooped(
           narrate({ thinking: event.delta.thinking });
         }
       });
-      const response = await turnStream.finalMessage();
+      // A turn that overruns is not a failed plan. Everything drafted so far
+      // is on the board, and the loop hands that over exactly as it does when
+      // it runs out of clock — which is the whole reason the board is built up
+      // across turns rather than written at the end.
+      let response: Anthropic.Message;
+      try {
+        response = await turnStream.finalMessage();
+      } catch (error) {
+        console.warn(
+          `[caddy] turn ${turn} overran ${TURN_TIMEOUT_MS}ms with ${board.holes.length} holes`,
+          error,
+        );
+        stopReason = "overran";
+        break;
+      }
       usage = addUsage(usage, readUsage(response.usage));
 
       // Nothing more to do: the caddy has stopped reaching for tools, which is
       // how it says the card is finished.
-      if (response.stop_reason !== "tool_use") break;
+      if (response.stop_reason !== "tool_use") {
+        /**
+         * Unless it forgot to name it, and there is still a turn to name it in.
+         *
+         * `parsePlan` falls back to "Shoreditch, nine holes", and that fallback
+         * is doing honest work — it is a great deal better than the same four
+         * words on every unnamed card. But it was also silently absorbing the
+         * failure: a card the caddy never named looked, from the outside,
+         * exactly like a card it named badly, and the house formula quietly
+         * became the product on some fraction of runs.
+         *
+         * So the formula is a floor rather than a substitute. Ask once, and
+         * only once — a caddy that will not name a course after being asked is
+         * not going to name it on the third ask either, and the fallback is
+         * there precisely so that this can give up cheaply.
+         */
+        if (board.holes.length > 0 && !board.name.trim() && !askedForName) {
+          askedForName = true;
+          messages.push({ role: "assistant", content: response.content });
+          messages.push({
+            role: "user",
+            content:
+              "That card has no name on it. Call name_course once, with this round's own name — the patch, the shape of the night, a joke the group would get — and then hand it over.",
+          });
+          continue;
+        }
+        stopReason = response.stop_reason ?? "end_turn";
+        break;
+      }
 
       messages.push({ role: "assistant", content: response.content });
       const results: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
+        const before = board.holes.length;
         const answered = await dispatchTool(block.name, block.input, {
           board,
           candidates,
           pins: deps.pins,
           search: deps.search,
+          excluded,
+          drafts,
+          holes: input.brief.holes,
+          aim,
         });
+        /**
+         * Whether the call moved anything, captured **before** the board is
+         * reassigned.
+         *
+         * This compared `board !== answered.board` *after* `board =
+         * answered.board`, so the second disjunct was always false and every
+         * successful replace, `move_hole` and `name_course` recorded
+         * `changed: false`. The warning below had the identical defect and
+         * logged "changed nothing" for every successful replace — which is
+         * precisely the diagnostic its own comment says was written to end an
+         * evening of guessing.
+         */
+        const moved = board !== answered.board || board.holes.length !== before;
         board = answered.board;
+
+        /**
+         * What the tool actually received, when a call changes nothing.
+         *
+         * Written because an evening was lost to guessing at this. A card came
+         * back with every drink defaulted, which is indistinguishable at the
+         * far end from the fallback board firing — and the schema, the
+         * dispatcher, `applyDraftTool`, `clampText` and `neutralise` all
+         * checked out, so the payload is the only thing left that can answer
+         * it. The keys are logged and the values are not: a key list says
+         * whether `drink` arrived at all, which is the question, and the
+         * values are a host's course rather than ours to print.
+         */
+        if (isDraftTool(block.name) && !moved) {
+          const keys =
+            typeof block.input === "object" && block.input !== null
+              ? Object.keys(block.input as Record<string, unknown>).sort()
+              : ["(not an object)"];
+          console.warn(
+            `[caddy] ${block.name} changed nothing on turn ${turn}. keys=[${keys.join(",")}] reply=${answered.reply.slice(0, 120)}`,
+          );
+        }
+        traced.push({
+          name: block.name,
+          input: block.input,
+          replyBytes: answered.reply.length,
+          ...(isDraftTool(block.name) ? { changed: moved } : {}),
+        });
         if (answered.added.length) candidates = [...candidates, ...answered.added];
         if (answered.narration) narrate({ doing: answered.narration });
+        // Only the new ones. Re-announcing the whole board after every call
+        // would work and would also be most of the bytes on this stream.
+        if (board.holes.length > announcedPicks) {
+          narrate({ picked: freshPicks(board, announcedPicks) });
+          announcedPicks = board.holes.length;
+        }
         results.push({
           type: "tool_result",
           tool_use_id: block.id,
@@ -533,12 +689,75 @@ export async function askCaddyLooped(
     // Tokens already spent are still owed, so the usage so far goes back with
     // the failure rather than being written off — unlike a call that never
     // reached the model at all.
-    return { ...lostBall(cause, call, "loop "), usage };
+    return {
+      ...lostBall(cause, call, "loop "),
+      usage,
+      // The evidence is owed with the bill. A failed plan is precisely the one
+      // worth being able to read afterwards, and throwing the trace away here
+      // would lose it for exactly the runs it was built for.
+      trace: trimTrace({
+        turns: turnsTaken,
+        stopReason: "threw",
+        calls: traced,
+        candidates: candidates.length,
+        excluded: Object.fromEntries(excluded),
+        fallback: false,
+      }),
+    };
   }
 
   // The board, through the one parser. Everything the single-shot plan gets —
   // the walking order, water off the last hole, a short for a bunker, the
   // pinned-tee check — is applied here and nowhere else.
+  // A loop that ran out of time before it drafted anything used to return an
+  // empty board, which the caller reads as a failure — so the host paid for a
+  // full plan (29.20p on the run that prompted this) and got a sentence. The
+  // work was real; it was spent searching rather than drafting, and refusing
+  // to hand over anything is the one outcome nobody wants.
+  //
+  // So a board with no holes falls back to the route the graph already worked
+  // out before the model was even called. It is the honest floor of this
+  // feature: a real walk over real pubs, in a sensible order, wearing default
+  // dress. Merely good beats nothing, absolutely.
+  //
+  // A *fallback* rather than a seed, deliberately. Seeding the live board
+  // would put holes in front of the model that it did not choose and would
+  // have to reason about removing, which changes every successful plan to
+  // rescue the failing ones. This changes only the runs that would otherwise
+  // have delivered nothing.
+  // One line that says what the loop actually did, because "every drink says
+  // Pint of your choosing" has two completely different causes — the fallback
+  // firing, and `set_hole` landing with no drink on it — and they were
+  // indistinguishable from the card.
+  console.warn(
+    `[caddy] loop finished: ${board.holes.length} holes, ` +
+      `${board.holes.filter((hole) => hole.drink === "Pint of your choosing").length} undressed, ` +
+      `named=${board.name ? "yes" : "no"}`,
+  );
+
+  let fallback = false;
+  if (board.holes.length === 0) {
+    const rescue = fallbackBoard(candidates, input.brief);
+    if (rescue.holes.length > 0) {
+      console.warn(
+        `[caddy] loop drafted nothing; handing over the precomputed route with ${rescue.holes.length} holes`,
+      );
+      board = rescue;
+      fallback = true;
+    }
+  }
+
+  /** The audit row's version of everything above. Trimmed here rather than at
+   * the insert, so the bound is enforced by the module that documents it. */
+  const trace = trimTrace({
+    turns: turnsTaken,
+    stopReason,
+    calls: traced,
+    candidates: candidates.length,
+    excluded: Object.fromEntries(excluded),
+    fallback,
+  });
+
   const parsed = parsePlan(
     {
       courseName: board.name,
@@ -555,5 +774,56 @@ export async function askCaddyLooped(
     candidates,
     input.brief,
   );
-  return { ...parsed, usage, model: call.model };
+  return { ...parsed, usage, model: call.model, trace };
+}
+
+/**
+ * The floor: the best precomputed route, dressed with house defaults.
+ *
+ * Everything here is already decided by the time it is called — the graph
+ * chose the stops before the model ran, and the drink and par are the same
+ * ones the manual builder starts a hole with. Nothing is invented, least of
+ * all a pub: every stop is a candidate id.
+ *
+ * The course goes unnamed. `parsePlan` gives an unnamed course the house
+ * fallback, and a name made up here would be the one part of this that the
+ * caddy is supposed to write.
+ */
+function fallbackBoard(
+  candidates: CandidateDossier[],
+  brief: CaddyAsk["brief"],
+): CaddyBoard {
+  const graph = buildRouteGraph(candidates, {
+    holes: brief.holes,
+    startId: candidateIdFor(candidates, brief.startVenueId),
+    finishId: candidateIdFor(candidates, brief.finishVenueId),
+    targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
+    aimFrom: brief.aimFrom,
+    aimTo: brief.aimTo,
+  });
+  const best = graph.routes[0];
+  if (!best) return { name: "", holes: [] };
+  return {
+    name: "",
+    holes: best.stops.map((candidateId: string) => ({
+      candidateId,
+      drink: DEFAULT_DRINK,
+      par: DEFAULT_PAR,
+      hazard: null,
+      hazardNote: null,
+      fitNote: null,
+      // No local rules on a fallback hole: a house rule is a judgement about
+      // the pub, and this board is geometry rather than judgement.
+      localRules: [],
+    })),
+  };
+}
+
+/** A pinned tee is a `venues` id; the graph speaks candidate ids. */
+function candidateIdFor(
+  candidates: CandidateDossier[],
+  venueId: string | null,
+): string | null {
+  if (!venueId) return null;
+  return candidates.find((c) => c.venueId === venueId)?.id ?? null;
 }

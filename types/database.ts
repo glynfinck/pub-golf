@@ -37,6 +37,8 @@ export type Database = {
       bug_reports: {
         Row: {
           area: string
+          caddy_session_id: string | null
+          caddy_turn_id: string | null
           body: string
           context: Json
           created_at: string
@@ -48,6 +50,8 @@ export type Database = {
         }
         Insert: {
           area?: string
+          caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body: string
           context?: Json
           created_at?: string
@@ -59,6 +63,8 @@ export type Database = {
         }
         Update: {
           area?: string
+          caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body?: string
           context?: Json
           created_at?: string
@@ -175,7 +181,7 @@ export type Database = {
           expires_at: string | null
           host: string
           id: string
-          quota: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
           reason: string
         }
         Insert: {
@@ -185,7 +191,7 @@ export type Database = {
           expires_at?: string | null
           host: string
           id?: string
-          quota: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
           reason?: string
         }
         Update: {
@@ -195,7 +201,7 @@ export type Database = {
           expires_at?: string | null
           host?: string
           id?: string
-          quota?: string
+          quota?: Database["public"]["Enums"]["caddy_quota"]
           reason?: string
         }
         Relationships: []
@@ -298,6 +304,7 @@ export type Database = {
           output_tokens: number
           result: Json
           session_id: string
+          trace: Json | null
         }
         Insert: {
           ask?: string | null
@@ -314,6 +321,7 @@ export type Database = {
           output_tokens?: number
           result: Json
           session_id: string
+          trace?: Json | null
         }
         Update: {
           ask?: string | null
@@ -330,6 +338,7 @@ export type Database = {
           output_tokens?: number
           result?: Json
           session_id?: string
+          trace?: Json | null
         }
         Relationships: [
           {
@@ -350,6 +359,7 @@ export type Database = {
       }
       entitlements: {
         Row: {
+          activated_at: string | null
           amount_total: number | null
           created_at: string
           currency: string | null
@@ -362,6 +372,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -374,6 +385,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          activated_at?: string | null
           amount_total?: number | null
           created_at?: string
           currency?: string | null
@@ -816,7 +828,6 @@ export type Database = {
     Functions: {
       approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
       bug_report_daily_cap: { Args: never; Returns: number }
-      caddy_budget_micropence: { Args: never; Returns: number }
       caddy_cost_micropence: {
         Args: {
           cache_read_tokens: number
@@ -827,7 +838,9 @@ export type Database = {
         }
         Returns: number
       }
+      activate_day_pass: { Args: { who: string }; Returns: undefined }
       caddy_fair_use_cap: { Args: never; Returns: number }
+      day_pass_hours: { Args: never; Returns: number }
       dismiss_seat_rescue: { Args: { seat: string }; Returns: undefined }
       generate_round_code: { Args: never; Returns: string }
       get_round_card: {
@@ -866,9 +879,13 @@ export type Database = {
           seat_id: string
         }[]
       }
-      caddy_balance: { Args: { quota: string; who: string }; Returns: number }
-      caddy_grant_size: { Args: { quota: string }; Returns: number }
-      caddy_next_grant: { Args: { quota: string; who: string }; Returns: string }
+      caddy_balance: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: number }
+      caddy_topup_size: {
+        Args: { kind: string; quota: Database["public"]["Enums"]["caddy_quota"] }
+        Returns: number
+      }
+      caddy_grant_size: { Args: { quota: Database["public"]["Enums"]["caddy_quota"] }; Returns: number }
+      caddy_next_grant: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {
         Args: { since?: string; until?: string }
@@ -895,7 +912,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      caddy_quota: "course" | "redesign" | "tweak"
     }
     CompositeTypes: {
       [_ in never]: never

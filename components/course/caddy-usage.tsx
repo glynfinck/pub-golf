@@ -23,17 +23,32 @@ export function CaddyUsage({
   className,
 }: {
   left: number;
+  /** How many the row is drawn out of. Defaults to a fee's own five, and is
+   * raised below when the host holds more than that — see `shown`. */
   total?: number;
   className?: string;
 }) {
-  const spent = Math.max(0, total - left);
+  /**
+   * How many pips to draw.
+   *
+   * A fee gives five, and this defaulted to five and stopped. Top-ups are
+   * durable and stack, so `left` can be eight or twelve — at which point
+   * `spent` clamped to zero, five filled pips rendered, and the words beside
+   * them said a larger number. The row disagreed with itself.
+   *
+   * So the row grows to hold what the host actually has. It never shrinks
+   * below the fee's five, because a half-spent fee should read as a fee with
+   * some gone rather than as a smaller fee.
+   */
+  const shown = Math.max(total, left);
+  const spent = Math.max(0, shown - left);
   return (
     <span
       className={cn("flex items-center gap-1.5", className)}
       data-testid="caddy-usage"
     >
       <span className="flex items-center gap-1" aria-hidden>
-        {Array.from({ length: total }, (_, index) => (
+        {Array.from({ length: shown }, (_, index) => (
           <span
             key={index}
             className={cn(

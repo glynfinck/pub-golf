@@ -66,7 +66,31 @@ export const MAX_TOOL_TURNS = 12;
  * seconds left is how you get killed mid-flight and lose the card *and* the
  * accounting. Better to stop one turn early holding a finished card.
  */
-export const CADDY_LOOP_MS = 210_000;
+/**
+ * The wall clock the loop lives inside.
+ *
+ * Lowered from 210s, and the reason is the bug it caused rather than a taste
+ * for smaller numbers. `outOfLoopTime` is checked *between* turns while a
+ * single turn is unbounded, so the loop could look at the clock at 200s,
+ * decide it had room, and start a turn that ran past the platform's 300s
+ * ceiling. The function was killed mid-call — before the loop could exit,
+ * before the fallback board, before the turn row was written. The money was
+ * spent and nothing recorded that it had been.
+ *
+ * With `TURN_TIMEOUT_MS` bounding each call, the worst case is now this plus
+ * one turn, which has to fit inside `maxDuration` with room for the fallback
+ * and the ledger write after it.
+ */
+export const CADDY_LOOP_MS = 150_000;
+
+/**
+ * The longest any single model call may run.
+ *
+ * The missing bound. A turn with 16k of `max_tokens` can run for minutes, and
+ * nothing stopped it — the loop's clock only ever spoke between turns, which
+ * is precisely when a turn is not the problem.
+ */
+export const TURN_TIMEOUT_MS = 90_000;
 export const TURN_HEADROOM_MS = 45_000;
 
 /**
@@ -93,9 +117,12 @@ export const TOOL_SEARCH = "search_pubs";
 export const TOOL_READ = "read_draft";
 export const TOOL_SET = "set_hole";
 export const TOOL_REMOVE = "remove_hole";
-export const TOOL_MOVE = "move_hole";
 export const TOOL_NAME = "name_course";
 export const TOOL_ROUTE = "try_route";
+export const TOOL_ROUTES = "plan_routes";
+export const TOOL_EXCLUDE = "exclude_pubs";
+export const TOOL_KEEP = "keep_draft";
+export const TOOL_RESTORE = "restore_draft";
 
 /** One hole as the caddy holds it: an id and its dressing. The venue behind
  * the id is the server's business, which is the whole point. */
@@ -113,6 +140,24 @@ export interface BoardHole {
 export interface CaddyBoard {
   name: string;
   holes: BoardHole[];
+}
+
+/**
+ * The picks the caller has not been told about yet.
+ *
+ * The map lights a pub several seconds before its hole exists, which is the
+ * difference between watching a plan happen and watching a spinner. Announcing
+ * the whole board after every tool call would work and would also be most of
+ * the bytes on that stream, so the loop keeps a high-water mark and sends the
+ * tail.
+ *
+ * A function rather than two lines inline because the off-by-one has two
+ * failure modes and neither is visible on screen: one re-sends everything on
+ * every call, the other announces nothing at all. The pins look the same to a
+ * host while the stream is three times the size, or dark.
+ */
+export function freshPicks(board: CaddyBoard, announced: number): string[] {
+  return board.holes.slice(Math.max(0, announced)).map((hole) => hole.candidateId);
 }
 
 /**
@@ -135,6 +180,84 @@ export type ToolOutcome =
  * request. A description assembled from a template would re-write the prefix on
  * every call and quietly turn every cache read back into a cache write. */
 export const CADDY_TOOLS = [
+  {
+    name: TOOL_ROUTES,
+    description:
+      "Work out fresh walks over the pubs in the patch. Free and instant — it re-uses what has already been gathered and never goes back to Google, so ask again whenever the last set did not suit. Excluded pubs are left out.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: [],
+      properties: {
+        holes: {
+          type: "integer",
+          description: "How many stops. Defaults to the brief's own count.",
+        },
+        startNear: {
+          type: ["string", "null"],
+          description:
+            "Begin at the pub with this id, or near it. Null to let the walk choose.",
+        },
+        finishNear: {
+          type: ["string", "null"],
+          description: "End at the pub with this id. Null to let the walk choose.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_EXCLUDE,
+    description:
+      "Rule pubs out for the rest of this conversation, with a reason. Use it when a pub cannot meet the brief — no garden when one was asked for, wrong sort of place, already tried and it did not fit. Then plan_routes again and they will not come back.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["candidateIds", "why"],
+      properties: {
+        candidateIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids from the patch. Only ids you have been given.",
+        },
+        why: {
+          type: "string",
+          description: "One short line — what the brief asked for that these cannot give.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_KEEP,
+    description:
+      "Save the card as it stands, so a change can be tried and undone. Keep a draft before reworking something that already looks good.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["note"],
+      properties: {
+        note: {
+          type: "string",
+          description: "What this draft is, in a few words — how you will recognise it.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_RESTORE,
+    description:
+      "Put a saved draft back on the table, replacing what is there. Use it when a change turned out worse than what it replaced.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["draft"],
+      properties: {
+        draft: {
+          type: "integer",
+          description: "Which saved draft, counting from 1.",
+        },
+      },
+    },
+  },
   {
     name: TOOL_READ,
     description:
@@ -228,23 +351,16 @@ export const CADDY_TOOLS = [
     },
   },
   {
-    name: TOOL_MOVE,
-    description:
-      "Move a hole to a different position in the walking order, keeping its dressing.",
-    input_schema: {
-      type: "object" as const,
-      additionalProperties: false,
-      required: ["from", "to"],
-      properties: {
-        from: { type: "integer" },
-        to: { type: "integer" },
-      },
-    },
-  },
-  {
     name: TOOL_ROUTE,
     description:
-      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to try a set you have not committed to, or with nothing to measure what is on the table. This is the same router the finished card goes through, so what it reports is what the group will walk — use it before you hand a card over, and again after you change one.",
+      // The last sentence used to read "use it before you hand a card over,
+      // and again after you change one", which contradicted the prompt above
+      // it: every route in <routes> arrives already measured, and <swaps>
+      // states the walk to each alternative. Told to measure what it had just
+      // been told, the caddy spent a turn re-reading its own inputs. What is
+      // left is the one use that is still real — a combination it assembled
+      // itself, which nothing has measured yet.
+      "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to measure a combination you put together yourself. This is the same router the finished card goes through, so what it reports is what the group will walk. The routes you were offered have already been through it, and so has every swap's walk — measuring one of those again tells you what you were told.",
     input_schema: {
       type: "object" as const,
       additionalProperties: false,
@@ -278,7 +394,17 @@ export const CADDY_TOOLS = [
 
 /** The four tools that change the draft — the ones this module answers. The
  * other two need a key and a session and belong to the server. */
-export const DRAFT_TOOLS: string[] = [TOOL_SET, TOOL_REMOVE, TOOL_MOVE, TOOL_NAME];
+/**
+ * The tools that change the card.
+ *
+ * `move_hole` used to be here and is deliberately gone. The prompt told the
+ * model "the walking order is not yours — leave the sequence alone" and then
+ * handed it a tool for exactly that, and `parsePlan` overwrote whatever it did
+ * anyway, running `orderWalk` and then `forwardOrder` over the result. So the
+ * tool could only ever cost tokens and confuse the instruction: the model is a
+ * curator and a tweaker, and the walk is arithmetic's.
+ */
+export const DRAFT_TOOLS: string[] = [TOOL_SET, TOOL_REMOVE, TOOL_NAME];
 
 export function isDraftTool(name: string): boolean {
   return DRAFT_TOOLS.includes(name);
@@ -495,28 +621,6 @@ export function applyDraftTool(
     };
   }
 
-  if (name === TOOL_MOVE) {
-    const from = readHoleNumber(input.from);
-    const to = readHoleNumber(input.to);
-    if (from === null || from > board.holes.length) {
-      return {
-        ok: false,
-        reply: `There is no hole ${input.from}. The card has ${board.holes.length}.`,
-      };
-    }
-    if (to === null) {
-      return { ok: false, reply: "Move it to which position? Count from 1." };
-    }
-    const target = Math.min(to, board.holes.length);
-    const holes = [...board.holes];
-    const [moved] = holes.splice(from - 1, 1);
-    holes.splice(target - 1, 0, moved);
-    return {
-      ok: true,
-      board: { ...board, holes },
-      reply: `Moved. That pub is hole ${target} now.`,
-    };
-  }
 
   return { ok: false, reply: `There is no tool called ${name}.` };
 }

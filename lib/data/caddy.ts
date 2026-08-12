@@ -1,6 +1,7 @@
 import { readBrief } from "@/lib/caddy/brief";
-import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
+import { CADDY_COURSES_PER_FEE, CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import type { PlannedCourse } from "@/lib/caddy/plan";
+import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -41,37 +42,175 @@ export interface ResumedCaddy {
   courseId: string | null;
 }
 
-/**
- * How long a walked-away-from session is still worth resuming.
- *
- * The green fee's own day. The dossier is Google's atmosphere data and review
- * snippets, held for the length of one conversation on purpose — a session
- * still open a week later is not a conversation, it is a cupboard. Twelve
- * hours is comfortably a night out and comfortably inside the pass.
- */
-export const RESUMABLE_HOURS = 12;
 
 /**
  * The host's most recent unfinished caddy session, if there is one worth
  * picking up.
  *
- * Finished sessions never resume: `closeCaddySession` stamps `completed_at`
- * and empties the dossier when a course is saved, so a completed row has
- * nothing left to continue with and the host has what they came for.
+ * Finished sessions resume as well as unfinished ones. `closeCaddySession`
+ * still stamps `completed_at` when a course is saved, but that marks "this
+ * produced a card", not "you may not ask again" — the host keeps a tweak
+ * quota, and the card, brief and dossier they would need are all still in
+ * Postgres. The patch survives the save and is swept when the session falls
+ * out of the window below; a genuinely new patch is a new plan.
  *
  * Read on the caller's own session, so RLS is the thing deciding whose this
  * is — `caddy_sessions` is visible to its host and to nobody else, which makes
  * "the most recent one" unambiguous without a single `eq` on a user id.
  */
 export async function resumeCaddy(): Promise<ResumedCaddy | null> {
-  const supabase = await createClient();
-  const since = new Date(Date.now() - RESUMABLE_HOURS * 3_600_000).toISOString();
+  return latestSession(null);
+}
 
+/**
+ * The conversation that produced *this* course, if it is still open.
+ *
+ * The saved-course screen's version of the same question, and the difference
+ * matters: on `/courses/[id]` the host is looking at one particular card, so
+ * "your most recent session" is the wrong answer whenever they have planned
+ * something else since. Asking by `course_id` means the caddy that appears
+ * beside a course is the one that wrote it.
+ *
+ * Null is an ordinary answer — a hand-built course never had a session, and a
+ * caddy course older than the window has had its patch swept. The second of
+ * those is not the end of the conversation, only of Google's copy of the pub
+ * data: `caddyReopenable` picks it up from there.
+ */
+export async function resumeCaddyForCourse(
+  courseId: string,
+): Promise<ResumedCaddy | null> {
+  return latestSession(courseId);
+}
+
+/**
+ * The course this host's fee has already filed, whichever session filed it.
+ *
+ * The fix for the bug that put two courses on one fee, and the reason it is a
+ * separate question from resuming. `resumeCaddy` answers with the *most
+ * recent* session, and a host who plans twice has two — so the newest one has
+ * no `course_id` yet while the older one holds it. The drafting table read the
+ * newest, got null, and minted a second course over the top of a fee that had
+ * already bought one.
+ *
+ * So this asks the question that actually matters to that decision: has this
+ * fee filed anything, anywhere. Note what it does *not* depend on — the
+ * dossier, the resumable window, or which session is newest. The patch expires
+ * after twelve hours because it is Google's data; the fact that a fee has
+ * spent its course does not expire until the fee does, and conflating the two
+ * is what opened the window between hour twelve and hour twenty-four.
+ *
+ * `caddy_sessions_one_course_per_fee` is the backstop underneath this. Both
+ * exist on purpose: the index makes a second course impossible, and this makes
+ * it never get attempted, which is the difference between a host writing over
+ * their own card and a host meeting a constraint violation.
+ */
+export async function feeFiledCourse(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Which fee is live — the same question `liveFee` asks on the write side,
+  // and the two have to agree or this returns a course belonging to yesterday.
+  const { data: fee } = await supabase
+    .from("entitlements")
+    .select("id")
+    .eq("kind", "green_fee")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!fee) return null;
+
+  const { data: filed } = await supabase
+    .from("caddy_sessions")
+    .select("course_id")
+    .eq("entitlement_id", fee.id)
+    .not("course_id", "is", null)
+    .limit(1)
+    .maybeSingle();
+  return filed?.course_id ?? null;
+}
+
+/**
+ * A conversation about this course that is over only because its patch went.
+ *
+ * The difference between "there is no caddy here" and "the caddy is here and
+ * needs a moment" — and it is worth the extra read, because those look
+ * identical from outside and mean opposite things to a host with tweaks left
+ * on their fee.
+ *
+ * Narrow, but not time-bounded: about this course, has produced a card, and has
+ * no patch. Anything else answers null and the screen shows what it showed
+ * before. Returns the session id, which is all `reopenCaddyPatch` needs —
+ * everything it re-gathers from is already on the row.
+ */
+export async function caddyReopenable(courseId: string): Promise<string | null> {
+  const supabase = await createClient();
   const { data: session } = await supabase
     .from("caddy_sessions")
-    .select("id, brief, course_id")
-    .is("completed_at", null)
-    .gt("created_at", since)
+    .select("id, brief, dossier")
+    .eq("course_id", courseId)
+    // **No window here, deliberately, and it is the difference between the two
+    // questions.** `resumeCaddyForCourse` hands back a live patch, so it is
+    // bounded by how long that patch may be held. This hands back nothing —
+    // it says a conversation *could* be picked up, and picking it up goes to
+    // Google for a fresh patch, which is a fetch rather than a retention.
+    //
+    // Binding this to the same twelve hours conflated the two and killed the
+    // conversation with the data: a host coming back on Wednesday to tweak
+    // Saturday's course found no caddy at all, and their remaining tweaks were
+    // unreachable. The brief, the card and the trace are all ours and all still
+    // there. What bounds a re-open is the fee, which `reopenCaddyPatch` checks.
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!session || !readBrief(session.brief)) return null;
+  // An open patch is `resumeCaddyForCourse`'s business, not this one's.
+  if (patchIsOpen(session.dossier)) return null;
+
+  // A session that never produced a card has nothing to pick back up; the
+  // host closed the tab mid-plan and was never charged for it.
+  const { count } = await supabase
+    .from("caddy_turns")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", session.id)
+    .eq("failed", false);
+  return count && count > 0 ? session.id : null;
+}
+
+async function latestSession(
+  courseId: string | null,
+): Promise<ResumedCaddy | null> {
+  const supabase = await createClient();
+  const since = resumableSince(Date.now());
+
+  let query = supabase
+    .from("caddy_sessions")
+    // The dossier comes back so its emptiness can be checked, and it is the
+    // biggest thing this reads — forty pubs of Google's facts and review
+    // snippets. Worth it, because the alternative is a door that opens onto a
+    // refusal: `askTheCaddy` answers a patchless session with "That patch has
+    // been put away", and there is no way to tell from the outside except to
+    // look. Sessions saved before the sweep moved to the window are exactly
+    // this shape, so it is not a theoretical case.
+    .select("id, brief, course_id, dossier")
+    // Completed sessions resume too, which reverses the original rule.
+    //
+    // `completed_at` was terminal when a fee bought exactly one course: saving
+    // it was the end of the thread because there was nothing left to spend. It
+    // is not the end any more — tweaks are their own quota now, and a host who
+    // saves a course and comes back to it should be able to keep asking rather
+    // than be told the conversation is over. Refusing them meant paying for a
+    // fresh gather and a fresh plan to redo work already sitting in Postgres.
+    //
+    // The window below still applies, so this resumes a conversation rather
+    // than opening a cupboard.
+    .gt("created_at", since);
+  if (courseId) query = query.eq("course_id", courseId);
+
+  const { data: session } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -82,6 +221,12 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
   // continue, and offering to resume it would put a card on the table that the
   // next tweak would fail against.
   if (!readBrief(session.brief)) return null;
+
+  // Same rule, for the patch. A session whose dossier has been swept has a
+  // card and a history and nothing to change them against, so it is finished
+  // even though every other column says otherwise. Offering it would put an
+  // ask box on screen whose every answer is a refusal.
+  if (!patchIsOpen(session.dossier)) return null;
 
   const { data: turn } = await supabase
     .from("caddy_turns")
@@ -131,6 +276,12 @@ export interface CaddyAllowance {
    * than describe it. Null when nothing is spent, and null on a database that
    * has not caught up. */
   courseId: string | null;
+  /**
+   * Tweaks left on the fee. Read for exactly one screen: the warning above the
+   * tear-out button, where it is an answer rather than a meter — see
+   * `tearOutWarning`. Nothing else may show it.
+   */
+  tweaks: number;
 }
 
 export async function caddyAllowance(): Promise<CaddyAllowance> {
@@ -138,22 +289,42 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { canPlan: false, left: 0, courseId: null };
+  if (!user) return { canPlan: false, left: 0, courseId: null, tweaks: 0 };
 
-  // The countable quota, and the only one shown. Tweaks have an allowance too
-  // and it is deliberately invisible — a meter on "ask as often as you like"
+  // Both rungs of the card ladder, because `guard_caddy_spend` spends them in
+  // order and a host cannot tell which one paid for the card in front of them.
+  // Reading only the re-designs would quote them one go fewer than they bought
+  // — and, on the first plan of a fresh fee, would say "4 left" and then not
+  // decrement, which reads as the counter being broken.
+  //
+  // Tweaks are not here and never will be: they have an allowance too and it
+  // is deliberately invisible, because a meter on "ask as often as you like"
   // turns membership back into credits.
-  const { data: left, error } = await supabase.rpc("caddy_balance", {
-    who: user.id,
-    quota: "redesign",
-  });
+  const [course, redesign, tweak] = await Promise.all([
+    supabase.rpc("caddy_balance", { who: user.id, quota: "course" }),
+    supabase.rpc("caddy_balance", { who: user.id, quota: "redesign" }),
+    supabase.rpc("caddy_balance", { who: user.id, quota: "tweak" }),
+  ]);
   // The ledger is not on this database yet. Say yes, exactly as `liveFee` does
   // in the same window — the two must agree, or the screen offers a plan the
   // pipeline then refuses.
-  if (error) return { canPlan: true, left: CADDY_COURSES_PER_FEE, courseId: null };
+  //
+  // The course quota is newer than the re-design one, so a database mid-deploy
+  // can answer the second and not the first. That is not "no ledger", it is an
+  // older ledger, and the honest reading of it is the re-designs alone.
+  if (redesign.error)
+    return {
+      canPlan: true,
+      left: CADDY_COURSES_PER_FEE,
+      courseId: null,
+      tweaks: CADDY_GRANT_SIZE.tweak,
+    };
+  const tweaks = tweak.error ? 0 : Number(tweak.data ?? 0);
 
-  const remaining = Number(left ?? 0);
-  if (remaining > 0) return { canPlan: true, left: remaining, courseId: null };
+  const remaining =
+    Number(redesign.data ?? 0) + (course.error ? 0 : Number(course.data ?? 0));
+  if (remaining > 0)
+    return { canPlan: true, left: remaining, courseId: null, tweaks };
 
   // Spent. Find what it is holding, so the answer can be a door rather than a
   // sentence. Read on the caller's own session: RLS makes "theirs" the only
@@ -165,5 +336,5 @@ export async function caddyAllowance(): Promise<CaddyAllowance> {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return { canPlan: false, left: 0, courseId: filed?.course_id ?? null };
+  return { canPlan: false, left: 0, courseId: filed?.course_id ?? null, tweaks };
 }

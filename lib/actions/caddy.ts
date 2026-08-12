@@ -1,10 +1,13 @@
 "use server";
 
+import { resumeCaddy } from "@/lib/data/caddy";
+import type { PlannedCourse } from "@/lib/caddy/plan";
+
 import {
   askTheCaddy as askTheCaddyRun,
   closeCaddySession as closeCaddySessionRun,
-  planCourse as planCourseRun,
   rememberCaddyCourse as rememberCaddyCourseRun,
+  reopenCaddyPatch as reopenCaddyPatchRun,
   type CaddyResult,
 } from "@/lib/caddy/run";
 
@@ -33,10 +36,6 @@ import {
  * anyone wanting the type imports it from `@/lib/caddy/run`, where it lives.
  */
 
-/** Plan a course from a brief: gather the patch, then ask once. */
-export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
-  return planCourseRun(rawBrief);
-}
 
 /** Roll a fresh card, or answer something the host said. */
 export async function askTheCaddy(input: {
@@ -57,7 +56,37 @@ export async function rememberCaddyCourse(
   return rememberCaddyCourseRun(sessionId, courseId);
 }
 
-/** The session is finished: stamp it and drop the dossier. */
+/** The session is finished: stamp it. The patch stays until the window ends. */
 export async function closeCaddySession(sessionId: string): Promise<void> {
   return closeCaddySessionRun(sessionId);
+}
+
+/** Go back to Google for a patch that has been swept, so a conversation with
+ * tweaks left on it can carry on. No card, no credit. */
+export async function reopenCaddyPatch(
+  sessionId: string,
+): Promise<{ error?: string }> {
+  return reopenCaddyPatchRun(sessionId);
+}
+
+/**
+ * Did a card land after all?
+ *
+ * The card is written to `caddy_turns` before anything is streamed, so a plan
+ * whose connection dies on the way back has still produced one — it is sitting
+ * in Postgres, paid for, while the host reads an error. That happened for real:
+ * a 32.21p plan finished, filed a nine-hole card, and the browser showed a
+ * timeout.
+ *
+ * So the failure path asks before it apologises. Reads the host's own most
+ * recent session through RLS, which is what makes "theirs" unambiguous without
+ * naming a user.
+ */
+export async function collectCaddyCard(): Promise<{
+  sessionId?: string;
+  course?: PlannedCourse;
+}> {
+  const resumed = await resumeCaddy();
+  if (!resumed) return {};
+  return { sessionId: resumed.sessionId, course: resumed.course };
 }

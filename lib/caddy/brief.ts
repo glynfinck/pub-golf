@@ -132,6 +132,34 @@ export function particularLabel(id: ParticularId): string {
 export interface CaddyBrief {
   /** The patch, in the host's own words. */
   where: string;
+  /**
+   * Where the night ends, when it is going somewhere.
+   *
+   * Empty for a round that stays in one patch, which is most of them. A second
+   * area turns the plan from "pubs near here" into a walk across town —
+   * Finsbury Park to Broadway Market rather than nine doors off one street —
+   * and it is the host's call, because the same two words can mean a gentle
+   * crawl or a route march depending on how far apart they are.
+   */
+  whereTo: string;
+  /**
+   * How far apart the two areas actually are, resolved before the plan runs.
+   *
+   * Zero for a single-patch round. When it is set it **outranks `stretch`**,
+   * and that is the point rather than a caveat: pace times legs is distance,
+   * so a host who asks for a steady five minutes *and* for Covent Garden four
+   * kilometres away has asked for two different rounds. The named destination
+   * is the concrete one, so it wins and the pace is derived from it.
+   *
+   * Bounded on the way in — it arrives from the browser, so it is a hint
+   * rather than a fact until the gather agrees with it.
+   */
+  reachKm: number;
+  /** Where the two named areas actually resolved to, filled in by the gather.
+   * The router needs them: they are what turns the walk's axis from a line
+   * into a direction. */
+  aimFrom?: { lat: number; lng: number } | null;
+  aimTo?: { lat: number; lng: number } | null;
   /** Venue ids of pinned tees, or null. A pin is a real `venues` row before
    * the caddy hears of it — the pub search put it there. */
   startVenueId: string | null;
@@ -160,6 +188,14 @@ export function readBrief(raw: unknown): CaddyBrief | null {
 
   const where =
     typeof input.where === "string" ? input.where.trim().slice(0, WHERE_MAX) : "";
+  const whereTo =
+    typeof input.whereTo === "string" ? input.whereTo.trim().slice(0, WHERE_MAX) : "";
+  // Anything past a long day's walk is a typo or a joke, and anything negative
+  // is neither. Rounded, because a ring drawn to the metre is false precision.
+  const reachKm =
+    typeof input.reachKm === "number" && Number.isFinite(input.reachKm)
+      ? Math.min(40, Math.max(0, Math.round(input.reachKm * 100) / 100))
+      : 0;
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
   // Nothing to aim at: no patch named and no pin dropped.
@@ -179,6 +215,10 @@ export function readBrief(raw: unknown): CaddyBrief | null {
 
   return {
     where,
+    // The same patch twice is one patch: a host who picks their own area
+    // for both ends wants a tight round, not a walk back to where they began.
+    whereTo: whereTo.toLowerCase() === where.toLowerCase() ? "" : whereTo,
+    reachKm: whereTo.toLowerCase() === where.toLowerCase() ? 0 : reachKm,
     startVenueId,
     finishVenueId,
     holes,
@@ -186,7 +226,39 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     stretch: readStretch(input.stretch),
     particulars,
     note: typeof input.note === "string" ? input.note.trim().slice(0, NOTE_MAX) : "",
+    /**
+     * Where the round is aimed, read back off a brief that has already been
+     * through a gather.
+     *
+     * **These were declared and never constructed, so A-to-B routing was dead
+     * in production.** `openPlan` resolves both area centres and stamps them
+     * onto `caddy_sessions.brief`, and every consumer reads them —
+     * `patchBlock`, the loop's own graph, `fallbackBoard`. But this parser
+     * built a fresh object literal without the two keys, so every one of them
+     * received `undefined`, `nearestTo` never fired, and the walk fell back to
+     * the principal eigenvector of the candidate cloud. A round asked to
+     * finish in Covent Garden went wherever the cloud was widest.
+     *
+     * It survived a suite that pins the behaviour hard
+     * (`tests/unit/caddy-real-patches.test.ts`, at real coordinates) because
+     * those tests hand `aimFrom` straight to `buildRouteGraph`. The algorithm
+     * was proven; the seam between the algorithm and the brief was not.
+     */
+    aimFrom: readPoint(input.aimFrom),
+    aimTo: readPoint(input.aimTo),
   };
+}
+
+/** A coordinate the server itself resolved, read back. Anything that is not a
+ * finite pair is nothing — the router treats a missing aim as "no destination
+ * named", which is exactly right for a brief that has not been gathered yet. */
+function readPoint(value: unknown): { lat: number; lng: number } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { lat, lng } = value as { lat?: unknown; lng?: unknown };
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
 }
 
 function readId(value: unknown): string | null {
@@ -204,4 +276,60 @@ function readId(value: unknown): string | null {
  */
 export function candidateFloor(holes: number): number {
   return holes + 3;
+}
+
+/**
+ * How far apart the two ends leave each leg, and whether to say something.
+ *
+ * A pure function of the two things the host has already chosen, so the brief
+ * screen can warn *before* the fee is spent rather than the card explaining
+ * afterwards. Returns null when the round is unremarkable, which is most of
+ * them — a warning on every plan is a warning nobody reads.
+ *
+ * The thresholds are what a walk feels like rather than round numbers. Much
+ * under 300m a leg and two "different" areas are the same place, which is
+ * worth saying because the host probably meant somewhere else. Over about a
+ * kilometre a leg it stops being a crawl and becomes a march between drinks,
+ * and eighteen holes of that is a day out.
+ */
+export function stretchWarning(
+  apartKm: number,
+  holes: number,
+): string | null {
+  const legs = Math.max(holes - 1, 1);
+  const perLeg = apartKm / legs;
+  if (perLeg > 1.1) {
+    return `Those are about ${apartKm.toFixed(1)}km apart, so ${holes} holes means roughly ${Math.round(perLeg * 1000)}m between drinks. That is a proper walk — fewer holes or closer ends will keep it a crawl.`;
+  }
+  if (apartKm > 0.15 && perLeg < 0.2) {
+    return `Those are close enough to be one patch, so this will play as a tight round rather than a walk across town.`;
+  }
+  return null;
+}
+
+/**
+ * The pace a destination forces, in minutes between pubs.
+ *
+ * The inverse of `targetKmFor`, and it exists because the host is offered two
+ * controls that set one number. Pace times legs is distance: "steady" over
+ * nine holes is about three kilometres, so a round that also has to reach
+ * Covent Garden four kilometres away cannot be steady — one of the two has to
+ * give, and it should be the abstract one rather than the place they named.
+ *
+ * So when a destination is set this is what the pace *becomes*, and the screen
+ * shows it rather than asking. Nothing is silently overridden; the host sees
+ * the number change and can shorten the walk by adding holes or moving the
+ * finish, both of which are honest levers.
+ */
+export function paceForReach(reachKm: number, holes: number): number {
+  const legs = Math.max(holes - 1, 1);
+  // 4.5 km/h, the stroll the rest of the app estimates walks at.
+  return Math.round(((reachKm / legs) / 4.5) * 60);
+}
+
+/** How the derived pace reads on screen, in the voice the chips use. */
+export function paceNote(minutes: number): string {
+  if (minutes <= 0) return "Whatever's closest.";
+  if (minutes === 1) return "About a minute between pubs.";
+  return `About ${minutes} minutes' walk between pubs.`;
 }

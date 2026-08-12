@@ -1,8 +1,8 @@
 import "server-only";
 
-import { boundsAround } from "@/lib/geo";
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
-import { PLACES_FIELD_MASK } from "@/lib/pub-search";
+import { corridorSamples, haversineKm } from "@/lib/geo";
+import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
 /**
  * The gather: the caddy's own question to Places.
@@ -48,11 +48,24 @@ const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
 const TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
 /** A walk, not a bus ride: the radius one leg of a crawl should stay inside. */
 const PATCH_RADIUS_M = 1_200;
+
+/**
+ * How wide a corridor between two areas is, per sample.
+ *
+ * Narrower than a single patch on purpose. Two areas four kilometres apart
+ * searched at the full patch radius are two fat blobs with a gap: the gather
+ * comes back with everything around both ends and nothing in between, and the
+ * router can only pick a route that hops between them. Half the radius, with
+ * enough samples to overlap, draws a line and gathers what is beside it —
+ * which is what a host walking from one place to another actually passes.
+ */
+const CORRIDOR_RADIUS_M = 600;
 /** Circles sampled down the line when both tees are pinned. */
-const CORRIDOR_SAMPLES = 3;
 
 interface GooglePlace {
   id?: string;
+  /** What the place mostly *is*. Checked, not trusted to the request. */
+  primaryType?: string;
   displayName?: { text?: string };
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
@@ -104,6 +117,11 @@ export interface GatheredPub extends Omit<PubSource, "venueId"> {
 function toGathered(place: GooglePlace): GatheredPub | null {
   const name = place.displayName?.text;
   if (!place.id || !name) return null;
+  // The request asked for drinking places; this checks the answer. A request
+  // parameter is a preference and this is a promise — sending a group to a
+  // door that is a restaurant is the worst thing this app can do, and it is
+  // barely better than sending them to one that is not there.
+  if (!isDrinkingPlace(place.primaryType)) return null;
   return {
     googlePlaceId: place.id,
     name,
@@ -147,7 +165,13 @@ async function call(
 /** Pubs and bars around a point, at walking radius. */
 function nearbyBody(center: { lat: number; lng: number }, radius: number) {
   return {
-    includedTypes: ["pub", "bar"],
+    // `includedPrimaryTypes`, not `includedTypes`, and the difference is the
+    // whole rule. `includedTypes` matches *any* type a place carries, and
+    // Google hangs "bar" on plenty of places that are not one — a nightclub
+    // with a bar in it, a restaurant with a bar in it. That is how a club and
+    // a tapas restaurant ended up on a crawl. The primary type is what the
+    // place mostly *is*, which is the question being asked.
+    includedPrimaryTypes: ["pub", "bar", "wine_bar"],
     maxResultCount: 20,
     rankPreference: "POPULARITY",
     locationRestriction: {
@@ -163,6 +187,17 @@ export interface GatherInput {
   key: string;
   /** The patch in the host's words. Empty when both tees are pinned. */
   where: string;
+  /**
+   * Where the night finishes, in the host's words. Empty for a single patch.
+   *
+   * Resolved here rather than passed in as coordinates, because a *named* area
+   * is what the host actually typed and pinned venues are a different feature.
+   * Without this the corridor could only ever be drawn between two dropped
+   * pins — so a host who asked to finish in Covent Garden got pubs around
+   * where they started and a route that stopped a mile short, not because the
+   * router refused to go but because nothing out there was ever gathered.
+   */
+  whereTo: string;
   /** Coordinates of pinned tees, where the host dropped them. */
   start: { lat: number; lng: number } | null;
   finish: { lat: number; lng: number } | null;
@@ -180,35 +215,48 @@ export interface GatherInput {
  * between them, so the candidates lie along the corridor the group will
  * actually walk rather than in a ring around a midpoint.
  */
-export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
+export interface Gathered {
+  pubs: GatheredPub[];
+  /** Where the two named areas actually resolved to. Handed back rather than
+   * kept, because the router needs them: a corridor tells the gather *where*
+   * to look and tells the walk *which way to face*, and without the second the
+   * route can march the right line in the wrong direction. */
+  from: { lat: number; lng: number } | null;
+  to: { lat: number; lng: number } | null;
+}
+
+export async function gatherPubs(input: GatherInput): Promise<Gathered> {
   const { key, language } = input;
-  const centres: { lat: number; lng: number }[] = [];
 
-  if (input.start && input.finish) {
-    for (let i = 0; i < CORRIDOR_SAMPLES; i++) {
-      // Evenly down the line, ends included. Guarded so a future single-sample
-      // corridor lands on the start rather than on NaN.
-      const t = i / Math.max(1, CORRIDOR_SAMPLES - 1);
-      centres.push({
-        lat: input.start.lat + (input.finish.lat - input.start.lat) * t,
-        lng: input.start.lng + (input.finish.lng - input.start.lng) * t,
-      });
-    }
-  } else if (input.start || input.finish) {
-    centres.push((input.start ?? input.finish) as { lat: number; lng: number });
-  }
-
-  const found: GooglePlace[] = [];
-
-  // A named patch is located first, so "Shoreditch" becomes a point before it
-  // becomes a ring of pubs.
-  if (input.where.trim()) {
-    const bias = centres[0] ?? input.ipBias;
-    const located = await call(
+  /**
+   * Turn an area's name into a point, by asking what pubs are in it.
+   *
+   * The mean of the answers rather than the first: "Covent Garden" returns
+   * pubs *around* Covent Garden and the first can sit at its edge, which drags
+   * a corridor end off by a few hundred metres before anything else happens.
+   *
+   * **What it returns is a point, and nothing else.** These results used to be
+   * pushed onto `found` alongside the Nearby rings, and that put them through
+   * the one gap in `isDrinkingPlace`: a result carrying no `primaryType` at
+   * all is admitted, deliberately, because dropping a genuine pub over a thin
+   * response is the worse failure. That argument holds for Nearby, whose
+   * *request* already said `includedPrimaryTypes: pub, bar, wine_bar` — an
+   * untyped row from there was asked for as a pub. It does not hold here.
+   * This leg asks Google an English sentence, `pubs in Shoreditch`, with no
+   * type restriction at all, so an untyped row is a row nothing has ever
+   * checked. A card that sends nine people to a hotel lobby is the same
+   * failure as one that sends them to a door that isn't there.
+   *
+   * So this leg locates the area and steps back. Filling the patch is Nearby's
+   * job, under Nearby's restriction.
+   */
+  const locate = async (query: string, bias: { lat: number; lng: number } | null) => {
+    if (!query.trim()) return null;
+    const places = await call(
       key,
       TEXT_URL,
       {
-        textQuery: `pubs in ${input.where.trim()}`,
+        textQuery: `pubs in ${query.trim()}`,
         pageSize: 20,
         ...(bias
           ? {
@@ -223,14 +271,51 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
       },
       language,
     );
-    found.push(...located);
-    const anchor = located.find((place) => place.location);
-    if (!centres.length && anchor?.location) {
+    const placed = places
+      .filter((place) => place.location)
+      .slice(0, 5)
+      .map((place) => ({
+        lat: place.location!.latitude as number,
+        lng: place.location!.longitude as number,
+      }));
+    if (placed.length === 0) return null;
+    return {
+      lat: placed.reduce((sum, p) => sum + p.lat, 0) / placed.length,
+      lng: placed.reduce((sum, p) => sum + p.lng, 0) / placed.length,
+    };
+  };
+
+  // Pinned tees win where the host dropped them; otherwise the two named areas
+  // are located and become the ends of the walk themselves.
+  let from = input.start;
+  let to = input.finish;
+  if (!from || !to) {
+    const [namedFrom, namedTo] = await Promise.all([
+      from ? Promise.resolve(from) : locate(input.where, input.ipBias),
+      to ? Promise.resolve(to) : locate(input.whereTo, input.ipBias),
+    ]);
+    from = from ?? namedFrom;
+    to = to ?? namedTo;
+  }
+
+  const corridor = Boolean(from && to);
+  const centres: { lat: number; lng: number }[] = [];
+  if (from && to) {
+    const samples = corridorSamples(
+      haversineKm(from.lat, from.lng, to.lat, to.lng),
+      CORRIDOR_RADIUS_M / 1000,
+    );
+    for (let i = 0; i < samples; i++) {
+      // Evenly down the line, ends included. Guarded so a future single-sample
+      // corridor lands on the start rather than on NaN.
+      const t = i / Math.max(1, samples - 1);
       centres.push({
-        lat: anchor.location.latitude as number,
-        lng: anchor.location.longitude as number,
+        lat: from.lat + (to.lat - from.lat) * t,
+        lng: from.lng + (to.lng - from.lng) * t,
       });
     }
+  } else if (from || to) {
+    centres.push((from ?? to) as { lat: number; lng: number });
   }
 
   if (!centres.length && input.ipBias) centres.push(input.ipBias);
@@ -238,23 +323,22 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   // Fill the patch. Independent circles, so they go out together.
   const rings = await Promise.all(
     centres.map((centre) =>
-      call(key, NEARBY_URL, nearbyBody(centre, PATCH_RADIUS_M), language),
+      call(
+        key,
+        NEARBY_URL,
+        nearbyBody(centre, corridor ? CORRIDOR_RADIUS_M : PATCH_RADIUS_M),
+        language,
+      ),
     ),
   );
-  rings.forEach((ring) => found.push(...ring));
-
   const seen = new Set<string>();
   const gathered: GatheredPub[] = [];
-  for (const place of found) {
+  for (const place of rings.flat()) {
     const pub = toGathered(place);
     if (!pub || seen.has(pub.googlePlaceId)) continue;
     seen.add(pub.googlePlaceId);
     gathered.push(pub);
   }
-  return gathered;
+  return { pubs: gathered, from, to };
 }
 
-/** The viewport a patch fills, for the map's opening camera. */
-export function patchBounds(centre: { lat: number; lng: number }) {
-  return boundsAround(centre, PATCH_RADIUS_M);
-}

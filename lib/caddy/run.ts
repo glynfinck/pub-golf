@@ -3,18 +3,16 @@ import "server-only";
 import { headers } from "next/headers";
 
 import { readBrief, candidateFloor, type CaddyBrief } from "@/lib/caddy/brief";
-import {
-  CADDY_BUDGET_NOTE,
-  caddyBudgetMicroPence,
-  withinBudget,
-} from "@/lib/caddy/budget";
+import { caddyBudgetMicroPence } from "@/lib/caddy/budget";
 import {
   askCaddy,
   askCaddyLooped,
-  askCaddyStreamed,
   type CaddyTurnRecord,
 } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
+import { CADDY_CREDITS_SPENT } from "@/lib/caddy/credits";
+import { CADDY_FAIR_USE_NOTE } from "@/lib/caddy/fair-use";
+import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
 import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
   buildCandidates,
@@ -24,6 +22,7 @@ import {
 } from "@/lib/caddy/dossier";
 import { gatherPubs, type GatheredPub } from "@/lib/caddy/places";
 import { planFailureNote, type PlannedCourse } from "@/lib/caddy/plan";
+import type { CaddyOffer } from "@/lib/caddy/stream";
 import { ipBiasFrom } from "@/lib/pub-search";
 import { primaryLanguage } from "@/lib/locale";
 import { createClient } from "@/lib/supabase/server";
@@ -61,13 +60,21 @@ import { createClient } from "@/lib/supabase/server";
 
 export interface CaddyResult {
   /**
-   * This refusal is "you already have what you paid for", not "something went
-   * wrong". The drafting table shows these as a door to the course the host
-   * has rather than as an error toast — a dead end with no way on is the worst
+   * This refusal is about money, not about something going wrong, and this is
+   * the door that answers it. The drafting table shows these as a way on
+   * rather than as an error toast — a dead end with no way on is the worst
    * possible way to learn what a fee bought.
    */
-  spent?: boolean;
+  offer?: CaddyOffer;
   sessionId?: string;
+  /**
+   * The turn that produced this card.
+   *
+   * Carried so a report filed from the drafting table can name the card rather
+   * than the conversation — `bug_reports.caddy_turn_id`, and the first step of
+   * the feedback loop the session id alone could only guess at.
+   */
+  turnId?: string | null;
   course?: PlannedCourse;
   /** Which holes moved on a tweak, so the screen can hold the rest still. */
   changed?: number[];
@@ -93,14 +100,53 @@ const NEEDS_FEE = "The caddy comes with the green fee.";
  * things that are still theirs. */
 const PASS_RAN_OUT =
   "Your green fee's day is over. Every course it planned is still yours to change, and plotting one by hand is free as always.";
-const SPENT_FEE =
-  "Your course is already in the book — the caddy plans one to a fee. Change it as much as you like, or tear it out and the caddy will plan you another.";
+/**
+ * There used to be two of these — this one, and `CADDY_CREDITS_SPENT` beside
+ * the number it talks about. Only this one was ever rendered, so when a fee
+ * went from planning one course to planning four, this text went on saying
+ * "the caddy plans one to a fee" and nobody noticed: the copy that had been
+ * kept correct was the copy nothing displayed.
+ *
+ * So the refusal now comes from the module that owns the allowance. A sentence
+ * that quotes a number belongs next to the number.
+ */
+const SPENT_FEE = CADDY_CREDITS_SPENT;
 const THIN_PATCH =
   "Not enough pubs in that patch for the round you asked for. Widen the patch, or drop a few holes.";
-// One line for both ceilings. A host who meets the turn cap and a host who
-// meets the budget are in the same position and are told the same thing —
-// which is also why neither message names the number it hit.
-const FULL_SHIFT = CADDY_BUDGET_NOTE;
+/**
+ * Fair use, which is a different thing from a budget and the only ceiling left
+ * that is about volume rather than about what was bought.
+ *
+ * Raised by the Postgres guard, never decided here — the same arrangement
+ * every other guarded write uses, because RLS is the only real enforcement.
+ *
+ * Imported rather than written, and the reason is the bug it caused: this same
+ * sentence was a literal here *and* a constant in two other modules, and only
+ * the literal rendered. Two copies were kept correct and neither was readable.
+ * A sentence lives with the thing that raises it.
+ */
+const FULL_SHIFT = CADDY_FAIR_USE_NOTE;
+
+/**
+ * Which quota a follow-up turn draws on, decided **here** rather than taken
+ * from the caller.
+ *
+ * It used to be `input.roll ? "roll" : "tweak"`, and `roll` arrived from the
+ * browser. `guard_caddy_spend` branches purely on `caddy_turns.kind`, and a
+ * tweak's `result` is a whole `PlannedCourse` exactly as a roll's is — so
+ * asking for a completely different card with `roll:false` drew on the
+ * sixty-deep tweak allowance instead of the four-deep revision one. The insert
+ * policy checks the host and the session, and has no opinion about which of a
+ * host's own quotas they spend.
+ *
+ * A roll is "give me another card"; a tweak is "change this one, thus". The
+ * presence of an ask is exactly that distinction, and unlike a boolean flag it
+ * cannot be set to the cheap value while asking for the dear thing: a request
+ * with no ask *is* a roll, whatever it calls itself.
+ */
+function kindOf(input: { ask?: string }): "roll" | "tweak" {
+  return input.ask?.trim() ? "tweak" : "roll";
+}
 
 /** The signed-in host, or null. Guests never cross this boundary: hosting a
  * round takes a Google sign-in and so does planning one. */
@@ -138,11 +184,45 @@ async function liveFee(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data, error } = await supabase.rpc("caddy_next_grant", {
+  // The same ladder `guard_caddy_spend` walks, and it has to be: that trigger
+  // takes the course credit first and a re-design after, so asking only about
+  // re-designs would tell a host holding nothing *but* a course credit that
+  // they have no fee at all. A course top-up is exactly that shape on its first
+  // card, which is why it also grants a revision — but the ladder is the real
+  // fix, and the grant is belt and braces.
+  const course = await supabase.rpc("caddy_next_grant", {
     who: userId,
-    quota: "redesign",
+    quota: "course",
   });
-  if (!error) return data ? { id: data as string } : null;
+  const { data, error } = course.data
+    ? course
+    : await supabase.rpc("caddy_next_grant", { who: userId, quota: "redesign" });
+  if (!error) {
+    if (!data) return null;
+    // `caddy_next_grant` answers with a **grant** id, where its predecessor
+    // `caddy_unspent_fee` answered with an entitlement id. The rename hid the
+    // type change and this function kept handing the result on as
+    // `entitlement_id`, which is a foreign key to `entitlements` — so the
+    // session insert died on the constraint and the host read "the caddy
+    // isn't on duty here", the same sentence a missing API key gives.
+    //
+    // It hid for a while because it needs a grant to exist before it can
+    // return the wrong kind of id: with an empty ledger the null path ran
+    // instead, and everything looked fine right up until somebody held a fee
+    // that had actually granted something.
+    //
+    // The session records which *purchase* it is working under, so resolve the
+    // grant back to the entitlement that minted it.
+    const { data: grant } = await supabase
+      .from("caddy_grants")
+      .select("entitlement_id")
+      .eq("id", data as string)
+      .maybeSingle();
+    // A grant with no purchase behind it would be a comped one. There is a
+    // live allowance either way, so the session opens; it simply records no
+    // purchase, which `caddy_sessions.entitlement_id` is nullable for.
+    return { id: grant?.entitlement_id ?? null };
+  }
 
   // The allowance function is not on this database yet.
   //
@@ -273,17 +353,172 @@ async function pinCoords(
 }
 
 /**
- * Plan a course: gather the patch, brief the caddy, keep the card.
+ * The patch, from Google: everywhere worth drinking between the brief's ends.
  *
- * The gather happens once. Its dossier is written onto the session and every
- * later turn — every roll, every ask — re-reads it rather than calling Google
- * again, which is why a re-roll costs one model call and no Places quota.
+ * Lifted out of `openPlan` when re-opening a swept session needed the same
+ * thing. Both callers want exactly this — the candidates and the two ends the
+ * areas resolved to — and neither wants a model, a session row or a credit,
+ * which is what makes it a sensible seam.
+ *
+ * A thin patch is an honest refusal, never a padded card, and it costs nothing
+ * either way: no turn row is written here.
  */
-export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
-  const opened = await openPlan(rawBrief);
-  if ("error" in opened) return { error: opened.error };
-  return runTurn({ ...opened, history: [], kind: "plan" });
+async function gatherFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  brief: CaddyBrief,
+  placesKey: string,
+): Promise<
+  | {
+      candidates: CandidateDossier[];
+      /** The two area centres the gather actually resolved. Typed rather than
+       * `unknown`: they were `unknown` here, which is precisely what let a
+       * brief that never carried them compile for weeks. */
+      from: { lat: number; lng: number } | null;
+      to: { lat: number; lng: number } | null;
+    }
+  | { error: string }
+> {
+  const pins = await pinCoords(supabase, [
+    brief.startVenueId,
+    brief.finishVenueId,
+  ]);
+  const start = pins.get(brief.startVenueId ?? "");
+  const finish = pins.get(brief.finishVenueId ?? "");
+
+  const requestHeaders = await headers();
+  const gather = await gatherPubs({
+    key: placesKey,
+    where: brief.where,
+    whereTo: brief.whereTo,
+    start: start?.lat != null && start.lng != null
+      ? { lat: start.lat, lng: start.lng }
+      : null,
+    finish: finish?.lat != null && finish.lng != null
+      ? { lat: finish.lat, lng: finish.lng }
+      : null,
+    ipBias: ipBiasFrom(requestHeaders),
+    language: primaryLanguage(requestHeaders.get("accept-language")),
+  });
+
+  const cached = await cachePubs(supabase, gather.pubs);
+  // Pinned tees always join the table, whatever the gather returned.
+  const withPins = [
+    ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
+    ...cached,
+  ];
+  const candidates = buildCandidates(
+    withPins,
+    [brief.startVenueId, brief.finishVenueId].filter((id): id is string =>
+      Boolean(id),
+    ),
+  );
+
+  if (candidates.length < candidateFloor(brief.holes)) {
+    return { error: THIN_PATCH };
+  }
+  return { candidates, from: gather.from, to: gather.to };
 }
+
+/**
+ * Pick a conversation back up after its patch has been swept.
+ *
+ * The retention rule costs something, and this is what it costs: twelve hours
+ * after a session opens its dossier goes, and with it the caddy's ability to
+ * swap a pub — because there is nothing left to swap *for*. Until now that was
+ * terminal, so a host with tweaks still on their fee and a course in the book
+ * had no way to spend them except to plan the whole thing again, which spends
+ * a re-design on work already done.
+ *
+ * So: re-gather. Google is asked the same brief a second time and the answer
+ * goes back on the session. No model call, no card, no turn row and **no
+ * credit** — the patch expiring is our policy rather than the host's action,
+ * and charging for it would be charging them for our own housekeeping.
+ *
+ * Three things bound it. The session must be theirs (RLS decides, not this
+ * function). Their fee must still be running, exactly as `askTheCaddy`
+ * requires — a conversation on an expired pass is over regardless. And the
+ * patch must actually be gone, so this cannot be used to refresh a live one.
+ *
+ * Note the window still means what it says: `resumeCaddy` will not offer a
+ * session older than it, so this re-opens a conversation from tonight rather
+ * than resurrecting one from last week. And it *fetches* rather than
+ * un-deletes, so nothing about Google's data is held longer than the rule
+ * allows.
+ */
+export async function reopenCaddyPatch(
+  sessionId: string,
+): Promise<{ error?: string }> {
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  const placesKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!placesKey) return { error: NO_CADDY };
+
+  const session = await host();
+  if (!session) return { error: "Planning a course takes a sign-in." };
+  const { supabase, user } = session;
+
+  const { data: row } = await supabase
+    .from("caddy_sessions")
+    .select("id, brief, dossier")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!row) return { error: "That patch isn't on your table." };
+
+  const brief = readBrief(row.brief);
+  if (!brief) return { error: "That patch isn't on your table." };
+  // Already open. Answering plainly rather than re-gathering keeps this from
+  // becoming a way to spend Places quota on a session that needs nothing.
+  if (patchIsOpen(row.dossier)) return {};
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: user.id,
+  });
+  if (covered !== true) return { error: PASS_RAN_OUT };
+
+  const gathered = await gatherFor(supabase, brief, placesKey);
+  if ("error" in gathered) return gathered;
+
+  /**
+   * The dossier alone, because that is the only column a host may write.
+   *
+   * This used to write `brief` as well, to re-stamp the resolved area centres.
+   * `caddy_sessions` grants `update (completed_at, dossier, course_id)` and
+   * nothing else — `brief` is granted to nobody, deliberately, because it is
+   * what the turns were charged against. So **the update was refused for every
+   * host, every time**, and the refusal was mapped to "That patch isn't on
+   * your table" — after `gatherFor` had already spent a Text Search and up to
+   * a dozen Nearby calls at the dear field mask. A live button that could not
+   * work and cost money to press.
+   *
+   * The db suite even asserts a host may not write `brief`, so the tier pinned
+   * the rule that broke the feature.
+   *
+   * The aim is simply not rewritten, and does not need to be: it was stamped
+   * on the brief by the original `openPlan` and describes the *areas the host
+   * named*, which a re-gather does not change. `readBrief` reads it back, so
+   * a re-opened conversation routes the same way the first one did.
+   */
+  const { error } = await supabase
+    .from("caddy_sessions")
+    .update({ dossier: gathered.candidates as unknown as never })
+    .eq("id", sessionId);
+  if (error) return { error: "That patch isn't on your table." };
+  return {};
+}
+
+/**
+ * `planCourse` used to sit here — `openPlan` then `runTurn`, unstreamed — and
+ * was re-exported as a server action on top of that.
+ *
+ * Two copies of a function nothing called. The drafting table has fetched
+ * `/api/caddy/plan` since the plan started streaming, and a plan that does not
+ * narrate is a plan the host watches a spinner for twenty seconds. It was kept
+ * as a fallback, which is a reasonable-sounding thing to keep and is in
+ * practice a second path to a charge that nobody exercises — the one shape
+ * this module's own header says there must not be two of.
+ *
+ * `openPlan` and `runTurn` are both exported and both used by the route, so
+ * re-assembling it is three lines if a non-streaming caller ever appears.
+ */
 
 /**
  * Everything before the model: who is asking, whether they have paid, where
@@ -299,7 +534,10 @@ export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
  * free: the refusal happens before anything has been asked of the model.
  */
 export async function openPlan(rawBrief: unknown): Promise<
-  | { error: string; spent?: boolean }
+  // `detail` rides along for the same reason CaddyResult carries one: off
+  // production the staging note may say which gate refused, while the player
+  // always reads the same plain sentence.
+  | { error: string; offer?: CaddyOffer; detail?: string }
   | {
       supabase: Awaited<ReturnType<typeof createClient>>;
       userId: string;
@@ -308,9 +546,25 @@ export async function openPlan(rawBrief: unknown): Promise<
       candidates: CandidateDossier[];
     }
 > {
-  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  // Three different failures used to answer with the same sentence, which
+  // made "the caddy isn't on duty" a shrug rather than a diagnosis — a
+  // missing model credential, a missing Places key and a refused session
+  // insert are three separate problems with three separate fixes, and off
+  // production the staging note is allowed to say which. The player-facing
+  // sentence never changes; only `detail` does, and only where it is read.
+  if (!caddyEnabled(process.env))
+    return {
+      error: NO_CADDY,
+      detail:
+        "No model credential on this deploy — set AI_GATEWAY_API_KEY (or ANTHROPIC_API_KEY). Check it is enabled for this environment, not only for the preview branch.",
+    };
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
-  if (!placesKey) return { error: NO_CADDY };
+  if (!placesKey)
+    return {
+      error: NO_CADDY,
+      detail:
+        "No GOOGLE_PLACES_API_KEY on this deploy. This is the server's Places key and is separate from the browser maps key — a deploy can have the model credential and still be missing this one.",
+    };
 
   const brief = readBrief(rawBrief);
   if (!brief) return { error: "Tell the caddy where you're drinking." };
@@ -328,63 +582,51 @@ export async function openPlan(rawBrief: unknown): Promise<
     });
     return {
       error: covered === true ? SPENT_FEE : NEEDS_FEE,
-      spent: covered === true,
+      offer: covered === true ? "more" : "fee",
     };
   }
 
-  const pins = await pinCoords(supabase, [
-    brief.startVenueId,
-    brief.finishVenueId,
-  ]);
-  const start = pins.get(brief.startVenueId ?? "");
-  const finish = pins.get(brief.finishVenueId ?? "");
-
-  const requestHeaders = await headers();
-  const gathered = await gatherPubs({
-    key: placesKey,
-    where: brief.where,
-    start: start?.lat != null && start.lng != null
-      ? { lat: start.lat, lng: start.lng }
-      : null,
-    finish: finish?.lat != null && finish.lng != null
-      ? { lat: finish.lat, lng: finish.lng }
-      : null,
-    ipBias: ipBiasFrom(requestHeaders),
-    language: primaryLanguage(requestHeaders.get("accept-language")),
-  });
-
-  const cached = await cachePubs(supabase, gathered);
-  // Pinned tees always join the table, whatever the gather returned.
-  const withPins = [
-    ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
-    ...cached,
-  ];
-  const candidates = buildCandidates(
-    withPins,
-    [brief.startVenueId, brief.finishVenueId].filter((id): id is string =>
-      Boolean(id),
-    ),
-  );
-
-  // A thin patch is an honest refusal, never a padded card — and it costs
-  // nothing, because no turn row is written.
-  if (candidates.length < candidateFloor(brief.holes)) {
-    return { error: THIN_PATCH };
-  }
+  const gathered = await gatherFor(supabase, brief, placesKey);
+  if ("error" in gathered) return gathered;
+  const { candidates, from, to } = gathered;
 
   const { data: created, error: sessionError } = await supabase
     .from("caddy_sessions")
     .insert({
       host: user.id,
       entitlement_id: fee.id,
-      brief: brief as unknown as never,
+      // The areas as they actually resolved, so the router faces the way the
+      // host asked rather than guessing a direction from the candidate cloud.
+      brief: {
+        ...brief,
+        aimFrom: from,
+        aimTo: to,
+      } as unknown as never,
       dossier: candidates as unknown as never,
     })
     .select("id")
     .single();
-  if (sessionError || !created) return { error: NO_CADDY };
+  if (sessionError || !created)
+    return {
+      error: NO_CADDY,
+      // The one that is not a missing secret: the row was refused. Almost
+      // always RLS or a constraint, so the code is worth more than the prose.
+      detail: `The caddy session would not open: ${
+        sessionError?.code ?? "no row returned"
+      } ${sessionError?.message ?? ""}`.trim(),
+    };
 
-  return { supabase, userId: user.id, sessionId: created.id, brief, candidates };
+  // The **aimed** brief, not the parsed one. The row above was written with the
+  // resolved area centres on it; handing back the pre-gather brief meant the
+  // plan that follows routed with no destination, which is the other half of
+  // the dead-aim bug (`readBrief` is the first half).
+  return {
+    supabase,
+    userId: user.id,
+    sessionId: created.id,
+    brief: { ...brief, aimFrom: from, aimTo: to },
+    candidates,
+  };
 }
 
 /** Roll a fresh card, or answer something the host said. Both re-read the
@@ -412,7 +654,7 @@ export async function askTheCaddy(input: {
 
   const brief = readBrief(row.brief);
   const candidates = (row.dossier ?? []) as unknown as CandidateDossier[];
-  if (!brief || !Array.isArray(candidates) || !candidates.length) {
+  if (!brief || !patchIsOpen(candidates)) {
     return { error: "That patch has been put away. Plan a fresh one." };
   }
 
@@ -423,7 +665,42 @@ export async function askTheCaddy(input: {
   // are not free within an expired one, because then the day boundary buys
   // nothing.
   const { data: covered } = await supabase.rpc("holds_day_pass", { who: user.id });
-  if (covered !== true) return { error: PASS_RAN_OUT, spent: true };
+  if (covered !== true) return { error: PASS_RAN_OUT, offer: "more" };
+
+  /**
+   * And there has to be something left to spend, **before** the model is
+   * called rather than after.
+   *
+   * `guard_caddy_spend` is an AFTER INSERT trigger, so its refusal aborts the
+   * turn row — which means an exhausted host's turn cost real vendor money,
+   * recorded nothing, and did not even increment fair use, because fair use
+   * counts rows. A live pass with an empty balance was an unbounded, invisible
+   * way to spend.
+   *
+   * The trigger stays the enforcement — this is a courtesy check that saves
+   * the call, exactly as `liveFee` already does for a plan. A host who slips
+   * between this read and the insert still meets the guard.
+   */
+  const wanted = kindOf(input) === "tweak" ? "tweak" : "redesign";
+  const { data: left, error: balanceError } = await supabase.rpc("caddy_balance", {
+    who: user.id,
+    quota: wanted,
+  });
+  // A database that has not caught up answers with an error rather than a
+  // number, and the honest reading of that is "carry on" — the guard is still
+  // there, and refusing a paid host because a function is missing is the
+  // failure this whole branch keeps re-learning.
+  if (!balanceError && Number(left ?? 0) <= 0) {
+    // The course ladder can still pay for a whole card even with no revisions
+    // left, so a roll asks the second rung before giving up.
+    const { data: courseLeft } = await supabase.rpc("caddy_balance", {
+      who: user.id,
+      quota: "course",
+    });
+    if (wanted === "tweak" || Number(courseLeft ?? 0) <= 0) {
+      return { error: SPENT_FEE, offer: "more" };
+    }
+  }
 
   // Cards only. A failed turn is a real row — it carries what the attempt cost
   // — but its `result` is empty, and replaying an empty card into the
@@ -449,38 +726,29 @@ export async function askTheCaddy(input: {
     brief,
     candidates,
     history,
-    kind: input.roll ? "roll" : "tweak",
+    /**
+     * Which quota this turn draws on, decided **here** rather than taken from
+     * the caller.
+     *
+     * It used to be `input.roll ? "roll" : "tweak"`, and `roll` arrived from
+     * the browser. `guard_caddy_spend` branches purely on `caddy_turns.kind`,
+     * and a tweak's `result` is a whole `PlannedCourse` exactly as a roll's is
+     * — so asking for a completely different card with `roll:false` drew on
+     * the sixty-deep tweak allowance instead of the four-deep revision one.
+     * The insert policy checks the host and the session and has no opinion
+     * about which of a host's own quotas they spend.
+     *
+     * A roll is "give me another card"; a tweak is "change this one, thus".
+     * The presence of an ask is exactly that distinction, and unlike a boolean
+     * flag it cannot be set to the cheap value while asking for the dear
+     * thing: a request with no ask *is* a roll, whatever it calls itself.
+     */
+    kind: kindOf(input),
     ask: input.ask,
     holeNumber: input.holeNumber ?? null,
   });
 }
 
-/**
- * What this host has spent on the caddy in the last rolling day.
- *
- * Read on their own session, which is all RLS will show them anyway. The
- * authority on this number is `guard_caddy_fair_use` in Postgres — it takes a
- * lock and cannot be raced, and it is what actually refuses. This read is the
- * *polite* version of the same question, asked before the money is spent
- * rather than after: without it, a host at the ceiling would pay for one more
- * call and then be told it could not be filed, which is the one shape of
- * failure that genuinely wastes money.
- */
-async function spentToday(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-): Promise<number> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { data } = await supabase
-    .from("caddy_turns")
-    .select("cost_micropence")
-    .eq("host", userId)
-    .gt("created_at", since);
-  return (data ?? []).reduce(
-    (total, row) => total + Number(row.cost_micropence ?? 0),
-    0,
-  );
-}
 
 /**
  * What the loop needs from the outside world, assembled where the keys are.
@@ -508,9 +776,12 @@ function midConversation(brief: CaddyBrief) {
       if (!key) return [];
       try {
         const supabase = await createClient();
-        const found = await gatherPubs({
+        const gatheredSearch = await gatherPubs({
           key,
           where: query,
+          // A mid-plan search is one place the caddy went looking for, not a
+          // walk between two — the corridor is the brief's business.
+          whereTo: "",
           start: null,
           finish: null,
           ipBias: null,
@@ -519,7 +790,15 @@ function midConversation(brief: CaddyBrief) {
         // Through the same cache the first gather used, so a pub the caddy
         // finds mid-conversation has a real `venues` row and real coordinates
         // before it can ever be put on a hole.
-        return buildCandidates(await cachePubs(supabase, found));
+        // The `s` namespace, so a search cannot shadow the gather. Numbering
+        // these from `p1` again meant two different real pubs answered to
+        // `p3` after one search, and every `Map` downstream let the later one
+        // win — so the caddy chose one pub and the card carried another.
+        return buildCandidates(
+          await cachePubs(supabase, gatheredSearch.pubs),
+          [],
+          "s",
+        );
       } catch {
         return [];
       }
@@ -547,20 +826,34 @@ export async function runTurn(input: {
   kind: "plan" | "roll" | "tweak";
   ask?: string;
   holeNumber?: number | null;
-  /** Present on a streamed turn: the caddy's reasoning and the answer as it
-   * is written. Narration only — nothing here reaches the card. */
+  /** Present on a streamed plan: the caddy's reasoning, the tool it is
+   * reaching for, and the pubs it has settled on. Narration only — nothing
+   * here reaches the card, and a run where none of it arrives looks exactly
+   * like a run before any of it existed. */
   narrate?: (update: {
     thinking?: string;
-    answer?: string;
     /** A tool call, named for the host. */
     doing?: string;
+    /** Pubs chosen so far, by candidate id. The map lights them. */
+    picked?: string[];
   }) => void;
 }): Promise<CaddyResult> {
-  // Asked before the call, so a host at the ceiling is told plainly instead of
-  // being charged for a turn that Postgres is about to refuse.
-  if (!withinBudget(await spentToday(input.supabase, input.userId), caddyBudgetMicroPence())) {
-    return { error: CADDY_BUDGET_NOTE, spent: true };
-  }
+  // There used to be a budget check here — 12% of the fee, refused before the
+  // model was called. It is gone, and the reasoning is worth keeping because
+  // it is the same reasoning that removed the token cap before it.
+  //
+  // A host who has paid for four re-designs has bought four re-designs. What
+  // they cost us varies; absorbing that variance is what a fixed price is for.
+  // Metering the same purchase a second time in money means the fourth plan
+  // can be refused for no reason the host can see or predict — which is what
+  // happened: a fee bought four courses and the budget stopped it after two,
+  // with a sentence about a full shift that explains nothing.
+  //
+  // What bounds the work now is what a host was actually told: the re-design
+  // quota, which is a count they can see, and the runaway breaker inside the
+  // loop, which is not a ceiling anyone meets. Cost is still recorded on every
+  // turn — that is what prices the tariff — but it is
+  // evidence, not a gate.
 
   const ask = {
     brief: input.brief,
@@ -573,23 +866,28 @@ export async function runTurn(input: {
   /**
    * Which caddy answers.
    *
-   * A first plan gets the tool loop: it is the turn where getting it right
-   * first time is worth several passes, because every revision it saves is a
-   * revision the host never has to ask for — and cheaper than the conversation
-   * it replaces. A roll or a tweak does not: the patch is already read, the
-   * host has said exactly what they want changed, and a loop there would spend
-   * a plan's worth of tokens re-deciding things nobody questioned.
+   * A narrated first plan gets the tool loop: it is the turn where getting it
+   * right first time is worth several passes, because every revision it saves
+   * is a revision the host never has to ask for — and cheaper than the
+   * conversation it replaces. Everything else gets one call. A roll or a tweak
+   * does not need the loop: the patch is already read, the host has said
+   * exactly what they want changed, and a loop there would spend a plan's
+   * worth of tokens re-deciding things nobody questioned.
+   *
+   * There used to be a third arm — a streamed single call for a narrated turn
+   * that was not a plan — and no caller ever reached it, because the streaming
+   * route always sends `kind: "plan"` and nothing else narrates. See the note
+   * where it stood in `lib/caddy/client.ts`.
    */
-  const outcome = input.narrate
-    ? input.kind === "plan"
+  const outcome =
+    input.narrate && input.kind === "plan"
       ? await askCaddyLooped(ask, midConversation(input.brief), input.narrate)
-      : await askCaddyStreamed(ask, input.narrate)
-    : await askCaddy(ask);
+      : await askCaddy(ask);
 
   /** The ledger line. Written for a failure too — the vendor billed us for it
    * either way — but marked `failed`, which is what keeps the host's promise
    * honest: the money counts, the card does not. */
-  const record = async (failed: boolean, result: unknown) =>
+  const record = (failed: boolean, result: unknown) =>
     input.supabase.from("caddy_turns").insert({
       session_id: input.sessionId,
       host: input.userId,
@@ -602,6 +900,11 @@ export async function runTurn(input: {
       output_tokens: outcome.usage.output,
       cache_write_tokens: outcome.usage.cacheWrite,
       cache_read_tokens: outcome.usage.cacheRead,
+      // What the caddy actually did, where there were tools to trace. Null on
+      // a roll or a tweak rather than an empty object, so "this path has no
+      // tools" and "the tools did nothing" stay different facts — see
+      // lib/caddy/trace.ts for why it holds inputs and never replies.
+      trace: (outcome.trace ?? null) as never,
     });
 
   if (!outcome.ok) {
@@ -629,10 +932,16 @@ export async function runTurn(input: {
   }
 
   // The card arrived, so the turn is written — and only now does it count.
-  const { error } = await record(false, outcome.course);
+  // The id comes back because a report about this card needs to name *it*
+  // rather than the conversation it happened in: a session runs to sixty-five
+  // turns, and by the time anyone triages "the caddy put a Wetherspoons on
+  // hole four" the card they meant may have been rolled over twice.
+  const { data: filed, error } = await record(false, outcome.course)
+    .select("id")
+    .maybeSingle();
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
-    if (error.code === "42501") return { error: FULL_SHIFT, spent: true };
+    if (error.code === "42501") return { error: FULL_SHIFT, offer: "more" };
     return { error: "The caddy couldn't file that card. Give it another go." };
   }
 
@@ -640,6 +949,7 @@ export async function runTurn(input: {
   const { changedHoles } = await import("@/lib/caddy/plan");
   return {
     sessionId: input.sessionId,
+    turnId: filed?.id ?? null,
     course: outcome.course,
     changed: input.kind === "tweak" ? changedHoles(previous, outcome.course.holes) : [],
   };
@@ -672,15 +982,54 @@ export async function rememberCaddyCourse(
     .is("course_id", null);
 }
 
-/** The session is finished: stamp it and drop the dossier. Google's atmosphere
- * facts and review snippets are read for the length of one conversation and
- * are not ours to keep — what survives is the course the host saved and the
- * caddy's own one-line notes. */
+/**
+ * The card is filed. Stamp the session — and leave the patch on the table.
+ *
+ * This used to empty the dossier here, and doing so quietly destroyed the
+ * thing the host had just paid for. `askTheCaddy` refuses a session with no
+ * candidates ("That patch has been put away"), so saving a course ended the
+ * conversation about it: sixty tweaks, bought and advertised, unreachable the
+ * moment the card went into the book. The one action a happy host takes was
+ * the one that took the rest of their allowance away.
+ *
+ * The retention rule it was enforcing is real — Google's atmosphere facts and
+ * review snippets are read for the length of one conversation and are not ours
+ * to keep — but **the conversation ends with the window, not with the save**,
+ * which is what `RESUMABLE_HOURS` has always said and what the resume path has
+ * always assumed. So the stamp means what it says it means ("this produced a
+ * card"), and the sweep below is what actually enforces the retention.
+ *
+ * Host-scoped by RLS and bounded to sessions already past the window, so it
+ * cannot touch a live patch — including this one.
+ */
 export async function closeCaddySession(sessionId: string): Promise<void> {
   const session = await host();
   if (!session) return;
   await session.supabase
     .from("caddy_sessions")
-    .update({ completed_at: new Date().toISOString(), dossier: [] as never })
+    .update({ completed_at: new Date().toISOString() })
     .eq("id", sessionId);
+  await sweepCaddyDossiers(session.supabase);
+}
+
+/**
+ * Drop the patch from this host's sessions that have fallen out of the window.
+ *
+ * Lazy rather than scheduled, deliberately: it rides on an action the host is
+ * already taking, needs no cron and no service role, and RLS makes "this
+ * host's" the only rows it can reach. A host who never comes back leaves rows
+ * behind, which is what a scheduled sweep would be for — but every host who
+ * does come back tidies their own, and the window is what the resume path
+ * enforces regardless.
+ *
+ * Best-effort and silent, like the stamp it follows: failing to tidy is not
+ * something to interrupt a saved course with.
+ */
+async function sweepCaddyDossiers(
+  supabase: NonNullable<Awaited<ReturnType<typeof host>>>["supabase"],
+): Promise<void> {
+  await supabase
+    .from("caddy_sessions")
+    .update({ dossier: [] as never })
+    .lt("created_at", resumableSince(Date.now()));
 }

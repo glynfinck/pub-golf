@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { haversineKm } from "@/lib/geo";
+
 import {
   MAX_ASPECT,
   MIN_ASPECT,
@@ -8,6 +10,7 @@ import {
   walkRoute,
   type PreviewHole,
   type PreviewStop,
+  ringPath,
 } from "@/lib/route-preview";
 
 const at = (x: number, y: number): PreviewStop => ({
@@ -228,5 +231,37 @@ describe("walkRoute", () => {
       expect(Number.isFinite(point.lat)).toBe(true);
       expect(Number.isFinite(point.lng)).toBe(true);
     });
+  });
+});
+
+describe("ringPath", () => {
+  it("closes the loop", () => {
+    const ring = ringPath({ lat: 51.52, lng: -0.08 }, 1);
+    expect(ring[0].lat).toBeCloseTo(ring[ring.length - 1].lat, 9);
+    expect(ring[0].lng).toBeCloseTo(ring[ring.length - 1].lng, 9);
+  });
+
+  it("is round on the ground, not round in degrees", () => {
+    // At London's latitude a degree of longitude is about six-tenths of a
+    // degree of latitude. A ring drawn without that correction is an ellipse a
+    // third too wide, which reads on the map as the radius being wrong.
+    const centre = { lat: 51.52, lng: -0.08 };
+    const ring = ringPath(centre, 2);
+    const north = Math.max(...ring.map((p) => p.lat)) - centre.lat;
+    const east = Math.max(...ring.map((p) => p.lng)) - centre.lng;
+    expect(east / north).toBeCloseTo(1 / Math.cos((51.52 * Math.PI) / 180), 2);
+  });
+
+  it("puts every point the same distance out", () => {
+    const centre = { lat: 51.52, lng: -0.08 };
+    const spans = ringPath(centre, 1.5).map((p) =>
+      haversineKm(centre.lat, centre.lng, p.lat, p.lng),
+    );
+    for (const span of spans) expect(span).toBeCloseTo(1.5, 2);
+  });
+
+  it("draws nothing for a radius of nothing", () => {
+    expect(ringPath({ lat: 51.5, lng: -0.1 }, 0)).toEqual([]);
+    expect(ringPath({ lat: 51.5, lng: -0.1 }, -1)).toEqual([]);
   });
 });

@@ -4,6 +4,58 @@ import type Stripe from "stripe";
  * under the same keys, so code never branches on environment. */
 export const GREEN_FEE_LOOKUP_KEY = "green_fee";
 
+/**
+ * More caddy, for a host whose fee has planned everything it holds.
+ *
+ * Three rungs, and they answer two different questions. `caddy_topup_1` and
+ * `caddy_topup_3` sell more *goes at the course in the book*;
+ * `caddy_topup_course` sells a second course to keep. Demand is lopsided —
+ * most hosts need none — so the list stays short and the ladder stays legible:
+ * £5 a card, £4 a card, £4 a card with a slot.
+ *
+ * `tests/unit/caddy-credits.test.ts` holds the arithmetic and the rule none of them
+ * may break: the green fee is the best rate anyone can get, or the bundle is
+ * the option to avoid.
+ *
+ * The lookup key is also the entitlement `kind` and the reason stamped on the
+ * grants, so one string identifies the purchase from Stripe through to the
+ * ledger row. Add a rung here, add it to `CADDY_TOPUPS` and to
+ * `caddy_topup_size()`, or it sells and grants nothing.
+ */
+export const CADDY_TOPUP_LOOKUP_KEYS = [
+  "caddy_topup_1",
+  "caddy_topup_3",
+  "caddy_topup_course",
+] as const;
+export type CaddyTopupKey = (typeof CADDY_TOPUP_LOOKUP_KEYS)[number];
+
+/** What each rung grants, mirrored from `public.caddy_topup_size()` and proved
+ * equal by a db test. Durable on purpose: these carry no expiry, because cost
+ * is incurred at redemption and an unredeemed round costs nothing to hold. */
+export const CADDY_TOPUPS: Record<
+  CaddyTopupKey,
+  { course?: number; redesign: number; tweak: number }
+> = {
+  caddy_topup_1: { redesign: 1, tweak: 10 },
+  caddy_topup_3: { redesign: 3, tweak: 30 },
+  /**
+   * The only rung that buys a second course *kept*, rather than more goes at
+   * the one in the book.
+   *
+   * A fee files one course, and the rule is per **purchase** —
+   * `caddy_sessions_one_course_per_fee` is keyed on `entitlement_id` — so this
+   * needs no exception written for it anywhere. Its own entitlement gets its
+   * own slot, which is what "another course" has to mean to be worth £8.
+   *
+   * The revision is not optional garnish. `liveFee` resolves which purchase a
+   * session works under by walking the same ladder the spend does, and a rung
+   * granting a course and nothing else would leave a host with one card and
+   * then no way to revise it. One revision makes it a usable little pack; the
+   * ladder in `liveFee` is what makes it correct.
+   */
+  caddy_topup_course: { course: 1, redesign: 1, tweak: 20 },
+};
+
 /** Billing is off until the key exists — the maps-key pattern: no secret,
  * no surface, and nothing on screen mentions money. */
 export function billingEnabled(secretKey: string | undefined): boolean {
@@ -40,10 +92,14 @@ export function honestyBoxHref(
  */
 export const DAY_PASS_HOURS = 24;
 
-/** When a pass paid at this instant runs out. */
-export function dayPassExpiry(paidAtMs: number): string {
-  return new Date(paidAtMs + DAY_PASS_HOURS * 3_600_000).toISOString();
-}
+/**
+ * `dayPassExpiry` stood here — a purchase time plus 24 hours — and stopped
+ * having a caller when `20260908000000` moved the day to tee-off. The webhook
+ * writes `expires_at: null` now, and the stamp is `activate_day_pass`'s, in
+ * Postgres, where the tee-off happens. A second implementation in TypeScript
+ * would be a second answer to when a host's day ends.
+ */
+
 
 /** Is this pass still running? `null` expiry never runs out — the column's
  * own contract, and how a comped pass would read. */
@@ -54,6 +110,43 @@ export function dayPassLive(
   if (expiresAt === null || expiresAt === undefined) return true;
   const runsOut = Date.parse(expiresAt);
   return Number.isNaN(runsOut) ? false : runsOut > nowMs;
+}
+
+/**
+ * Why a second green fee is refused, or null to let the sale through.
+ *
+ * Pure, and split out of `startGreenFeeCheckout` because it is the one piece
+ * of that action with an opinion — everything else is a Stripe call. It had a
+ * bug that only a test would have caught, and there was no way to write one.
+ *
+ * The bug: since the fee's day starts at tee-off rather than at purchase,
+ * `expires_at` is null on a fee nobody has used, and the guard read null as
+ * "live". So a host who bought a fee, planned their courses, spent every
+ * credit and never teed a round off was locked out of buying another — told
+ * that the thing they had just used up was "already paid".
+ *
+ * A **running** fee refuses: it is doing something, all day, and a second
+ * would overlap it. A **dormant** fee refuses only while it can still do
+ * something. A dormant fee with nothing left is finished in every sense except
+ * the column, and finished things do not block sales.
+ */
+export function secondFeeRefusal(input: {
+  /** The buyer's most relevant unexpired fee: its expiry, `null` when the fee
+   * is dormant, or `undefined` when they hold none at all. */
+  liveExpiresAt: string | null | undefined;
+  /** Whether that fee can still plan or tweak anything. Only consulted for a
+   * dormant one — a running fee blocks whatever its ledger says, because the
+   * day pass is more than the caddy. */
+  canStillPlan: boolean;
+}): string | null {
+  if (input.liveExpiresAt === undefined) return null;
+  if (input.liveExpiresAt !== null) {
+    return "Your green fee is already paid — it runs all day.";
+  }
+  if (input.canStillPlan) {
+    return "Your green fee is already paid — its day starts when you tee off.";
+  }
+  return null;
 }
 
 /**

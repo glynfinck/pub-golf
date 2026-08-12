@@ -1,6 +1,26 @@
 import type { PlannedCourse } from "@/lib/caddy/plan";
 
 /**
+ * Which door answers a refusal that is about money rather than about failure.
+ *
+ * The covenant lets a price speak only in answer to a refusal the host walked
+ * into, never unprompted — so the refusal itself has to carry the door, and
+ * the two doors are genuinely different rooms. `"fee"` is a host who has never
+ * paid: the green fee, at its one price. `"more"` is a host whose fee is spent
+ * or whose day has ended: top-ups, with the free ways on named above them.
+ *
+ * This was a boolean called `spent`, which could say *that* money was the
+ * answer but never *which* — so the commonest refusal of all, a host with no
+ * fee at all, arrived as an error toast with nothing behind it while the price
+ * they needed sat on a badge they had not asked for.
+ *
+ * It lives here, in the wire vocabulary, because both sides of the refusal
+ * read it: `lib/caddy/run.ts` decides the door and `components/course/
+ * caddy-group.tsx` opens it.
+ */
+export type CaddyOffer = "fee" | "more";
+
+/**
  * What the caddy says while it is still working, and how that crosses the wire.
  *
  * The plan used to be one server action: twenty seconds of nothing, then a
@@ -39,11 +59,19 @@ export type CaddyEvent =
    * (`lib/caddy/route.ts`), which is exactly why these land as pins and the
    * numbers arrive with the finished card. */
   | { type: "picked"; ids: string[] }
-  /** The card, routed and dressed. The end of a good run. */
-  | { type: "card"; course: PlannedCourse; sessionId: string }
+  /** The card, routed and dressed, and the two ids behind it: the
+   * conversation, and the turn that produced *this* card. A report needs the
+   * second — a session runs to sixty-five turns and only one of them is the
+   * one that went wrong. */
+  | {
+      type: "card";
+      course: PlannedCourse;
+      sessionId: string;
+      turnId?: string | null;
+    }
   /** The end of a bad one. `error` is the line the host reads; `detail` is
    * for the staging note and the log, and is never shown to a player. */
-  | { type: "failed"; error: string; detail?: string; spent?: boolean };
+  | { type: "failed"; error: string; detail?: string; offer?: CaddyOffer };
 
 /** One event, as a line on the wire. */
 export function encodeEvent(event: CaddyEvent): string {
@@ -76,39 +104,6 @@ export function decodeEvents(buffer: string): {
     }
   }
   return { events, rest };
-}
-
-/**
- * Which candidates the answer has named so far, read out of a half-written
- * JSON document.
- *
- * A regex rather than an incremental JSON parser, and deliberately so. The
- * thing being looked for is one key with one shape — the schema admits
- * `candidateId` as a string and nothing else can produce that pattern — and a
- * partial-JSON parser would be a few hundred lines of machinery whose failure
- * mode is silently mis-reading a card. This cannot mis-read a card: it is not
- * in the path that builds one. `parsePlan` still reads the finished document,
- * still resolves every id against the dossier, and still drops anything it
- * does not recognise. If this function returned nonsense the worst that
- * happens is a pin lights up early.
- *
- * Ids are returned in the order they appear, deduplicated, so a caller can
- * treat it as "the picks so far" and diff against what it already has.
- */
-export function pickedIds(text: string): string[] {
-  const found: string[] = [];
-  const seen = new Set<string>();
-  const pattern = /"candidateId"\s*:\s*"([^"]+)"/g;
-  let match = pattern.exec(text);
-  while (match !== null) {
-    const id = match[1];
-    if (!seen.has(id)) {
-      seen.add(id);
-      found.push(id);
-    }
-    match = pattern.exec(text);
-  }
-  return found;
 }
 
 /**
