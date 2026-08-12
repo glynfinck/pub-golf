@@ -12,6 +12,7 @@ import {
 } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
 import { CADDY_CREDITS_SPENT } from "@/lib/caddy/credits";
+import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
 import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
   buildCandidates,
@@ -482,7 +483,7 @@ export async function askTheCaddy(input: {
 
   const brief = readBrief(row.brief);
   const candidates = (row.dossier ?? []) as unknown as CandidateDossier[];
-  if (!brief || !Array.isArray(candidates) || !candidates.length) {
+  if (!brief || !patchIsOpen(candidates)) {
     return { error: "That patch has been put away. Plan a fresh one." };
   }
 
@@ -730,15 +731,54 @@ export async function rememberCaddyCourse(
     .is("course_id", null);
 }
 
-/** The session is finished: stamp it and drop the dossier. Google's atmosphere
- * facts and review snippets are read for the length of one conversation and
- * are not ours to keep — what survives is the course the host saved and the
- * caddy's own one-line notes. */
+/**
+ * The card is filed. Stamp the session — and leave the patch on the table.
+ *
+ * This used to empty the dossier here, and doing so quietly destroyed the
+ * thing the host had just paid for. `askTheCaddy` refuses a session with no
+ * candidates ("That patch has been put away"), so saving a course ended the
+ * conversation about it: sixty tweaks, bought and advertised, unreachable the
+ * moment the card went into the book. The one action a happy host takes was
+ * the one that took the rest of their allowance away.
+ *
+ * The retention rule it was enforcing is real — Google's atmosphere facts and
+ * review snippets are read for the length of one conversation and are not ours
+ * to keep — but **the conversation ends with the window, not with the save**,
+ * which is what `RESUMABLE_HOURS` has always said and what the resume path has
+ * always assumed. So the stamp means what it says it means ("this produced a
+ * card"), and the sweep below is what actually enforces the retention.
+ *
+ * Host-scoped by RLS and bounded to sessions already past the window, so it
+ * cannot touch a live patch — including this one.
+ */
 export async function closeCaddySession(sessionId: string): Promise<void> {
   const session = await host();
   if (!session) return;
   await session.supabase
     .from("caddy_sessions")
-    .update({ completed_at: new Date().toISOString(), dossier: [] as never })
+    .update({ completed_at: new Date().toISOString() })
     .eq("id", sessionId);
+  await sweepCaddyDossiers(session.supabase);
+}
+
+/**
+ * Drop the patch from this host's sessions that have fallen out of the window.
+ *
+ * Lazy rather than scheduled, deliberately: it rides on an action the host is
+ * already taking, needs no cron and no service role, and RLS makes "this
+ * host's" the only rows it can reach. A host who never comes back leaves rows
+ * behind, which is what a scheduled sweep would be for — but every host who
+ * does come back tidies their own, and the window is what the resume path
+ * enforces regardless.
+ *
+ * Best-effort and silent, like the stamp it follows: failing to tidy is not
+ * something to interrupt a saved course with.
+ */
+async function sweepCaddyDossiers(
+  supabase: NonNullable<Awaited<ReturnType<typeof host>>>["supabase"],
+): Promise<void> {
+  await supabase
+    .from("caddy_sessions")
+    .update({ dossier: [] as never })
+    .lt("created_at", resumableSince(Date.now()));
 }

@@ -308,8 +308,16 @@ export function CourseBuilder({
     // button still says "Save the course", because `savedId` is what that
     // wording reads and it stays null. Shouting about it would be an error
     // message for a step they never asked for.
-    if (editing) return;
     const draft = draftOf(rows, named);
+    // Opened from the book: the course already exists and the caddy's change
+    // belongs on it. This used to return early instead, from back when the
+    // caddy never appeared on a saved course at all — leaving it would mean a
+    // tweak that showed on screen and filed nowhere, which is the same missing
+    // card the file-on-arrival rule exists to prevent.
+    if (editing) {
+      await updateCourse(course.id, draft);
+      return;
+    }
     if (savedId) {
       await updateCourse(savedId, draft);
       return;
@@ -488,12 +496,18 @@ export function CourseBuilder({
 
       {/* The caddy: one group above the free search, and nothing at all when
           it is off duty. Everything below it is the builder as it has always
-          been — the fee buys the planning, never the table. */}
-      {caddy && !editing ? (
+          been — the fee buys the planning, never the table.
+          Whether it is on duty is the page's call, not this table's. It used
+          to be `caddy && !editing`, which quietly meant a saved course could
+          never be tweaked — the door you came in by is not a fact about the
+          caddy. `/courses/[id]` passes `caddy` only when the conversation that
+          wrote that course is still open. */}
+      {caddy ? (
         <CaddyGroup
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
+          session={caddySession}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
           onReach={setReach}

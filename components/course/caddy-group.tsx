@@ -62,6 +62,7 @@ export function CaddyGroup({
   onSession,
   onReach,
   reach,
+  session = null,
   className,
 }: {
   /** A live green fee on this host. The form is identical either way — only
@@ -80,6 +81,17 @@ export function CaddyGroup({
   allowance?: { canPlan: boolean; left: number; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
+  /**
+   * A conversation the server found already open, if there is one.
+   *
+   * The missing half of resuming. The drafting table restored the card and
+   * remembered the session id, but this group — the only thing that renders an
+   * ask box — kept its own `sessionId` and started it at null, so a resumed
+   * host was shown the *plan* form for a patch that was already planned. The
+   * thread was in the database, on the page, and in the parent's state, and
+   * still could not be spoken to.
+   */
+  session?: string | null;
   /** How far the round reaches, for the ring on the drafting table's map.
    * Null while there is nothing to draw. */
   onReach?: (reach: Reach | null) => void;
@@ -90,7 +102,9 @@ export function CaddyGroup({
 }) {
   const { run, pending, busy } = useAction();
   const [open, setOpen] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  // Seeded from the server's answer, so a resumed conversation opens on the
+  // ask box rather than on the form that would plan the patch again.
+  const [sessionId, setSessionId] = useState<string | null>(session);
   const [ask, setAsk] = useState("");
   // The caddy's own reasoning while it works, trimmed to a line. Narration
   // only: nothing reads it, and a run where it never arrives is a run that

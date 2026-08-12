@@ -1,6 +1,7 @@
 import { readBrief } from "@/lib/caddy/brief";
 import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
 import type { PlannedCourse } from "@/lib/caddy/plan";
+import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -41,15 +42,6 @@ export interface ResumedCaddy {
   courseId: string | null;
 }
 
-/**
- * How long a walked-away-from session is still worth resuming.
- *
- * The green fee's own day. The dossier is Google's atmosphere data and review
- * snippets, held for the length of one conversation on purpose — a session
- * still open a week later is not a conversation, it is a cupboard. Twelve
- * hours is comfortably a night out and comfortably inside the pass.
- */
-export const RESUMABLE_HOURS = 12;
 
 /**
  * The host's most recent unfinished caddy session, if there is one worth
@@ -59,20 +51,52 @@ export const RESUMABLE_HOURS = 12;
  * still stamps `completed_at` when a course is saved, but that marks "this
  * produced a card", not "you may not ask again" — the host keeps a tweak
  * quota, and the card, brief and dossier they would need are all still in
- * Postgres. Note the dossier is emptied on close, so a resumed-after-saving
- * session can tweak what it has; a genuinely new patch is a new plan.
+ * Postgres. The patch survives the save and is swept when the session falls
+ * out of the window below; a genuinely new patch is a new plan.
  *
  * Read on the caller's own session, so RLS is the thing deciding whose this
  * is — `caddy_sessions` is visible to its host and to nobody else, which makes
  * "the most recent one" unambiguous without a single `eq` on a user id.
  */
 export async function resumeCaddy(): Promise<ResumedCaddy | null> {
-  const supabase = await createClient();
-  const since = new Date(Date.now() - RESUMABLE_HOURS * 3_600_000).toISOString();
+  return latestSession(null);
+}
 
-  const { data: session } = await supabase
+/**
+ * The conversation that produced *this* course, if it is still open.
+ *
+ * The saved-course screen's version of the same question, and the difference
+ * matters: on `/courses/[id]` the host is looking at one particular card, so
+ * "your most recent session" is the wrong answer whenever they have planned
+ * something else since. Asking by `course_id` means the caddy that appears
+ * beside a course is the one that wrote it.
+ *
+ * Null is an ordinary answer — a hand-built course never had a session, and a
+ * caddy course older than the window has had its patch swept. Both mean the
+ * same thing on screen: this is the manual table, as it always was.
+ */
+export async function resumeCaddyForCourse(
+  courseId: string,
+): Promise<ResumedCaddy | null> {
+  return latestSession(courseId);
+}
+
+async function latestSession(
+  courseId: string | null,
+): Promise<ResumedCaddy | null> {
+  const supabase = await createClient();
+  const since = resumableSince(Date.now());
+
+  let query = supabase
     .from("caddy_sessions")
-    .select("id, brief, course_id")
+    // The dossier comes back so its emptiness can be checked, and it is the
+    // biggest thing this reads — forty pubs of Google's facts and review
+    // snippets. Worth it, because the alternative is a door that opens onto a
+    // refusal: `askTheCaddy` answers a patchless session with "That patch has
+    // been put away", and there is no way to tell from the outside except to
+    // look. Sessions saved before the sweep moved to the window are exactly
+    // this shape, so it is not a theoretical case.
+    .select("id, brief, course_id, dossier")
     // Completed sessions resume too, which reverses the original rule.
     //
     // `completed_at` was terminal when a fee bought exactly one course: saving
@@ -84,7 +108,10 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
     //
     // The window below still applies, so this resumes a conversation rather
     // than opening a cupboard.
-    .gt("created_at", since)
+    .gt("created_at", since);
+  if (courseId) query = query.eq("course_id", courseId);
+
+  const { data: session } = await query
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -95,6 +122,12 @@ export async function resumeCaddy(): Promise<ResumedCaddy | null> {
   // continue, and offering to resume it would put a card on the table that the
   // next tweak would fail against.
   if (!readBrief(session.brief)) return null;
+
+  // Same rule, for the patch. A session whose dossier has been swept has a
+  // card and a history and nothing to change them against, so it is finished
+  // even though every other column says otherwise. Offering it would put an
+  // ask box on screen whose every answer is a refusal.
+  if (!patchIsOpen(session.dossier)) return null;
 
   const { data: turn } = await supabase
     .from("caddy_turns")
