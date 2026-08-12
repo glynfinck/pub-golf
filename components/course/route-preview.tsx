@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   AdvancedMarker,
@@ -17,6 +17,7 @@ import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
   patchFrame,
+  ringPath,
   previewFrame,
   walkRoute,
   type PreviewFrame,
@@ -85,6 +86,7 @@ export function RoutePreview({
   stops,
   live,
   onOpen,
+  ring,
   drawKey = 0,
   className,
 }: {
@@ -105,6 +107,11 @@ export function RoutePreview({
    * "nothing has been handed over" — a course loaded from the database is
    * simply there, and animating it on every page load would be scenery.
    */
+  /** How far the round reaches, drawn from the first tee and eased as the
+   * host types a destination. `warn` turns it amber at the same threshold
+   * `stretchWarning` fires, so the ring and the sentence agree by
+   * construction. */
+  ring?: { lat: number; lng: number; km: number; warn?: boolean } | null;
   drawKey?: number;
   className?: string;
 }) {
@@ -144,6 +151,14 @@ export function RoutePreview({
           clickableIcons={false}
         >
           <Reframe bounds={frame.bounds} />
+          {ring ? (
+            <PatchRing
+              centre={{ lat: ring.lat, lng: ring.lng }}
+              km={ring.km}
+              warn={ring.warn === true}
+              dark={dark}
+            />
+          ) : null}
           {route ? (
             /* Remounted whenever the caddy hands over a card, which is what
                replays the walk. The map itself stays put — remounting *that*
@@ -349,4 +364,94 @@ function Reframe({ bounds }: { bounds: PreviewFrame["bounds"] }) {
     map.fitBounds({ north, south, east, west }, 48);
   }, [map, north, south, east, west]);
   return null;
+}
+
+/**
+ * The reach of the round, drawn and breathing.
+ *
+ * Two rings on the same centre. The solid one eases to the real distance
+ * between the host's two areas, so typing a destination *moves* it rather than
+ * redrawing it — the change is the information, and a number that jumps is a
+ * number nobody watches. The faint one repeats outward and fades, which is
+ * what makes the map feel alive while the host is still deciding rather than
+ * looking like a screenshot of a decision already made.
+ *
+ * It turns amber at the same threshold `stretchWarning` fires, so the ring and
+ * the sentence beneath the form are one fact shown two ways rather than two
+ * things that can disagree.
+ *
+ * All state is set inside the rAF callback, never in render, and the whole
+ * thing collapses to a static ring under `prefers-reduced-motion` — a pulse is
+ * decoration and decoration is the first thing that should stop moving.
+ */
+function PatchRing({
+  centre,
+  km,
+  warn,
+  dark,
+}: {
+  centre: { lat: number; lng: number };
+  km: number;
+  warn: boolean;
+  dark: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const [radius, setRadius] = useState(0);
+  const [pulse, setPulse] = useState(0);
+  // Where the ease started from, held in a ref so a re-target mid-flight
+  // continues from where the ring actually is rather than snapping back.
+  const fromRef = useRef(0);
+
+  useEffect(() => {
+    let raf = 0;
+    // Even the still case goes through a frame: the house rule is that state
+    // is never set in an effect body, and "it is only one assignment" is how
+    // that rule stops being a rule.
+    if (reducedMotion || !(km > 0)) {
+      raf = requestAnimationFrame(() => {
+        fromRef.current = km;
+        setRadius(km);
+        setPulse(0);
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+    const from = fromRef.current;
+    let started: number | null = null;
+    const tick = (now: number) => {
+      if (started === null) started = now;
+      const elapsed = now - started;
+      // Cubic ease-out over 700ms: quick enough to feel like a response to
+      // typing, slow enough to read as movement.
+      const t = Math.min(1, elapsed / 700);
+      const eased = from + (km - from) * (1 - (1 - t) ** 3);
+      fromRef.current = eased;
+      setRadius(eased);
+      // A 2.4s breath, offset so the pulse is never exactly the solid ring.
+      setPulse((elapsed % 2400) / 2400);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [km, reducedMotion]);
+
+  const ink = warn ? "#b4531f" : dark ? "#e9e2d0" : "#1e4630";
+  const solid = ringPath(centre, radius);
+  if (solid.length === 0) return null;
+  // The pulse starts inside the ring and passes through it, so the eye reads
+  // it as coming *from* the tee rather than as a second boundary.
+  const breathing = ringPath(centre, radius * (0.35 + pulse * 0.75));
+
+  return (
+    <>
+      {!reducedMotion && breathing.length > 0 ? (
+        <Polyline
+          path={breathing}
+          strokeColor={ink}
+          strokeOpacity={0.35 * (1 - pulse)}
+          strokeWeight={1.5}
+        />
+      ) : null}
+      <Polyline path={solid} strokeColor={ink} strokeOpacity={0.7} strokeWeight={2} />
+    </>
+  );
 }

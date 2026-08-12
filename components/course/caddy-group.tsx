@@ -105,6 +105,7 @@ export function CaddyGroup({
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
   const [vibe, setVibe] = useState<VibeId>("traditional");
   const [particulars, setParticulars] = useState<ParticularId[]>([]);
+  const [whereTo, setWhereTo] = useState("");
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
 
@@ -140,6 +141,7 @@ export function CaddyGroup({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             where,
+            whereTo,
             holes,
             vibe,
             particulars,
@@ -569,6 +571,26 @@ export function CaddyGroup({
         />
         <p className="mt-1 text-[10px] text-muted-foreground">
           A neighbourhood, a street, a town.
+        </p>
+      </div>
+
+      {/* Optional, and quiet about it. Most rounds stay in one patch, so this
+          is a second line rather than a second decision — but a crawl is not
+          always nine doors off one street, and Finsbury Park to Broadway
+          Market is a real round somebody walked. Typing the same place twice
+          folds back to one patch in `readBrief`. */}
+      <div>
+        <FieldLabel htmlFor="caddy-where-to">
+          Finishing somewhere else?
+        </FieldLabel>
+        <Input
+          id="caddy-where-to"
+          value={whereTo}
+          onChange={(event) => setWhereTo(event.target.value.slice(0, WHERE_MAX))}
+          placeholder="Optional — Broadway Market"
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Leave it empty to stay in one patch.
         </p>
       </div>
 
