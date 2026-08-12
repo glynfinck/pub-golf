@@ -11,33 +11,39 @@ git checkout claude/pub-golf-caddy-spec-ydipz4
 
 ## The one-line state
 
-**The caddy is not a working product yet.** The plumbing is complete and
-nothing is built-but-unreachable, but no plan has run end to end since the
-fixes. The next useful action is one real plan on preview, not more code.
+**The caddy plans real courses end to end on preview**, and has done for a
+while. What has been moving since is *route quality* — where the walk goes and
+whether it doubles back — and that argument is now settled in unit tests rather
+than by planning another round and looking at the map. The last piece of it,
+the curator tools, has not yet been exercised by a live model.
 
-## The open bug, and the best lead
+The next useful action is one real plan on preview to see the caddy use
+`plan_routes` and `exclude_pubs`, and to price a turn that does.
 
-A plan runs, the model calls tools, **nothing lands on the drafting table**,
-and the run ends with a refusal.
+## Fixed, and worth knowing they were bugs
 
-Two things were fixed tonight that were producing that symptom for unrelated
-reasons, so re-test before assuming the tool problem is real:
+Every one of these produced a symptom that looked like something else, so they
+are recorded rather than deleted:
 
-1. **The budget was refusing paid work.** A 12%-of-fee ceiling stopped the
-   third re-design on a fee that grants four, with the "full shift" sentence.
-   Removed from `runTurn` *and* from `guard_caddy_fair_use` (migration
-   `20260904000000`, already applied to preview). If the last thing seen was
-   that message, it may have been this and not the tools at all.
-2. **The system prompt ordered a search loop.** It said "try_route before you
-   hand anything over, and again after you change it", so the model searched
+1. **`liveFee` wrote a grant id into `caddy_sessions.entitlement_id`** (an FK to
+   `entitlements`). Broke *every* plan with "The caddy isn't on duty here",
+   which reads exactly like a missing key. Three wrong hypotheses were chased
+   about the environment before the row was inserted by hand and the FK spoke.
+2. **`entitlements_kind_check` allowed only `green_fee` and `season_ticket`**,
+   so a top-up could not be inserted at all (23514). Found the same way.
+3. **The budget was refusing paid work.** A 12%-of-fee ceiling stopped the third
+   re-design on a fee that grants four. Gone from `runTurn` *and* from
+   `guard_caddy_fair_use` (`20260904000000`). The runaway *breaker* that
+   replaced it is deliberately far above any honest plan.
+4. **The system prompt ordered a search loop** — "try_route before you hand
+   anything over, and again after you change it" — so the model searched
    instead of drafting. It now leads with **PUT A ROUTE ON THE TABLE FIRST**.
-
-If holes still do not land after those, the thing to instrument is
-`applyDraftTool` / `dispatchTool` in `lib/caddy/session.ts` and `tools.ts` —
-specifically whether `set_hole` is being *refused* (an unknown candidate id
-comes back as a readable sentence, which the model may be quietly absorbing
-turn after turn) rather than failing loudly. A refusal loop would look exactly
-like this: tools called, nothing saved, no error.
+5. **`includedTypes` rather than `includedPrimaryTypes`** in the Places query.
+   `includedTypes` matches any type a place carries, so a nightclub and a
+   restaurant reached a real card. The primary type is what a place mostly *is*.
+6. **The axis is a line, not a direction.** A round asked to finish in Covent
+   Garden walked Marylebone westwards. `aimFrom`/`aimTo` fixed it and
+   `tests/unit/caddy-real-patches.test.ts` holds it, at real coordinates.
 
 ## What the ledger says
 
@@ -50,10 +56,23 @@ select kind, failed, output_tokens, cache_read_tokens,
   from caddy_turns order by created_at desc limit 5;
 ```
 
-`cache_read_tokens` is the number that matters. 160k on a timeout, 71k on the
-one success — both with the model searching. If the route graph is being used
-it should fall toward a single dossier read. That number decides whether the
-two-stage rewrite in `CADDY-STAGES.md` is needed or optional.
+`cache_read_tokens` is the number that matters: it is the model re-reading the
+dossier, which is the signature of *searching* rather than thinking. The trend
+across the branch, and the reason the route graph exists:
+
+| | cache read | cost |
+|---|---|---|
+| Looped, searching (timed out) | 160,105 | 29.20p, no card |
+| Looped, searching (landed) | 58,800 | 27.34p |
+| Routes in the prefix | ~22,000 | ~23p |
+| Routes in the prefix, single call | 0 | ~16p |
+
+A first real tweak measured **6.59p** — 3× the 2p the tariff assumed, which
+makes 60 tweaks the largest line on the bill. `docs/CADDY-TOPUPS.md` still
+reasons from the older, dearer plan figures and should be re-derived from these.
+
+Because the plan is now one call, `MAX_TOOL_TURNS` can come down as a
+consequence rather than as a guess. It has not been cut yet.
 
 ## Done and verified
 
@@ -70,12 +89,42 @@ two-stage rewrite in `CADDY-STAGES.md` is needed or optional.
 - Map re-frames on a new patch; a saved course can resume its session; the
   spent-allowance copy no longer claims a fee plans one course.
 
-## Built, wired, unproven
+## The routing, and why it is where it is
 
-Everything here is unit-tested and has never completed a real run:
+The division of labour, which is the one idea worth carrying into any change
+here: **the algorithm plans the walk and the model curates it.** Every routing
+failure on this branch was a language model doing search work that arithmetic
+does in microseconds.
 
-- **`lib/caddy/route-graph.ts`** — precomputed routes + k-nearest neighbours,
-  folded into the cached prefix by `patchBlock`.
+- **`lib/caddy/route-graph.ts`** — the distance matrix, greedy seeds, 2-opt and
+  swap-in, and `ROUTE_OBJECTIVES`: ten routes, each *winning a different
+  objective*, so the caddy chooses between different nights rather than between
+  four attempts at the shortest one. Drink breadth is one of them, which is how
+  "never put a drink on a hole the pub cannot pour" became geometry rather than
+  a rule the dressing had to remember.
+- **`bestForwardWalk`** — an exact DP over increasing subsequences along the
+  patch's principal axis. Doubling back is not a scoring problem once the walk
+  can only go one way.
+- **`detour`** — walk ÷ straight-line progress. The number that *sees*
+  backtracking, which total distance cannot.
+- **The curator's tools** — `plan_routes` (a fresh menu, free and instant),
+  `exclude_pubs` (a pub ruled out with a reason, remembered), `keep_draft` /
+  `restore_draft`. This is what a caddy that dislikes the whole menu does
+  instead of planning a route one stop at a time.
+
+**Proved without a model.** `caddy-pathfinding.test.ts` runs six shapes × five
+seeds through a seeded LCG; `caddy-real-patches.test.ts` is the actual bad cards
+at their actual coordinates. Anything about where a walk goes belongs there —
+testing it by planning another round costs a re-design and produces one data
+point.
+
+`docs/CADDY-ROUTE-GRAPH.md` is the design and, at the bottom, the audit of what
+landed against it.
+
+## Built, wired, not yet seen live
+
+- **The curator's tools** — declared, dispatched, unit-tested; no live model has
+  called one yet.
 - **Fallback board** — a loop that drafts nothing hands over the best
   precomputed route with default dressing rather than failing.
 - **Card recovery** — every failure path asks whether a card landed before
@@ -84,25 +133,35 @@ Everything here is unit-tested and has never completed a real run:
 - **Turn bound** — 90s per call, loop budget 150s, worst case 240s inside a
   300s ceiling. This is what makes failure *observable*; before it, a killed
   function left no row at all.
-- **Live route on the map** while planning.
 
 ## Designed, not built
 
 - `docs/CADDY-STAGES.md` — replace the open loop with two bounded calls
-  (choose a walk, then dress it). Step one of its ordering is already done.
-- `docs/CADDY-ROUTE-GRAPH.md` (last section) — ten routes each winning a
-  different objective, including drink breadth from the Places facts, so the
-  "never put a drink on a hole the pub cannot pour" rule is enforced by the
-  router rather than by the dressing.
+  (choose a walk, then dress it). Largely overtaken: the plan is already one
+  call, so this is now an optimisation rather than a rescue.
+- **Corridor queries** — "what is near this *walk*", distance to the polyline
+  rather than to a node. `search_pubs` is the blunt instrument standing in for
+  it. (`CORRIDOR_RADIUS_M` in `places.ts` is a different thing wearing a similar
+  name: it aims the *gather* between two named areas.)
 - `docs/CADDY-TOPUPS.md` — the cost evidence and pricing reasoning.
-  `docs/caddy-cost-evidence-20260811.json` is the raw data behind it.
+  `docs/caddy-cost-evidence-20260811.json` is the raw data behind it. **Its
+  arithmetic predates the cheap plan**; see the ledger table above.
 
 ## Not run at all
 
-- `npm run test:db` and the sandbox smoke tests — both need a local stack /
-  Stripe key. Several tests written tonight cover bugs that only surfaced
-  against a real database, so these are worth running early.
-- `npm run test:e2e`.
+The unit tier is green (`npm test`, 761 tests) and has been the whole way. The
+rest of the pyramid has never run on this branch, because the session it was
+built in had no local stack and no Stripe key:
+
+- **`npm run test:db`** — the highest-value gap by some distance. The two worst
+  bugs on this branch (the `entitlement_id` FK, the `kind` check constraint)
+  were both invisible to types and to unit tests, and both would have been
+  caught here. Several tests written for them have never executed.
+- **`tests/sandbox/stripe-smoke.test.ts`** — needs a Stripe key.
+- **`npm run test:stress`**, **`npm run test:e2e`**.
+- **`supabase gen types typescript --local > types/database.ts`** — overdue.
+  `types/database.ts` has been hand-edited repeatedly to keep pace with the
+  caddy migrations, which is exactly the drift the generator exists to prevent.
 
 ## Running it locally
 

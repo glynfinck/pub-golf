@@ -3,7 +3,10 @@
 A design for cutting the plan from a dozen turns to one or two, by handing the
 model precomputed routes instead of making it search for them.
 
-Nothing here is built.
+**Built.** `lib/caddy/route-graph.ts` is the algorithm and `lib/caddy/tools.ts`
+is the model's half of it; what landed and what did not is at the bottom under
+*What shipped*. The design is kept as written, because the argument in it is
+what the code is for and the diagnosis at the end of it is the one that held.
 
 ## The evidence
 
@@ -220,3 +223,90 @@ today, so a model has to be conservative with a card that is already decent.
 Snapshotting the board, trying a variation, and reverting if it scores worse
 is bounded, cheap, and exactly what a loop is for — unlike search, which is
 what it was being used for.
+
+---
+
+## What shipped
+
+The design above was written before any of it existed. This is the audit
+against it, so the next person can tell the argument from the code.
+
+### Landed as designed
+
+- **The route graph** — `buildRouteGraph` in `lib/caddy/route-graph.ts`, called
+  from the plan and folded into the cached prefix by `patchBlock`. Distance
+  matrix once, greedy seeds, 2-opt and swap-in, Jaccard diversity.
+- **The menu, not the shortlist.** `ROUTE_OBJECTIVES` is ten objectives and each
+  one wins its own slot, so the routes on offer are answers to different
+  questions rather than four attempts at the same one.
+- **Drinks in the router.** `servesBeer`/`servesWine`/`servesCocktails` score a
+  route before the model sees it, so "a card cannot pour what its pubs do not
+  stock" is geometry rather than a rule the dressing has to remember.
+- **`try_route` stayed**, and `<swaps>` gives every stop its nearest
+  alternatives with the walk to each — the second wave of turns, removed.
+- **Keep and revert** — `keep_draft` and `restore_draft`. Called correctly: the
+  one thing a loop is genuinely for.
+
+### Landed, and not designed here
+
+Three things the design did not anticipate, each of which came from a real card
+that came back wrong:
+
+- **`detour`** — walk divided by straight-line progress. Total distance cannot
+  see backtracking; a tight cluster walked badly and a long walk taken well
+  score the same on kilometres. This is the term that sees it, and `onward` is
+  the objective that optimises it.
+- **`bestForwardWalk`** — an exact DP over increasing subsequences along the
+  patch's principal axis, `best[k][j] = min over i<j of best[k-1][i] +
+  step(i,j)`. The design said exact methods were out at forty-choose-nine, and
+  for a free tour they are; pinning the walk to one direction makes the problem
+  small enough to solve outright. It supersedes the greedy snake it replaced.
+- **Aim.** `aimFrom`/`aimTo` — because an axis is a line and not a direction. A
+  round asked to finish in Covent Garden walked Marylebone *westwards*: the two
+  furthest-apart candidates chose a heading and chose wrong. The fixture for
+  that failure is in `tests/unit/caddy-real-patches.test.ts`, at its real
+  coordinates.
+
+### Landed differently: `plan_routes` and `exclude_pubs`
+
+The design put the graph entirely in the prefix — "it is part of the brief, not
+a tool — the point is for the model never to have to ask." That is still true of
+the *first* set of routes and it is why a plan is one call.
+
+What it missed is what happens when the caddy reads the routes and none of them
+suit, because three of the pubs on offer cannot meet the brief. Under the
+design its only move was to swap stops one at a time out of `<swaps>` — which is
+route planning by the model, in turns, which is the thing this whole document
+argues against.
+
+So the graph is also a tool. `exclude_pubs` writes down the caddy's own
+judgement about a pub, and `plan_routes` re-runs the algorithm without it. No
+Google, no network, no money — the candidates are already gathered, so a fresh
+menu costs arithmetic. That keeps the division of labour intact under
+disagreement: **the caddy decides which pubs are out, and the algorithm decides
+the walk, every time it is asked.**
+
+### Not built
+
+**Corridor queries.** "What is near this walk" — distance to the polyline rather
+than to a node — is still only k-nearest per stop. `CORRIDOR_RADIUS_M` in
+`places.ts` is a different thing wearing a similar name: it aims the *gather*
+along the line between two named areas, so a two-area round has candidates in
+the middle at all. Searching along a chosen route is unbuilt, and `search_pubs`
+is the blunt instrument standing in for it.
+
+### Did it work
+
+The measurement the design asked for, from `caddy_turns`:
+
+| | cache read | cost |
+|---|---|---|
+| The failure that prompted this | 160,105 | 29.20p, no card |
+| The plan that landed, before | 58,800 | 27.34p |
+| Routes in the prefix | 22,000 | ~23p |
+| Routes in the prefix, single call | 0 | ~16p |
+
+Cache reads are the model re-reading the dossier, which is the signature of
+searching. They went to zero: the plan is one call. `MAX_TOOL_TURNS` can now
+come down as a consequence rather than as a guess, which is what the design
+said would make it honest — it has not been cut yet, and it should be.
