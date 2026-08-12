@@ -397,3 +397,45 @@ Ranked by severity. Each is a clear defect against a stated requirement or a sta
 ### One note on naming
 
 "Caddy" names two different things in the product: a round *role* (the sober marker, `round_players.role = 'caddy'`) and the paid planner. A host who buys "the caddy" on `/new` and then promotes a friend to "caddy" in the lobby meets both inside one session. Nothing is broken by it, but it makes every grep ambiguous and it will make the first support conversation confusing.
+
+---
+
+## 9. Decisions
+
+Settled with the product owner after the audit. Eight were put as questions;
+six were taken on the audit's own recommendation and are marked *(taken)* —
+any of those can still be overturned.
+
+| # | Question | Decision |
+|---|---|---|
+| 7.1 | Where may money speak? | **Money may only answer a refusal.** It may appear on any screen *only* in response to a refusal the host walked into, never unprompted. The `£12` badge on the collapsed card and the footer sentence go; the spent sheet stays and must be made reachable. Testable rule: **no component renders a price except inside a refusal branch.** |
+| 7.2 | The tear-out moment | **Full R13.** A sheet with the count, a top-up door and a "just tweak instead" action. Legitimate under 7.1 because the host walked into it. |
+| 7.3 | What grants the right to keep a course? | **Key the slot on the `course` quota**, not on the purchase. A kept course requires a spent `course` credit, so `caddy_topup_1` can never hold one. Closes the two-tab race at the root. |
+| 7.4 | Do top-ups get cheaper with volume? | **Reprice `caddy_topup_course` to £9**, giving £5.00 → £4.50 → £4.00 per card. Needs a Stripe reprice as well as a tariff change. |
+| 7.5 | Fair use below what a fee grants | **Raise the cap above 65** (~80/day) so it can only ever catch a script. |
+| 7.6 | May the model reorder holes? | **Delete `move_hole`.** Selection and dressing only. Also remove the contradictory `try_route` sentence from the tool description. |
+| 7.7 | Untyped Places results | **Stop Text Search results becoming candidates.** That leg locates an area; it does not supply pubs. Nearby keeps its permissive untyped branch, which is safe because the request restricted types. |
+| 7.8 | Must the caddy name the course? | *(taken)* **Refuse to hand over an unnamed board while turns remain**, so the house formula is only ever a floor. |
+| 7.9 | Was the `20260831` drop an accepted outage? | *(taken)* **A lapse.** Reassert in writing: a drop belongs in a migration one deploy *after* the last build that used it. |
+| 7.10 | Should a report carry the turn? | *(taken)* **Yes** — add a nullable `caddy_turn_id` beside `caddy_session_id`. Additive, and it is what makes the feedback loop a loop. |
+| 7.11 | Retention | **Cron the dossier, disclose `venues`.** A scheduled sweep makes the dossier promise true; the permanent `venues` row is an operational cache and should be disclosed rather than pretended away. |
+| 7.12 | Should `/tariff` list the top-ups? | *(taken)* **Yes.** The "offered only in answer to a refusal" rule is about marketing, not disclosure; a processor-facing price list omitting three of four SKUs is the greater risk. |
+| 7.13a | Does R4 bind the privacy notice? | *(taken)* **No** — standing exception for processor disclosure, to be stated in R4 itself. |
+| 7.13b | Does R4 bind what the caddy says about itself? | *(taken)* **Yes.** Add one line to `CADDY_SYSTEM` forbidding self-reference as a model or AI, rather than filtering streamed text — a vocabulary filter would mangle legitimate copy, and register is exactly what a prompt can hold. |
+| 7.14 | Should a dormant, spent fee block another purchase? | *(taken)* **No.** Key the guard on "a fee with credits left, or one already activated and still running", not on the row's existence. |
+
+### What these decisions change about the design
+
+Two of them alter §2 and §6 materially and the earlier sections should be read
+through them:
+
+**The one-course invariant moves layer.** §2 records it as
+`unique (entitlement_id) where course_id is not null`. Under 7.3 it becomes a
+rule about the `course` credit, which is what was actually bought. The index
+was a proxy for that and let `caddy_topup_1` — a rung with no course credit —
+hold a slot.
+
+**The covenant becomes mechanically checkable.** §5 could only state R6 as
+prose because the code had invented an unstated exemption. 7.1 states it: a
+price may render only inside a refusal branch. That is a rule a test can hold,
+which is what the covenant needed to stop being a matter of taste.
