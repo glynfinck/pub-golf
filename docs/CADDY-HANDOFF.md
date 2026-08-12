@@ -218,9 +218,41 @@ top-up. Check either with
 
 ## Deployment state
 
-- **preview** — all migrations applied and verified through `20260904000000`.
-  The tester's data was reset: fresh green fee, no courses, no rounds.
+- **preview** — every migration on this branch is applied, and the *effects*
+  were verified directly rather than inferred from the migration list:
+  `caddy_grant_size('redesign')` is 4, `entitlements_kind_check` carries all
+  four kinds, `caddy_grants_entitlement_id_fkey` is `on delete cascade`, and
+  `guard_caddy_fair_use` no longer mentions a budget. The tester's data was
+  reset: fresh green fee, no courses, no rounds.
 - **main / production** — untouched. Has no caddy tables at all; merging would
   be *launching* the feature. Don't, until a plan lands — and note the £12 fee
   is coupled to it, since without a working caddy it is a 3× rise for what
   people already get.
+
+### Preview's migration list will not match the filenames — this is expected
+
+The last four caddy migrations were applied to preview *by hand* while they
+were being debugged, so preview recorded them under the timestamps they were
+run at rather than the versions the files carry:
+
+| File on this branch | Recorded on preview |
+|---|---|
+| `20260901000000_caddy_fourth_round` | `20260811185029_caddy_fourth_round` |
+| `20260902000000_caddy_topups` | `20260811185114` + `20260811185214_caddy_topups_kind_check` |
+| `20260903000000_caddy_refund_cascade` | `20260811185520_caddy_refund_cascade` |
+| `20260904000000_drop_caddy_budget` | `20260811202836_drop_caddy_budget` |
+
+**Do not renumber the files to match.** Supabase's GitHub integration tracks
+migrations by version, so on the next push to `preview` it will see four
+versions it has no record of and run them again — which is fine, because all
+four are idempotent by construction: `create or replace` on functions,
+`drop constraint if exists` before restating each constraint whole, and two
+bounded statements (`amount = 3 → 4`, `delete … where entitlement_id is null`)
+that now match zero rows. Verified against preview: both are already zero.
+
+The kind-check fix has no file of its own because it was folded back into
+`20260902000000_caddy_topups.sql` where it belongs. Preview's extra row is a
+record of the hand-run, not a schema change the repo is missing.
+
+The lesson underneath this: `list_migrations` on a hosted project tells you
+what was *recorded*, not what is *true*. Check the schema.

@@ -175,7 +175,7 @@ export type Database = {
           expires_at: string | null
           host: string
           id: string
-          quota: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
           reason: string
         }
         Insert: {
@@ -185,7 +185,7 @@ export type Database = {
           expires_at?: string | null
           host: string
           id?: string
-          quota: string
+          quota: Database["public"]["Enums"]["caddy_quota"]
           reason?: string
         }
         Update: {
@@ -195,7 +195,7 @@ export type Database = {
           expires_at?: string | null
           host?: string
           id?: string
-          quota?: string
+          quota?: Database["public"]["Enums"]["caddy_quota"]
           reason?: string
         }
         Relationships: []
@@ -866,13 +866,13 @@ export type Database = {
           seat_id: string
         }[]
       }
-      caddy_balance: { Args: { quota: string; who: string }; Returns: number }
+      caddy_balance: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: number }
       caddy_topup_size: {
-        Args: { kind: string; quota: string }
+        Args: { kind: string; quota: Database["public"]["Enums"]["caddy_quota"] }
         Returns: number
       }
-      caddy_grant_size: { Args: { quota: string }; Returns: number }
-      caddy_next_grant: { Args: { quota: string; who: string }; Returns: string }
+      caddy_grant_size: { Args: { quota: Database["public"]["Enums"]["caddy_quota"] }; Returns: number }
+      caddy_next_grant: { Args: { quota: Database["public"]["Enums"]["caddy_quota"]; who: string }; Returns: string }
       holds_day_pass: { Args: { who: string }; Returns: boolean }
       house_funnel: {
         Args: { since?: string; until?: string }
@@ -899,7 +899,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      caddy_quota: "redesign" | "tweak"
     }
     CompositeTypes: {
       [_ in never]: never
