@@ -1,26 +1,51 @@
 # Squashing the caddy's migrations
 
 Twenty-two migrations arrived on `claude/pub-golf-caddy-spec-ydipz4`, and a
-good number of them undo each other. This is what a squash has to contain, why
-it has not been done here, and the one command that makes it safe.
+good number of them undid each other.
 
-## Why not here
+**Done** — `20260917000000_the_caddy.sql` replaces the twenty-two. This is the
+record of how it was built and what was checked, kept because the next person
+to squash a branch will want it.
 
-**It cannot be executed in this environment, and a squash that is not executed
-is a guess.** `supabase db reset` needs Docker; the daemon starts fine, but the
-registry's blob CDN answers `403 Forbidden` through the agent proxy, so no
-Postgres image can be pulled. The remaining way to verify would be resetting
-the preview branch project and applying the squash to it — which destroys the
-staging data somebody may be testing against, and is not a call to make
-unprompted.
+## How it was built
 
-The failure mode is the reason for the caution: a squash that is 99% right is a
-schema that is wrong on `main`, and `PostgREST` answers a missing column with
-`42703` on the whole request. The twenty-two files are applied, each was probed
-against preview when it landed, and each carries the reasoning for what it
-does. That is worth more on a review than one tidy file that has never run.
+Mechanically, not by hand. A script walked the twenty-two in order, keyed every
+statement by the object it defines, and kept the **last** definition of each at
+the **first** position it appeared — so every body is byte-for-byte the text
+that was applied to preview and probed there, while the order stays the one the
+dependencies were written for.
 
-## What the squash must contain
+Three bugs in that script are worth naming, because each produced a file that
+looked complete and was not:
+
+- **The splitter tracked `$$` and nothing else.** A `;` inside a `/* … */`
+  block cut a statement in half and glued the tail of a comment onto the front
+  of the next one, so `drop trigger if exists guard_caddy_credit` was never
+  recognised as a drop. Six objects survived that should have been buried.
+- **Keying used `re.match` on the raw statement.** Every statement here is
+  preceded by its own comment block, so the `create` was never at position
+  zero. Six functions went missing from the output entirely.
+- **A superseded object moved to its last definition's position.** That put
+  `grant execute on function public.caddy_balance` ahead of
+  `caddy_balance` — five forward references that would have failed the file on
+  the first `db reset`.
+
+The lesson is the ordinary one: a squash is a program, and a program that has
+not been checked against its own output is a guess.
+
+## What was checked
+
+- **Object inventory.** Everything the file creates matches what the preview
+  project actually held after the twenty-two: 4 tables, 6 triggers, 8 policies,
+  9 indexes, 1 enum, and 20 functions less the one deliberately dropped.
+- **Creation-time resolution.** Policies and triggers resolve function names
+  when they are created; plpgsql bodies do not. Every one of those ten pairings
+  was asserted to be defined-before-used.
+- **CI.** `supabase db reset` applies this from empty and then the db, stress
+  and e2e tiers run against the result. That is the proof; the above is what
+  made it worth running.
+
+## What it contains
 
 ### Never mention these — born and buried on the branch
 
@@ -60,26 +85,31 @@ Three statements remove objects `main` created, and must survive the squash:
 - `drop trigger/function guard_caddy_course_allowance` (`20260829`)
 - `drop index entitlements_one_per_round` (`20260916`)
 
-### And one thing to drop that nothing has yet
+### And three decided rather than derived
 
-`caddy_budget_micropence()` is orphaned. `20260904000000` removed the money
-budget from `guard_caddy_fair_use`, which was its only caller, and it still
-returns a figure derived from the £4 launch fee — three times out of step with
-`caddyBudgetMicroPence()` in TypeScript, which is live as the loop's runaway
-breaker. A db test asserts the two are equal, so that tier is red until one of
-them goes. The SQL copy is the dead one.
+**`caddy_budget_micropence()` is dropped.** `20260904000000` removed the money
+budget from `guard_caddy_fair_use`, its only caller, and it went on returning a
+figure derived from the £4 launch fee — three times out of step with
+`caddyBudgetMicroPence()` in TypeScript, which is live as the tool loop's
+runaway breaker. The db test that held them equal is inverted: the database
+must not answer that name, and the TypeScript copy is the only one there is.
 
-## Verifying it
+**`caddy_quota` is created with all three values.** It shipped as
+`('redesign', 'tweak')` and gained `'course'` in its own migration, because
+`alter type … add value` cannot run in the transaction that created the type.
+In one file it has to be one statement. The order is preserved — `caddy_next_grant`
+reads it.
 
-```
-supabase db reset            # applies the squash from empty, and only it
-npm run test:db              # the adversarial suites, against the result
-npm run test:stress
-```
+**The four backfills are dropped.** They repaired rows that existed on the
+branch project mid-flight. A squash runs from empty and has nothing to
+repair.
 
-The stronger check, if the squash is built alongside the twenty-two rather than
-replacing them straight away: apply each to its own database and diff the
-object inventories.
+## The inventory query
+
+Run against a database with the twenty-two and one with the squash; the diff
+must be empty. Preview's answer on 12 August 2026, with all twenty-two applied,
+was 17 tables, 43 functions, 13 triggers, 37 policies, 40 indexes and 1 enum —
+of which the caddy's share is 4, 20, 6, 8, 9 and 1.
 
 ```sql
 select 'table' as kind, tablename as name from pg_tables where schemaname='public'
@@ -98,10 +128,6 @@ union all select 'type', t.typname from pg_type t
  where n.nspname='public' and t.typtype='e'
 order by 1, 2;
 ```
-
-Run it against both and the diff must be empty. The result for the twenty-two,
-read off preview on 12 August 2026, is 17 tables, 43 functions, 13 triggers,
-37 policies, 40 indexes and 1 enum.
 
 ## The bookkeeping, which is the part that bites
 

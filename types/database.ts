@@ -828,7 +828,6 @@ export type Database = {
     Functions: {
       approve_seat_rescue: { Args: { seat: string }; Returns: undefined }
       bug_report_daily_cap: { Args: never; Returns: number }
-      caddy_budget_micropence: { Args: never; Returns: number }
       caddy_cost_micropence: {
         Args: {
           cache_read_tokens: number

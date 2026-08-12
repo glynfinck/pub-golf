@@ -821,13 +821,24 @@ describe("the ceilings hold in Postgres", () => {
     expect(error).toBeNull();
   });
 
-  it("keeps a budget the app and the database agree on", async () => {
-    // Both sides read the fee, so they cannot drift by arithmetic — but they
-    // can drift by somebody editing one and not the other, which is what this
-    // catches.
-    const { data, error } = await adminClient().rpc("caddy_budget_micropence");
-    expect(error).toBeNull();
-    expect(Number(data)).toBe(caddyBudgetMicroPence());
+  it("keeps no budget in the database at all", async () => {
+    // There were two copies of this number and they drifted 3x apart. The SQL
+    // one lost its only caller when the money budget came out of
+    // `guard_caddy_fair_use`, and went on returning a figure derived from the
+    // £4 launch fee; the TypeScript one is live as the tool loop's runaway
+    // breaker. A mirror test held them equal, which is the right shape for a
+    // mirror and the wrong answer for a number only one side uses.
+    //
+    // So the assertion is inverted: the database must *not* answer this, and
+    // `caddyBudgetMicroPence()` is the only copy there is.
+    // Cast through `unknown` because the generated types no longer know the
+    // name — which is itself half of what this asserts.
+    const rpc = adminClient().rpc as unknown as (
+      fn: string,
+    ) => PromiseLike<{ error: unknown }>;
+    const { error } = await rpc("caddy_budget_micropence");
+    expect(error).not.toBeNull();
+    expect(caddyBudgetMicroPence()).toBeGreaterThan(0);
   });
 
   it("keeps a fair-use cap the app and the database agree on", async () => {
