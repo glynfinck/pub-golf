@@ -114,6 +114,27 @@ const THIN_PATCH =
 const FULL_SHIFT =
   "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
 
+/**
+ * Which quota a follow-up turn draws on, decided **here** rather than taken
+ * from the caller.
+ *
+ * It used to be `input.roll ? "roll" : "tweak"`, and `roll` arrived from the
+ * browser. `guard_caddy_spend` branches purely on `caddy_turns.kind`, and a
+ * tweak's `result` is a whole `PlannedCourse` exactly as a roll's is — so
+ * asking for a completely different card with `roll:false` drew on the
+ * sixty-deep tweak allowance instead of the four-deep revision one. The insert
+ * policy checks the host and the session, and has no opinion about which of a
+ * host's own quotas they spend.
+ *
+ * A roll is "give me another card"; a tweak is "change this one, thus". The
+ * presence of an ask is exactly that distinction, and unlike a boolean flag it
+ * cannot be set to the cheap value while asking for the dear thing: a request
+ * with no ask *is* a roll, whatever it calls itself.
+ */
+function kindOf(input: { ask?: string }): "roll" | "tweak" {
+  return input.ask?.trim() ? "tweak" : "roll";
+}
+
 /** The signed-in host, or null. Guests never cross this boundary: hosting a
  * round takes a Google sign-in and so does planning one. */
 async function host() {
@@ -604,6 +625,41 @@ export async function askTheCaddy(input: {
   const { data: covered } = await supabase.rpc("holds_day_pass", { who: user.id });
   if (covered !== true) return { error: PASS_RAN_OUT, spent: true };
 
+  /**
+   * And there has to be something left to spend, **before** the model is
+   * called rather than after.
+   *
+   * `guard_caddy_spend` is an AFTER INSERT trigger, so its refusal aborts the
+   * turn row — which means an exhausted host's turn cost real vendor money,
+   * recorded nothing, and did not even increment fair use, because fair use
+   * counts rows. A live pass with an empty balance was an unbounded, invisible
+   * way to spend.
+   *
+   * The trigger stays the enforcement — this is a courtesy check that saves
+   * the call, exactly as `liveFee` already does for a plan. A host who slips
+   * between this read and the insert still meets the guard.
+   */
+  const wanted = kindOf(input) === "tweak" ? "tweak" : "redesign";
+  const { data: left, error: balanceError } = await supabase.rpc("caddy_balance", {
+    who: user.id,
+    quota: wanted,
+  });
+  // A database that has not caught up answers with an error rather than a
+  // number, and the honest reading of that is "carry on" — the guard is still
+  // there, and refusing a paid host because a function is missing is the
+  // failure this whole branch keeps re-learning.
+  if (!balanceError && Number(left ?? 0) <= 0) {
+    // The course ladder can still pay for a whole card even with no revisions
+    // left, so a roll asks the second rung before giving up.
+    const { data: courseLeft } = await supabase.rpc("caddy_balance", {
+      who: user.id,
+      quota: "course",
+    });
+    if (wanted === "tweak" || Number(courseLeft ?? 0) <= 0) {
+      return { error: SPENT_FEE, spent: true };
+    }
+  }
+
   // Cards only. A failed turn is a real row — it carries what the attempt cost
   // — but its `result` is empty, and replaying an empty card into the
   // transcript would show the caddy a hole-less course as though it had
@@ -628,7 +684,24 @@ export async function askTheCaddy(input: {
     brief,
     candidates,
     history,
-    kind: input.roll ? "roll" : "tweak",
+    /**
+     * Which quota this turn draws on, decided **here** rather than taken from
+     * the caller.
+     *
+     * It used to be `input.roll ? "roll" : "tweak"`, and `roll` arrived from
+     * the browser. `guard_caddy_spend` branches purely on `caddy_turns.kind`,
+     * and a tweak's `result` is a whole `PlannedCourse` exactly as a roll's is
+     * — so asking for a completely different card with `roll:false` drew on
+     * the sixty-deep tweak allowance instead of the four-deep revision one.
+     * The insert policy checks the host and the session and has no opinion
+     * about which of a host's own quotas they spend.
+     *
+     * A roll is "give me another card"; a tweak is "change this one, thus".
+     * The presence of an ask is exactly that distinction, and unlike a boolean
+     * flag it cannot be set to the cheap value while asking for the dear
+     * thing: a request with no ask *is* a roll, whatever it calls itself.
+     */
+    kind: kindOf(input),
     ask: input.ask,
     holeNumber: input.holeNumber ?? null,
   });
