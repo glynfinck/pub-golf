@@ -559,3 +559,26 @@ describe("choosing the whole walk at once", () => {
     }
   });
 });
+
+describe("the caddy is told to name the course", () => {
+  it("asks for a name, and stops short of handing over without one", () => {
+    // A real card shipped called "The caddy's round" — the fallback, meaning
+    // `name_course` was never called. The cause was in this prompt: rewriting
+    // the workflow to lead with the route dropped naming from the stopping
+    // criteria, so the model dressed nine holes, judged the card done, and
+    // never named it. Nothing else in the pipeline can notice that.
+    expect(CADDY_SYSTEM_TOOLS).toContain("NAME THE COURSE");
+    expect(CADDY_SYSTEM_TOOLS).toContain("name_course");
+    // Naming has to be in the list the caddy checks before it stops, not only
+    // mentioned somewhere above it — that is exactly the difference that lost
+    // it last time.
+    const stopping = CADDY_SYSTEM_TOOLS.slice(
+      CADDY_SYSTEM_TOOLS.indexOf("Stop when the card holds up"),
+    );
+    expect(stopping).toContain("a name on it");
+  });
+
+  it("tells it to make the name this round's rather than any round's", () => {
+    expect(CADDY_SYSTEM_TOOLS).toMatch(/this round's rather than any round's/);
+  });
+});

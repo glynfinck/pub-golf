@@ -204,7 +204,7 @@ describe("parsePlan", () => {
     if (!result.ok) return;
     expect(result.course.holes[0].drink).toBe("Pint of your choosing");
     expect(result.course.holes[0].par).toBe(4);
-    expect(result.course.name).toBe("The caddy's round");
+    expect(result.course.name).toBe("Shoreditch, London, 3 holes");
   });
 
   it("moves a pinned tee to the front rather than throwing the card away", () => {

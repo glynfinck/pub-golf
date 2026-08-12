@@ -180,9 +180,15 @@ export const CADDY_SYSTEM_TOOLS = [
   "  tells you what you were told.",
   "- read_draft whenever you have lost track of what is on the table.",
   "",
-  "Stop when the card holds up: every hole dressed, the walk spaced the way",
-  "the brief asked, variety in the glass and across the pars. Then say one",
-  "short sentence and stop calling tools — that is how you hand it over.",
+  "NAME THE COURSE before you hand it over. `name_course`, once, and make it",
+  "this round's rather than any round's — the patch, the shape of the night,",
+  "a joke the group would get. \"The caddy's round\" is what a card is called",
+  "when nobody named it, and a host can tell.",
+  "",
+  "Stop when the card holds up: every hole dressed, a name on it, the walk",
+  "spaced the way the brief asked, variety in the glass and across the pars.",
+  "Then say one short sentence and stop calling tools — that is how you hand",
+  "it over.",
   "",
   "Handing over a good card quickly is worth more than a perfect one late.",
   "The host is watching an empty screen while you work.",
@@ -385,9 +391,11 @@ export function readRules(value: unknown): RulesetPenalty[] {
 export function parsePlan(
   raw: unknown,
   candidates: CandidateDossier[],
+  // `where` joins the narrowed brief so an unnamed card can still be named
+  // after the host's own patch rather than after the app.
   brief: Pick<
     CaddyBrief,
-    "holes" | "startVenueId" | "finishVenueId" | "stretch"
+    "holes" | "startVenueId" | "finishVenueId" | "stretch" | "where"
   >,
 ): PlanResult {
   if (typeof raw !== "object" || raw === null) {
@@ -502,8 +510,17 @@ export function parsePlan(
     walked[walked.length - 1] = { ...final, hazard: null, hazard_note: null };
   }
 
+  // The caddy is asked to name the course and usually does. When it does not,
+  // this is what a host reads, so it should at least be about *their* night:
+  // "Shoreditch, nine holes" beats "The caddy's round", which is the same
+  // words on every unnamed card and reads as the app not having bothered.
+  //
+  // The patch is the host's own text and is already neutralised by
+  // `clampText`, so nothing here trusts it further than the dossier does.
+  const patch = clampText(brief.where, 40);
   const name =
-    clampText(payload.courseName, COURSE_NAME_MAX) || "The caddy's round";
+    clampText(payload.courseName, COURSE_NAME_MAX) ||
+    (patch ? `${patch}, ${holes.length} holes` : "The caddy's round");
   return { ok: true, course: { name, holes: walked } };
 }
 
