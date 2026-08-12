@@ -123,8 +123,17 @@ export default function PrivacyPage() {
           <b>The pub data itself is not kept that long.</b> Google&apos;s
           descriptions, ratings and review snippets are held only for as long as
           you are working on that course — about half a day — and are then
-          deleted. If you come back later to change the course, the caddy
-          fetches them again rather than keeping an old copy.
+          deleted by a job that runs every hour. If you come back later to
+          change the course, the caddy fetches them again rather than keeping
+          an old copy.
+        </p>
+        <p>
+          What does stay is the pub itself: its name, address and map position,
+          in a shared list this app keeps so that a course, a scorecard and a
+          round played years apart all point at the same door. It holds nothing
+          about you and nothing about a night out — the same handful of facts a
+          street sign carries — and it is shared across everyone rather than
+          kept per person.
         </p>
       </Section>
 
@@ -138,8 +147,9 @@ export default function PrivacyPage() {
         </p>
         <p>
           A report filed from a course the caddy planned also records which
-          planning session it was about, so we can look at what went wrong. That
-          link stays on our side and never appears on the public issue.
+          planning session — and which card in it — the report was about, so we
+          can look at what went wrong. Those links stay on our side and never
+          appear on the public issue.
         </p>
       </Section>
 
