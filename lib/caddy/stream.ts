@@ -1,6 +1,26 @@
 import type { PlannedCourse } from "@/lib/caddy/plan";
 
 /**
+ * Which door answers a refusal that is about money rather than about failure.
+ *
+ * The covenant lets a price speak only in answer to a refusal the host walked
+ * into, never unprompted — so the refusal itself has to carry the door, and
+ * the two doors are genuinely different rooms. `"fee"` is a host who has never
+ * paid: the green fee, at its one price. `"more"` is a host whose fee is spent
+ * or whose day has ended: top-ups, with the free ways on named above them.
+ *
+ * This was a boolean called `spent`, which could say *that* money was the
+ * answer but never *which* — so the commonest refusal of all, a host with no
+ * fee at all, arrived as an error toast with nothing behind it while the price
+ * they needed sat on a badge they had not asked for.
+ *
+ * It lives here, in the wire vocabulary, because both sides of the refusal
+ * read it: `lib/caddy/run.ts` decides the door and `components/course/
+ * caddy-group.tsx` opens it.
+ */
+export type CaddyOffer = "fee" | "more";
+
+/**
  * What the caddy says while it is still working, and how that crosses the wire.
  *
  * The plan used to be one server action: twenty seconds of nothing, then a
@@ -43,7 +63,7 @@ export type CaddyEvent =
   | { type: "card"; course: PlannedCourse; sessionId: string }
   /** The end of a bad one. `error` is the line the host reads; `detail` is
    * for the staging note and the log, and is never shown to a player. */
-  | { type: "failed"; error: string; detail?: string; spent?: boolean };
+  | { type: "failed"; error: string; detail?: string; offer?: CaddyOffer };
 
 /** One event, as a line on the wire. */
 export function encodeEvent(event: CaddyEvent): string {

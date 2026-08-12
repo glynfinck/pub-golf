@@ -48,18 +48,21 @@ export const TARIFF = {
    * Another course, kept — the rung that buys a second saved card rather than
    * another attempt at the first.
    *
-   * £8 for two whole cards is £4.00 each, the same rate as the three-pack and
-   * comfortably above the fee's £2.40. That ordering is the rule
-   * docs/CADDY-TOPUPS.md sets: the bundle has to be the best rate anyone can
-   * get, or it is the option to avoid. And the fee is still the better buy on
-   * every axis — cheapest per card, more tweaks per card, and the only one of
-   * them that also covers the round itself.
+   * £9 for two whole cards is £4.50 each. That number is chosen to keep the
+   * ladder *monotone*: £5.00 a card at one, £4.50 at two, £4.00 at three. At
+   * £8 the rung tied with the three-pack at £4.00 and threw in a kept-course
+   * slot, so the dearer rung was the worse buy — "cheaper with volume" was
+   * untrue in the middle of its own ladder.
+   *
+   * The fee stays the best rate anyone can get at £2.40 a card, which is the
+   * standing rule in docs/CADDY-TOPUPS.md, and is still the only purchase that
+   * also covers the round itself. There is a unit test on both properties.
    */
   caddyTopupCourse: {
     lookupKey: CADDY_TOPUP_LOOKUP_KEYS[2],
     productName: "Another course",
     taxCode: "txcd_10103000",
-    amounts: { gbp: 800, usd: 1000, eur: 1000, cad: 1400, aud: 1600 },
+    amounts: { gbp: 900, usd: 1100, eur: 1100, cad: 1600, aud: 1800 },
   },
   honestyBox: {
     lookupKey: "honesty_box",

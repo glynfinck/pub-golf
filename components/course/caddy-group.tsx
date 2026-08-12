@@ -37,14 +37,19 @@ import {
   collectCaddyCard,
   reopenCaddyPatch,
 } from "@/lib/actions/caddy";
-import { startCaddyTopupCheckout } from "@/lib/actions/billing";
-import { CADDY_TOPUP_OFFERS, freshCourseNotice } from "@/lib/caddy/credits";
-import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
+import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
+import { GreenFeeSheet } from "@/components/round/green-fee-sheet";
+import { freshCourseNotice } from "@/lib/caddy/credits";
+import {
+  decodeEvents,
+  thinkingTail,
+  type CaddyEvent,
+  type CaddyOffer,
+} from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
 import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { formatTimeLeft } from "@/lib/time";
-import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
 
 /**
@@ -154,17 +159,22 @@ export function CaddyGroup({
   // The tool the caddy is reaching for, named. Outranks the reasoning below.
   const [doing, setDoing] = useState("");
   /**
-   * A refusal that means "you already have what you paid for".
+   * A refusal about money, and the door that answers it.
    *
    * Held rather than thrown at a toast, because a toast is the wrong shape for
    * this: it is gone in four seconds, it says nothing about what to do next,
-   * and it reads as breakage. Being out of courses is not breakage — the host
-   * has three of them in the book — so it gets a sheet with the way to them.
+   * and it reads as breakage. Neither of these is breakage — one host has
+   * their courses in the book, the other has simply not paid yet — so each
+   * gets a sheet with the way on.
+   *
+   * This is the only state in the group that may render a price, and it can
+   * only be set by a refusal the host walked into. That is the covenant's
+   * money rule with somewhere to live.
    */
-  const [spent, setSpent] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<{ text: string; offer: CaddyOffer } | null>(null);
   // Read back inside the streaming closure, which cannot see a state update it
   // made a moment ago.
-  const spentRef = useRef(false);
+  const refusedRef = useRef(false);
 
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
@@ -251,7 +261,7 @@ export function CaddyGroup({
     run(async () => {
       setThinking("");
       setDoing("");
-      spentRef.current = false;
+      refusedRef.current = false;
       const lost = "The caddy lost the ball. Ask again — this one's free.";
       let failure: { error: string; detail?: string } | null = null;
       let landed = false;
@@ -298,11 +308,11 @@ export function CaddyGroup({
       // stream that opens only to apologise.
       if (!response.body || !response.headers.get("content-type")?.includes("ndjson")) {
         const body = (await response.json().catch(() => null)) as
-          | { error?: string; spent?: boolean }
+          | { error?: string; offer?: CaddyOffer }
           | null;
-        if (body?.spent && body.error) {
-          spentRef.current = true;
-          setSpent(body.error);
+        if (body?.offer && body.error) {
+          refusedRef.current = true;
+          setRefusal({ text: body.error, offer: body.offer });
           return {};
         }
         return { error: body?.error ?? lost };
@@ -329,9 +339,9 @@ export function CaddyGroup({
           onSession(event.sessionId);
           await onCourse(event.course, []);
           landed = true;
-        } else if (event.spent) {
-          spentRef.current = true;
-          setSpent(event.error);
+        } else if (event.offer) {
+          refusedRef.current = true;
+          setRefusal({ text: event.error, offer: event.offer });
         } else {
           failure = { error: event.error, detail: event.detail };
         }
@@ -359,8 +369,8 @@ export function CaddyGroup({
       // anything; reading a property off it does not.
       const failed = failure as { error: string; detail?: string } | null;
       if (failed) return landed ? failed : await collect(failed.error, failed.detail);
-      // A spent fee is a finished run, not a failed one — the sheet says so.
-      return landed || spentRef.current ? {} : await collect(lost);
+      // A money refusal is a finished run, not a failed one — the sheet says so.
+      return landed || refusedRef.current ? {} : await collect(lost);
     });
   }
 
@@ -408,36 +418,6 @@ export function CaddyGroup({
     });
   }
 
-  /**
-   * More caddy, bought from the one screen that is allowed to offer it.
-   *
-   * Straight out to Stripe: fulfilment is the webhook's, never the client's,
-   * so nothing here grants anything and a host who closes the tab mid-payment
-   * has bought nothing. On the way back the drafting table reloads and the
-   * allowance is read fresh from the ledger.
-   */
-  const [toppingUp, setToppingUp] = useState(false);
-  async function topUp(lookupKey: string) {
-    setToppingUp(true);
-    const result = await startCaddyTopupCheckout(lookupKey);
-    if (result.url) {
-      window.location.href = result.url;
-      return;
-    }
-    setToppingUp(false);
-    // The sheet is already open and already saying something; replacing its
-    // line is the least startling place for a till that would not answer.
-    if (result.error) setSpent(result.error);
-  }
-
-  /**
-   * The sheet a spent fee gets instead of an error.
-   *
-   * Rendered beside every face the group can wear rather than replacing one,
-   * because the refusal can arrive from the brief screen *or* mid-plan and it
-   * should look the same either way. Two doors and no price: the course they
-   * have, and the table below that never cost anything.
-   */
   /**
    * Before a fresh card: what it replaces, and how long the fee has to run.
    *
@@ -492,79 +472,36 @@ export function CaddyGroup({
     </Sheet>
   );
 
-  const spentSheet = (
-    <Sheet open={spent !== null} onOpenChange={(open) => !open && setSpent(null)}>
-      <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
-        <SheetHeader className="pb-0 text-center">
-          <SheetTitle className="eyebrow text-center text-fairway">
-            The caddy
-          </SheetTitle>
-          <SheetDescription className="font-serif text-xl text-foreground not-italic">
-            Your courses are in the book
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-2 px-4 pb-6">
-          <p className="text-center text-xs text-muted-foreground">{spent}</p>
-          {allowance?.courseId ? (
-            <Link
-              href={`/courses/${allowance.courseId}`}
-              className={cn(buttonVariants(), "mt-1 w-full")}
-            >
-              Open the latest one
-            </Link>
-          ) : null}
-          <Link
-            href="/courses"
-            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
-          >
-            See the whole book
-          </Link>
-          <p className="text-center text-[10px] text-muted-foreground">
-            Changing them is free, and so is plotting one by hand.
-          </p>
-          {/* The one place more caddy is ever offered.
-              `docs/CADDY-TOPUPS.md` argues the rule this obeys: the covenant
-              forbids money *interrupting*, not money *answering*. This appears
-              only because the host asked for a course and could not have one,
-              it appears once, and the free ways on are named above it rather
-              than below. No count, no clock, no second ask. */}
-          <div className="mt-3 border-t border-border/60 pt-3">
-            <p className="text-center text-[10px] text-muted-foreground">
-              Or have the caddy plan more.
-            </p>
-            <div className="mt-2 flex gap-2">
-              {CADDY_TOPUP_OFFERS.map((offer) => (
-                <Button
-                  key={offer.lookupKey}
-                  type="button"
-                  variant="outline"
-                  className="h-auto flex-1 flex-col gap-0.5 py-2"
-                  disabled={toppingUp}
-                  onClick={() => topUp(offer.lookupKey)}
-                >
-                  <span className="font-serif text-base">{offer.price}</span>
-                  <span className="text-[10px] font-normal text-muted-foreground">
-                    {offer.rounds}
-                  </span>
-                  {/* The difference a host is actually choosing between, and
-                      the one the price and the round count cannot show: two of
-                      these rungs buy more goes at the course in the book, and
-                      one buys a second course to keep. */}
-                  {offer.keepsACourse ? (
-                    <span className="text-[9px] font-normal text-fairway">
-                      + a course to keep
-                    </span>
-                  ) : null}
-                </Button>
-              ))}
-            </div>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground">
-              Yours to keep — these don&apos;t run out with the day.
-            </p>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+  /**
+   * The green fee, offered because the host asked for a course and had not
+   * paid for one.
+   *
+   * The house's existing sheet, not a second telling of it: one price, one
+   * dot-leader menu, one plain exit. The whole of what makes this legitimate
+   * under the covenant is *when* it opens — a host who never asks the caddy
+   * for anything never sees a price on this page at all.
+   */
+  const feeSheet = (
+    <GreenFeeSheet
+      open={refusal?.offer === "fee"}
+      onOpenChange={(open) => !open && setRefusal(null)}
+    />
+  );
+
+  /**
+   * The other door: a fee that has planned every course it bought.
+   *
+   * Rendered beside every face the group can wear rather than replacing one,
+   * because the refusal can arrive from the brief screen *or* mid-plan and it
+   * should look the same either way.
+   */
+  const moreSheet = (
+    <CaddyMoreSheet
+      open={refusal?.offer === "more"}
+      onOpenChange={(open) => !open && setRefusal(null)}
+      courseId={allowance?.courseId}
+      standing={refusal?.text ?? ""}
+    />
   );
 
   // ——— The wait. Narrated, never spun: the line names the stage the
@@ -661,7 +598,8 @@ export function CaddyGroup({
       <div
         className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
       >
-        {spentSheet}
+        {moreSheet}
+        {feeSheet}
         <span className="eyebrow text-fairway">The caddy</span>
         <div>
           <FieldLabel htmlFor="caddy-ask">Tell the caddy</FieldLabel>
@@ -701,7 +639,13 @@ export function CaddyGroup({
     );
   }
 
-  // ——— Collapsed: one line on the menu, priced and entirely ignorable.
+  // ——— Collapsed: one line on the menu, unpriced and entirely ignorable.
+  //
+  // It used to carry `Green fee · £12` here, which is a price nobody asked
+  // for on a page a host opened to plot a course by hand. Money answers a
+  // refusal; it does not greet you. What the card still says is that the
+  // caddy is a members' thing and that everything under it is free — the
+  // disclosure without the pitch.
   if (!open) {
     return (
       <div
@@ -709,14 +653,7 @@ export function CaddyGroup({
       >
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow text-fairway">Members</span>
-          <span
-            className={cn(
-              "rounded-md border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] uppercase",
-              hasPass ? "border-fairway text-fairway" : "border-marker text-marker",
-            )}
-          >
-            {hasPass ? "Covered" : `Green fee · ${GREEN_FEE_PRICE}`}
-          </span>
+          {hasPass ? <CoveredBadge /> : null}
         </div>
         <div className="font-serif text-base leading-tight">
           Let the caddy plan it
@@ -748,7 +685,8 @@ export function CaddyGroup({
         className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
         data-testid="caddy-spent"
       >
-        {spentSheet}
+        {moreSheet}
+        {feeSheet}
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow text-fairway">The caddy</span>
           <CaddyUsage left={0} />
@@ -782,24 +720,17 @@ export function CaddyGroup({
         {/* "Covered" was the whole of what a host could see, and it went on
             saying Covered after the last course had been planned. A pass has
             two dimensions and this badge only ever showed one — so once there
-            is a fee, what it says is what is left on it. */}
-        {hasPass && allowance ? (
-          <CaddyUsage left={allowance.left} />
-        ) : (
-          <span
-            className={cn(
-              "rounded-md border px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] uppercase",
-              hasPass ? "border-fairway text-fairway" : "border-marker text-marker",
-            )}
-          >
-            {hasPass ? "Covered" : `Green fee · ${GREEN_FEE_PRICE}`}
-          </span>
-        )}
+            is a fee, what it says is what is left on it. With no fee it says
+            nothing at all: the price belongs to the refusal, not to the form. */}
+        {hasPass ? (
+          allowance ? <CaddyUsage left={allowance.left} /> : <CoveredBadge />
+        ) : null}
       </div>
       <div className="font-serif text-lg leading-tight text-balance">
         Your round, planned in twenty seconds
       </div>
-      {spentSheet}
+      {moreSheet}
+      {feeSheet}
 
       <div>
         <FieldLabel htmlFor="caddy-where">Where</FieldLabel>
@@ -939,10 +870,14 @@ export function CaddyGroup({
         />
       </div>
 
+      {/* This line quoted the price. It has been kept, without it: what a host
+          needs before they press the button is that the caddy is the members'
+          part and the rest of the page is not — the number is the refusal's
+          business, one tap away, on a sheet with a door in it. */}
       {hasPass ? null : (
         <p className="text-[10px] text-muted-foreground">
-          The caddy comes with the green fee — {GREEN_FEE_PRICE}, one round, the
-          whole table. Everything else on this page is free, and stays free.
+          The caddy is the members&apos; part — one round, the whole table.
+          Everything else on this page is free, and stays free.
         </p>
       )}
 
@@ -966,6 +901,23 @@ export function CaddyGroup({
         Not this round
       </button>
     </div>
+  );
+}
+
+/**
+ * A paid-up host's badge — the one state of the old fee badge that survives.
+ *
+ * The other state quoted a price, and that is the whole of what this
+ * extraction is for: `Covered` is a fact about the host, which the group may
+ * say whenever it likes. A price is an offer, which it may make only in
+ * answer to a refusal. Two things wearing one badge is how they came to be
+ * confused, so now only one of them has a badge.
+ */
+function CoveredBadge() {
+  return (
+    <span className="rounded-md border border-fairway px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] text-fairway uppercase">
+      Covered
+    </span>
   );
 }
 

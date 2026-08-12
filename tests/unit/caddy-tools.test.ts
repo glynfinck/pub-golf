@@ -8,7 +8,6 @@ import {
 import {
   CADDY_LOOP_MS,
   CADDY_TOOLS,
-  TOOL_MOVE,
   TOOL_NAME,
   TOOL_READ,
   TOOL_REMOVE,
@@ -307,30 +306,21 @@ describe("remove_hole and move_hole", () => {
     expect(applyDraftTool(TOOL_REMOVE, { hole: 9 }, BOARD, CANDIDATES).ok).toBe(false);
   });
 
-  it("moves a hole and keeps its dressing", () => {
-    const dressed: CaddyBoard = {
-      ...BOARD,
-      holes: [{ ...hole("p1"), drink: "Negroni", par: 2 }, hole("p2"), hole("p3")],
-    };
-    const outcome = applyDraftTool(TOOL_MOVE, { from: 1, to: 3 }, dressed, CANDIDATES);
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) return;
-    expect(outcome.board.holes.map((h) => h.candidateId)).toEqual(["p2", "p3", "p1"]);
-    expect(outcome.board.holes[2].drink).toBe("Negroni");
-  });
-
-  it("clamps a move past the end rather than refusing it", () => {
-    const outcome = applyDraftTool(TOOL_MOVE, { from: 1, to: 40 }, BOARD, CANDIDATES);
-    expect(outcome.ok).toBe(true);
-    if (outcome.ok) {
-      expect(outcome.board.holes.map((h) => h.candidateId)).toEqual(["p2", "p3", "p1"]);
-    }
+  it("offers the model no way to reorder the card", () => {
+    // The prompt told it "the walking order is not yours — leave the sequence
+    // alone" and then handed it `move_hole`, and `parsePlan` overwrote
+    // whatever it did anyway. A tool that contradicts its own instruction and
+    // cannot affect the outcome is tokens spent on confusion. The walk is
+    // arithmetic's; the model is a curator.
+    expect(CADDY_TOOLS.map((tool) => tool.name)).not.toContain("move_hole");
+    expect(isDraftTool("move_hole")).toBe(false);
+    const outcome = applyDraftTool("move_hole", { from: 1, to: 3 }, BOARD, CANDIDATES);
+    expect(outcome.ok).toBe(false);
   });
 
   it("never mutates the board it was given", () => {
     const before = JSON.stringify(BOARD);
     applyDraftTool(TOOL_REMOVE, { hole: 1 }, BOARD, CANDIDATES);
-    applyDraftTool(TOOL_MOVE, { from: 1, to: 3 }, BOARD, CANDIDATES);
     applyDraftTool(TOOL_SET, { hole: 1, candidateId: "p4", drink: "x", par: 3 }, BOARD, CANDIDATES);
     expect(JSON.stringify(BOARD)).toBe(before);
   });
@@ -420,7 +410,7 @@ describe("CADDY_TOOLS", () => {
     const names = CADDY_TOOLS.map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(
-      expect.arrayContaining([TOOL_READ, TOOL_SEARCH, TOOL_SET, TOOL_REMOVE, TOOL_MOVE, TOOL_NAME]),
+      expect.arrayContaining([TOOL_READ, TOOL_SEARCH, TOOL_SET, TOOL_REMOVE, TOOL_NAME]),
     );
   });
 

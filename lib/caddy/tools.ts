@@ -117,7 +117,6 @@ export const TOOL_SEARCH = "search_pubs";
 export const TOOL_READ = "read_draft";
 export const TOOL_SET = "set_hole";
 export const TOOL_REMOVE = "remove_hole";
-export const TOOL_MOVE = "move_hole";
 export const TOOL_NAME = "name_course";
 export const TOOL_ROUTE = "try_route";
 export const TOOL_ROUTES = "plan_routes";
@@ -334,20 +333,6 @@ export const CADDY_TOOLS = [
     },
   },
   {
-    name: TOOL_MOVE,
-    description:
-      "Move a hole to a different position in the walking order, keeping its dressing.",
-    input_schema: {
-      type: "object" as const,
-      additionalProperties: false,
-      required: ["from", "to"],
-      properties: {
-        from: { type: "integer" },
-        to: { type: "integer" },
-      },
-    },
-  },
-  {
     name: TOOL_ROUTE,
     description:
       "Route a set of pubs and see what it actually walks like: the order the club will put them in, every leg in minutes, how many legs come in under the host's minimum walk, and the longest run of consecutive short ones. Call it with candidateIds to try a set you have not committed to, or with nothing to measure what is on the table. This is the same router the finished card goes through, so what it reports is what the group will walk — use it before you hand a card over, and again after you change one.",
@@ -384,7 +369,17 @@ export const CADDY_TOOLS = [
 
 /** The four tools that change the draft — the ones this module answers. The
  * other two need a key and a session and belong to the server. */
-export const DRAFT_TOOLS: string[] = [TOOL_SET, TOOL_REMOVE, TOOL_MOVE, TOOL_NAME];
+/**
+ * The tools that change the card.
+ *
+ * `move_hole` used to be here and is deliberately gone. The prompt told the
+ * model "the walking order is not yours — leave the sequence alone" and then
+ * handed it a tool for exactly that, and `parsePlan` overwrote whatever it did
+ * anyway, running `orderWalk` and then `forwardOrder` over the result. So the
+ * tool could only ever cost tokens and confuse the instruction: the model is a
+ * curator and a tweaker, and the walk is arithmetic's.
+ */
+export const DRAFT_TOOLS: string[] = [TOOL_SET, TOOL_REMOVE, TOOL_NAME];
 
 export function isDraftTool(name: string): boolean {
   return DRAFT_TOOLS.includes(name);
@@ -601,28 +596,6 @@ export function applyDraftTool(
     };
   }
 
-  if (name === TOOL_MOVE) {
-    const from = readHoleNumber(input.from);
-    const to = readHoleNumber(input.to);
-    if (from === null || from > board.holes.length) {
-      return {
-        ok: false,
-        reply: `There is no hole ${input.from}. The card has ${board.holes.length}.`,
-      };
-    }
-    if (to === null) {
-      return { ok: false, reply: "Move it to which position? Count from 1." };
-    }
-    const target = Math.min(to, board.holes.length);
-    const holes = [...board.holes];
-    const [moved] = holes.splice(from - 1, 1);
-    holes.splice(target - 1, 0, moved);
-    return {
-      ok: true,
-      board: { ...board, holes },
-      reply: `Moved. That pub is hole ${target} now.`,
-    };
-  }
 
   return { ok: false, reply: `There is no tool called ${name}.` };
 }

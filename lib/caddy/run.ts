@@ -22,6 +22,7 @@ import {
 } from "@/lib/caddy/dossier";
 import { gatherPubs, type GatheredPub } from "@/lib/caddy/places";
 import { planFailureNote, type PlannedCourse } from "@/lib/caddy/plan";
+import type { CaddyOffer } from "@/lib/caddy/stream";
 import { ipBiasFrom } from "@/lib/pub-search";
 import { primaryLanguage } from "@/lib/locale";
 import { createClient } from "@/lib/supabase/server";
@@ -59,12 +60,12 @@ import { createClient } from "@/lib/supabase/server";
 
 export interface CaddyResult {
   /**
-   * This refusal is "you already have what you paid for", not "something went
-   * wrong". The drafting table shows these as a door to the course the host
-   * has rather than as an error toast — a dead end with no way on is the worst
+   * This refusal is about money, not about something going wrong, and this is
+   * the door that answers it. The drafting table shows these as a way on
+   * rather than as an error toast — a dead end with no way on is the worst
    * possible way to learn what a fee bought.
    */
-  spent?: boolean;
+  offer?: CaddyOffer;
   sessionId?: string;
   course?: PlannedCourse;
   /** Which holes moved on a tweak, so the screen can hold the rest still. */
@@ -522,7 +523,7 @@ export async function openPlan(rawBrief: unknown): Promise<
   // `detail` rides along for the same reason CaddyResult carries one: off
   // production the staging note may say which gate refused, while the player
   // always reads the same plain sentence.
-  | { error: string; spent?: boolean; detail?: string }
+  | { error: string; offer?: CaddyOffer; detail?: string }
   | {
       supabase: Awaited<ReturnType<typeof createClient>>;
       userId: string;
@@ -567,7 +568,7 @@ export async function openPlan(rawBrief: unknown): Promise<
     });
     return {
       error: covered === true ? SPENT_FEE : NEEDS_FEE,
-      spent: covered === true,
+      offer: covered === true ? "more" : "fee",
     };
   }
 
@@ -650,7 +651,7 @@ export async function askTheCaddy(input: {
   // are not free within an expired one, because then the day boundary buys
   // nothing.
   const { data: covered } = await supabase.rpc("holds_day_pass", { who: user.id });
-  if (covered !== true) return { error: PASS_RAN_OUT, spent: true };
+  if (covered !== true) return { error: PASS_RAN_OUT, offer: "more" };
 
   /**
    * And there has to be something left to spend, **before** the model is
@@ -683,7 +684,7 @@ export async function askTheCaddy(input: {
       quota: "course",
     });
     if (wanted === "tweak" || Number(courseLeft ?? 0) <= 0) {
-      return { error: SPENT_FEE, spent: true };
+      return { error: SPENT_FEE, offer: "more" };
     }
   }
 
@@ -912,7 +913,7 @@ export async function runTurn(input: {
   const { error } = await record(false, outcome.course);
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
-    if (error.code === "42501") return { error: FULL_SHIFT, spent: true };
+    if (error.code === "42501") return { error: FULL_SHIFT, offer: "more" };
     return { error: "The caddy couldn't file that card. Give it another go." };
   }
 
