@@ -137,8 +137,8 @@ is this Next version's middleware convention (see the `home` sibling repo).
   carry their own `penalties` jsonb — local rules, merged after the house
   list by `penaltyOptions(ruleset, hole)` and deduped on `reason`, which is
   the join key for the undo and the ×N count.
-- The green fee is a **day pass on its buyer**, not a line on a round
-  (`docs/MONETIZATION.md`): `entitlements` rows carry `round_id` null and
+- The green fee is a **day pass on its buyer**, not a line on a round:
+  `entitlements` rows carry `round_id` null and
   `expires_at`, and what a round keeps is `members` in its own ruleset
   snapshot — stamped by `startRound` at tee-off, guarded by
   `guard_round_members` (false→true only, UPDATE only, only while

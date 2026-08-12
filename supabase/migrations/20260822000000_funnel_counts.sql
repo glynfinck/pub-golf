@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- Phase one of the tariff: the denominators.
 --
--- MONETIZATION.md gates every later decision on rates — tips per finished
+-- Every later decision is gated on rates — tips per finished
 -- round, green fees per round created, recap shares per finished round — and
 -- a rate is useless without the number underneath it. This migration is the
 -- number underneath it, and it is deliberately the smallest thing that could

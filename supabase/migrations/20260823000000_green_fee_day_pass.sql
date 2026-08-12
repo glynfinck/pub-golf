@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- The green fee, as a day pass.
 --
--- MONETIZATION.md settled the shape: a green fee is not bought for a round,
+-- The shape this settled on: a green fee is not bought for a round,
 -- it is bought for a day. Every round its buyer hosts that tees off inside
 -- the window gets the extras, and once a round has teed off covered it stays
 -- covered forever — the pass expires (`entitlements.expires_at`, already on
