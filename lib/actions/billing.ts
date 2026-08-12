@@ -7,7 +7,9 @@ import {
   CADDY_TOPUP_LOOKUP_KEYS,
   dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
+  secondFeeRefusal,
 } from "@/lib/billing";
+import { caddyAllowance } from "@/lib/data/caddy";
 import { SITE_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -41,19 +43,46 @@ export async function startGreenFeeCheckout(): Promise<{
     return { error: "Hosting a round takes a Google sign-in." };
   }
 
-  // Already inside a window? A second pass on the same day buys nothing but
-  // refund admin. The schema cannot say this — "no overlapping live pass" is
-  // not a constraint — so it is said here, kindly, and the small print
-  // refunds anyone who gets past it.
+  /**
+   * Already holding one? A second pass buys nothing but refund admin. The
+   * schema cannot say this — "no overlapping live pass" is not a constraint —
+   * so it is said here, kindly, and the small print refunds anyone who gets
+   * past it.
+   *
+   * **A row is not the question, though; what the row can still do is.** Since
+   * the fee's day starts at tee-off rather than at purchase, `expires_at` is
+   * null on a fee that has not been used — and a null read as "live" locked
+   * out the one host who most wanted to buy again: somebody who bought a fee,
+   * planned their courses, spent every credit and never teed a round off. That
+   * fee is finished in every sense except the one column, and the block told
+   * them the thing they had just used up was "already paid".
+   *
+   * So a *running* fee blocks — it is doing something, all day, and a second
+   * one would overlap it. A dormant one blocks only while it still has
+   * something to spend.
+   */
   const { data: live } = await supabase
     .from("entitlements")
-    .select("id")
+    .select("expires_at")
     .eq("user_id", user.id)
     .eq("kind", "green_fee")
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order("expires_at", { ascending: true, nullsFirst: false })
     .limit(1)
     .maybeSingle();
-  if (live) return { error: "Your green fee is already paid — it runs all day." };
+  // A dormant fee's credits are what is left of it, read through the same
+  // function the drafting table reads — which answers "yes, plenty" when the
+  // ledger is mid-deploy, and blocking is the safe side of that guess: a
+  // purchase refused wrongly is a sentence, a purchase allowed wrongly is a
+  // charge. A running fee never asks, so this only costs a round trip on the
+  // one branch that needs it.
+  const dormant = live !== null && live.expires_at === null;
+  const allowance = dormant ? await caddyAllowance() : null;
+  const refusal = secondFeeRefusal({
+    liveExpiresAt: live ? live.expires_at : undefined,
+    canStillPlan: allowance !== null && (allowance.canPlan || allowance.tweaks > 0),
+  });
+  if (refusal) return { error: refusal };
 
   try {
     const stripe = new Stripe(secretKey as string);

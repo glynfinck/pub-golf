@@ -121,6 +121,43 @@ export function dayPassLive(
 }
 
 /**
+ * Why a second green fee is refused, or null to let the sale through.
+ *
+ * Pure, and split out of `startGreenFeeCheckout` because it is the one piece
+ * of that action with an opinion — everything else is a Stripe call. It had a
+ * bug that only a test would have caught, and there was no way to write one.
+ *
+ * The bug: since the fee's day starts at tee-off rather than at purchase,
+ * `expires_at` is null on a fee nobody has used, and the guard read null as
+ * "live". So a host who bought a fee, planned their courses, spent every
+ * credit and never teed a round off was locked out of buying another — told
+ * that the thing they had just used up was "already paid".
+ *
+ * A **running** fee refuses: it is doing something, all day, and a second
+ * would overlap it. A **dormant** fee refuses only while it can still do
+ * something. A dormant fee with nothing left is finished in every sense except
+ * the column, and finished things do not block sales.
+ */
+export function secondFeeRefusal(input: {
+  /** The buyer's most relevant unexpired fee: its expiry, `null` when the fee
+   * is dormant, or `undefined` when they hold none at all. */
+  liveExpiresAt: string | null | undefined;
+  /** Whether that fee can still plan or tweak anything. Only consulted for a
+   * dormant one — a running fee blocks whatever its ledger says, because the
+   * day pass is more than the caddy. */
+  canStillPlan: boolean;
+}): string | null {
+  if (input.liveExpiresAt === undefined) return null;
+  if (input.liveExpiresAt !== null) {
+    return "Your green fee is already paid — it runs all day.";
+  }
+  if (input.canStillPlan) {
+    return "Your green fee is already paid — its day starts when you tee off.";
+  }
+  return null;
+}
+
+/**
  * What the green fee buys today.
  *
  * Listed on the members' options group and nowhere else — and it lists what
