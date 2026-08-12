@@ -551,7 +551,14 @@ describe("when the green fee's day starts", () => {
   });
 
   it("starts the day, once, and dates the credits with it", async () => {
-    const { error } = await host.db.rpc("activate_day_pass", {
+    // Through `service_role`, because that is the only door there is:
+    // `20260912000000` revoked execute from `authenticated` and `anon` when
+    // this became reachable with an arbitrary uuid, and the round that tees
+    // off reaches it through `guard_round_members`, which is SECURITY
+    // DEFINER. What this block tests is the function's *behaviour*; that a
+    // host may not call it directly is asserted in `rls-open-doors.test.ts`,
+    // which is where a permission question belongs.
+    const { error } = await adminClient().rpc("activate_day_pass", {
       who: host.userId,
     });
     expect(error).toBeNull();
@@ -579,9 +586,13 @@ describe("when the green fee's day starts", () => {
   it("does not restart a day already running", async () => {
     // Idempotent by construction: it only ever matches a row with a null
     // `activated_at`. A second round the same night must not buy another day.
-    await host.db.rpc("activate_day_pass", { who: host.userId });
+    // Both calls used to be refused, and the assertion compared one null to
+    // another and went green — a test that passed for the wrong reason, which
+    // CI could not tell from one that worked.
+    await adminClient().rpc("activate_day_pass", { who: host.userId });
     const first = await feeRow();
-    await host.db.rpc("activate_day_pass", { who: host.userId });
+    expect(first.activated_at).not.toBeNull();
+    await adminClient().rpc("activate_day_pass", { who: host.userId });
     expect((await feeRow()).activated_at).toBe(first.activated_at);
     expect((await feeRow()).expires_at).toBe(first.expires_at);
   });
@@ -598,7 +609,7 @@ describe("when the green fee's day starts", () => {
       })
       .select("id")
       .single();
-    await host.db.rpc("activate_day_pass", { who: host.userId });
+    await adminClient().rpc("activate_day_pass", { who: host.userId });
 
     expect((await feeRow()).activated_at).not.toBeNull();
     const { data: newer } = await adminClient()
@@ -613,7 +624,7 @@ describe("when the green fee's day starts", () => {
     // Not an error — a round teeing off uncovered reaches this and must not
     // fail because of it.
     const nobody = await signedInUser("No Fee At All");
-    const { error } = await nobody.db.rpc("activate_day_pass", {
+    const { error } = await adminClient().rpc("activate_day_pass", {
       who: nobody.userId,
     });
     expect(error).toBeNull();
