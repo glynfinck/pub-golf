@@ -1,0 +1,498 @@
+import { randomUUID } from "node:crypto";
+
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { CADDY_GRANT_SIZE, CADDY_QUOTAS } from "@/lib/caddy/credits";
+import { adminClient, signedInUser, type Actor } from "@/tests/support/clients";
+
+import { expectDenied } from "./helpers/assert";
+
+/**
+ * What a green fee buys, and what a host is allowed to keep.
+ *
+ * The rule: **one caddy course, four revisions of it, sixty tweaks — and the
+ * host keeps one course.** Every clause of that was, until `20260905000000`
+ * and `20260906000000`, either unwritten or wrong.
+ *
+ *   The first plan spent a re-design like any other card, so a fee sold as
+ *   "one course plus four revisions" granted four goes in total.
+ *
+ *   And nothing bounded how many courses a fee could *keep*.
+ *   `caddy_courses_per_fee` and `guard_caddy_credit` were dropped when the
+ *   counted ledger landed and nothing took the job over, so the invariant
+ *   lived in the drafting table's React state — where it was lost on a
+ *   reload. A real fee on preview produced two saved courses.
+ *
+ * Both halves are enforced in Postgres now, and this suite is why that
+ * matters: every assertion below goes through PostgREST on a host's own
+ * session, which is the only path the app has. A rule the client keeps is a
+ * rule anyone with the network tab can break.
+ *
+ * House rules for the tier hold throughout: `adminClient()` seeds and reads
+ * back and is never the subject, and a blocked write is proved by re-reading
+ * the row rather than by a null error.
+ *
+ * **One deliberate departure.** `expectDenied` refuses to count `23505`,
+ * because a unique violation usually means a fixture collided rather than an
+ * attack being stopped. Here it *is* the refusal — the one-course rule is a
+ * unique partial index — so those cases assert the code directly and say so.
+ */
+
+const HOUR = 3_600_000;
+
+/** A green fee the way the webhook writes one. `grant_caddy_package` fires on
+ * insert, so the grants below are the trigger's work, never the fixture's. */
+async function seedFee(buyer: Actor, hours = 24) {
+  const { data, error } = await adminClient()
+    .from("entitlements")
+    .insert({
+      user_id: buyer.userId,
+      kind: "green_fee",
+      stripe_event_id: `evt_quota_${randomUUID()}`,
+      expires_at: new Date(Date.now() + hours * HOUR).toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+async function seedSession(host: Actor, entitlementId: string | null) {
+  const { data, error } = await adminClient()
+    .from("caddy_sessions")
+    .insert({
+      host: host.userId,
+      entitlement_id: entitlementId,
+      brief: { where: "Shoreditch", holes: 9 },
+      dossier: [{ id: "p1", name: "The Old Blue Last" }],
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+async function seedCourse(owner: Actor, name = "The Shoreditch Nine") {
+  const { data, error } = await adminClient()
+    .from("courses")
+    .insert({ owner: owner.userId, name })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+/** One turn, as the pipeline writes it — through the host's own session, so
+ * `guard_caddy_spend` runs as `authenticated` rather than taking the
+ * service_role exemption. That exemption is why seeding a turn with
+ * `adminClient()` would prove nothing here. */
+async function writeTurn(
+  host: Actor,
+  sessionId: string,
+  kind: "plan" | "roll" | "tweak",
+  over: Record<string, unknown> = {},
+) {
+  return host.db
+    .from("caddy_turns")
+    .insert({
+      session_id: sessionId,
+      host: host.userId,
+      kind,
+      result: { name: "The Crawl", holes: [] },
+      model: "claude-sonnet-5",
+      input_tokens: 1_000,
+      output_tokens: 1_000,
+      ...over,
+    })
+    .select("id")
+    .single();
+}
+
+/** What the ledger says is left, asked the way the screen asks it. */
+async function balance(host: Actor, quota: (typeof CADDY_QUOTAS)[number]) {
+  const { data, error } = await host.db.rpc("caddy_balance", {
+    who: host.userId,
+    quota,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** Which grant paid for a turn — the question the whole ladder is about. */
+async function quotaSpentOn(turnId: string) {
+  const { data, error } = await adminClient()
+    .from("caddy_spends")
+    .select("grant_id, caddy_grants(quota)")
+    .eq("turn_id", turnId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { caddy_grants: { quota: string } | null } | null)?.caddy_grants
+    ?.quota ?? null;
+}
+
+async function storedCourseId(sessionId: string) {
+  const { data, error } = await adminClient()
+    .from("caddy_sessions")
+    .select("course_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.course_id ?? null;
+}
+
+describe("what a green fee grants", () => {
+  let host: Actor;
+
+  beforeEach(async () => {
+    host = await signedInUser("Fee Holder");
+    await seedFee(host);
+  });
+
+  it("mints one course, four revisions and sixty tweaks", async () => {
+    expect(await balance(host, "course")).toBe(1);
+    expect(await balance(host, "redesign")).toBe(4);
+    expect(await balance(host, "tweak")).toBe(60);
+  });
+
+  it("agrees with the copy that quotes it", async () => {
+    // `CADDY_GRANT_SIZE` is a hand-kept mirror of `caddy_grant_size()`, and a
+    // number the screen misquotes is a host told they have something they do
+    // not. Every quota, so a new one cannot be added on one side alone.
+    for (const quota of CADDY_QUOTAS) {
+      const { data, error } = await adminClient().rpc("caddy_grant_size", {
+        quota,
+      });
+      expect(error).toBeNull();
+      expect(Number(data), `caddy_grant_size(${quota})`).toBe(
+        CADDY_GRANT_SIZE[quota],
+      );
+    }
+  });
+
+  it("has exactly the quotas the code knows about", async () => {
+    // The mirror test above walks `CADDY_QUOTAS` and would miss a quota that
+    // exists in Postgres and not in TypeScript — which is the direction that
+    // actually happens, because a migration ships before the code that reads
+    // it. `grant_caddy_package` iterates `enum_range`, so an unknown value
+    // would be minted with a null amount and read as an unlimited grant.
+    const { data, error } = await adminClient().rpc("caddy_grant_size", {
+      quota: "course",
+    });
+    expect(error).toBeNull();
+    expect(Number(data)).toBe(1);
+    // Every grant this fee minted is a quota the code can name.
+    const { data: grants } = await adminClient()
+      .from("caddy_grants")
+      .select("quota, amount")
+      .eq("host", host.userId);
+    for (const grant of grants ?? []) {
+      expect(CADDY_QUOTAS as readonly string[]).toContain(grant.quota);
+      // A null or zero amount reads as unlimited in the balance query, which
+      // is the failure mode a missing `case` arm produces.
+      expect(grant.amount, `${grant.quota} amount`).toBeGreaterThan(0);
+    }
+  });
+
+  it("expires everything with the fee, because a day pass is a day", async () => {
+    const { data, error } = await adminClient()
+      .from("caddy_grants")
+      .select("quota, expires_at")
+      .eq("host", host.userId);
+    if (error) throw error;
+    expect(data).toHaveLength(CADDY_QUOTAS.length);
+    for (const grant of data ?? []) {
+      expect(grant.expires_at, `${grant.quota} never expires`).not.toBeNull();
+    }
+  });
+
+  it("counts nothing from a fee that has run out", async () => {
+    const spent = await signedInUser("Yesterday's Host");
+    await adminClient()
+      .from("entitlements")
+      .insert({
+        user_id: spent.userId,
+        kind: "green_fee",
+        stripe_event_id: `evt_quota_${randomUUID()}`,
+        expires_at: new Date(Date.now() - HOUR).toISOString(),
+      });
+    expect(await balance(spent, "course")).toBe(0);
+    expect(await balance(spent, "redesign")).toBe(0);
+  });
+});
+
+/**
+ * The ladder: a card takes the course credit first, then the revisions.
+ *
+ * That ordering is what makes "one course plus four revisions" true without a
+ * second code path — and it is the thing a test has to pin, because from the
+ * outside five goes look identical whichever grant paid for each.
+ */
+describe("the spend ladder", () => {
+  let host: Actor;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    host = await signedInUser("Ladder Host");
+    const fee = await seedFee(host);
+    sessionId = await seedSession(host, fee);
+  });
+
+  it("takes the course credit for the first card", async () => {
+    const { data, error } = await writeTurn(host, sessionId, "plan");
+    expect(error).toBeNull();
+    expect(await quotaSpentOn(data!.id)).toBe("course");
+    expect(await balance(host, "course")).toBe(0);
+    expect(await balance(host, "redesign")).toBe(4);
+  });
+
+  it("takes a revision for every card after it", async () => {
+    const first = await writeTurn(host, sessionId, "plan");
+    expect(await quotaSpentOn(first.data!.id)).toBe("course");
+    for (let i = 0; i < 4; i += 1) {
+      const next = await writeTurn(host, sessionId, "roll");
+      expect(next.error, `roll ${i + 1}`).toBeNull();
+      expect(await quotaSpentOn(next.data!.id)).toBe("redesign");
+    }
+    expect(await balance(host, "redesign")).toBe(0);
+  });
+
+  it("gives five whole cards and refuses the sixth", async () => {
+    // The number the fee is sold on. One course plus four revisions.
+    await writeTurn(host, sessionId, "plan");
+    for (let i = 0; i < 4; i += 1) await writeTurn(host, sessionId, "roll");
+
+    const sixth = await writeTurn(host, sessionId, "roll");
+    expectDenied(sixth.error);
+    expect(sixth.error?.message).toMatch(/revisions/i);
+  });
+
+  it("never lets a tweak eat a card, or a card eat a tweak", async () => {
+    const tweak = await writeTurn(host, sessionId, "tweak");
+    expect(await quotaSpentOn(tweak.data!.id)).toBe("tweak");
+    // The card ladder is untouched by it — which is the whole reason tweaks
+    // are their own quota rather than a fraction of a re-design.
+    expect(await balance(host, "course")).toBe(1);
+    expect(await balance(host, "redesign")).toBe(4);
+    expect(await balance(host, "tweak")).toBe(59);
+  });
+
+  it("charges nothing for a turn that produced no card", async () => {
+    // The promise the `failed` column keeps: the tokens are still owed to the
+    // vendor and still recorded, but the host is not charged a credit for a
+    // card they never received.
+    const failed = await writeTurn(host, sessionId, "plan", {
+      failed: true,
+      result: {},
+    });
+    expect(failed.error).toBeNull();
+    expect(await quotaSpentOn(failed.data!.id)).toBeNull();
+    expect(await balance(host, "course")).toBe(1);
+  });
+
+  it("refuses a host with no fee at all", async () => {
+    const broke = await signedInUser("No Fee");
+    const theirs = await seedSession(broke, null);
+    const turn = await writeTurn(broke, theirs, "plan");
+    expectDenied(turn.error);
+  });
+
+  it("holds under two cards racing for the last credit", async () => {
+    // 20260816's scar, in the shape this change gave it. The lock key used to
+    // be per-quota; the course→revision fallback means a plan and a roll can
+    // now reach for *different* rungs of the same ladder at the same instant,
+    // so the key had to widen to the ladder. Two turns at once on a fee with
+    // one card left is exactly that race.
+    const solo = await signedInUser("Racing Host");
+    const fee = await seedFee(solo);
+    const theirs = await seedSession(solo, fee);
+    // Burn everything but one.
+    await writeTurn(solo, theirs, "plan");
+    for (let i = 0; i < 3; i += 1) await writeTurn(solo, theirs, "roll");
+    expect(await balance(solo, "redesign")).toBe(1);
+
+    const both = await Promise.all([
+      writeTurn(solo, theirs, "roll"),
+      writeTurn(solo, theirs, "roll"),
+    ]);
+    const landed = both.filter((r) => r.error === null);
+    expect(landed, "exactly one card should get the last credit").toHaveLength(1);
+    expect(await balance(solo, "redesign")).toBe(0);
+  });
+});
+
+/**
+ * One filed course per fee.
+ *
+ * The half that was never enforced anywhere, and the reason a single fee on
+ * preview has two saved courses. Four revisions are four attempts at the same
+ * course; four of them amounting to four *kept* courses would be four
+ * evenings' work sold for the price of one.
+ */
+describe("a fee files one course", () => {
+  let host: Actor;
+  let fee: string;
+
+  beforeEach(async () => {
+    host = await signedInUser("One Course Host");
+    fee = await seedFee(host);
+  });
+
+  it("lets the fee file its course", async () => {
+    const sessionId = await seedSession(host, fee);
+    const courseId = await seedCourse(host);
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: courseId })
+      .eq("id", sessionId);
+    expect(error).toBeNull();
+    expect(await storedCourseId(sessionId)).toBe(courseId);
+  });
+
+  it("refuses a second course on the same fee", async () => {
+    // The bug, exactly: a host plans twice, so there are two sessions under
+    // one fee, and the second files a course of its own.
+    const first = await seedSession(host, fee);
+    const second = await seedSession(host, fee);
+    await host.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "The First") })
+      .eq("id", first);
+
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "The Second") })
+      .eq("id", second);
+
+    // 23505 rather than 42501: this rule is a unique partial index, not a
+    // policy, so `expectDenied` deliberately does not recognise it. Asserted
+    // directly here — and the re-read is what actually proves it, per the
+    // tier's own rule about writes that report success.
+    expect(error?.code).toBe("23505");
+    expect(await storedCourseId(second)).toBeNull();
+  });
+
+  it("frees the fee when the course is torn out of the book", async () => {
+    // The release valve, and it is deliberate rather than incidental: a host
+    // who does not like what they got should be able to bin it and spend a
+    // revision on something else. `course_id` is `on delete set null`, so the
+    // slot opens the moment the course goes.
+    //
+    // **This test found a real bug, and it is the reason to write it.** The
+    // one-way guard from `20260827000000` fired on the foreign key's own
+    // `set null` — that action runs inside the host's request, where the JWT
+    // still says `authenticated` — so *every* caddy-planned course was
+    // undeletable, and the host was told "A caddy session keeps the course it
+    // filed" for pressing a button about their own book. `20260907000000`
+    // narrows the guard to what it was always about: re-pointing. See the two
+    // tests below, which are the half of it that must not be lost.
+    const first = await seedSession(host, fee);
+    const doomed = await seedCourse(host, "The Regrettable");
+    await host.db
+      .from("caddy_sessions")
+      .update({ course_id: doomed })
+      .eq("id", first);
+
+    const { error: tornOut } = await host.db
+      .from("courses")
+      .delete()
+      .eq("id", doomed);
+    expect(tornOut).toBeNull();
+    expect(await storedCourseId(first)).toBeNull();
+
+    const second = await seedSession(host, fee);
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "The Replacement") })
+      .eq("id", second);
+    expect(error).toBeNull();
+  });
+
+  it("counts each fee separately", async () => {
+    // Two fees, two courses. The rule is per fee, not per host — somebody who
+    // pays twice gets what they paid for twice.
+    const secondFee = await seedFee(host);
+    const a = await seedSession(host, fee);
+    const b = await seedSession(host, secondFee);
+    const first = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "Fee One") })
+      .eq("id", a);
+    const second = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "Fee Two") })
+      .eq("id", b);
+    expect(first.error).toBeNull();
+    expect(second.error).toBeNull();
+    expect(await storedCourseId(b)).not.toBeNull();
+  });
+
+  it("does not constrain a session with no fee behind it", async () => {
+    // Nulls are distinct in a unique index, and the column is nullable. Worth
+    // pinning: a comped session is the obvious future one, and it should not
+    // silently share a slot with every other comped session on the stack.
+    const a = await seedSession(host, null);
+    const b = await seedSession(host, null);
+    await adminClient()
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "Comped One") })
+      .eq("id", a);
+    const { error } = await adminClient()
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(host, "Comped Two") })
+      .eq("id", b);
+    expect(error).toBeNull();
+  });
+
+  it("still refuses a link walked to a different course", async () => {
+    // The rule `20260827000000` exists for, and the one the delete fix must
+    // not cost. A movable link is a way to make the duplicate it prevents.
+    const sessionId = await seedSession(host, fee);
+    const first = await seedCourse(host, "The One It Filed");
+    await host.db
+      .from("caddy_sessions")
+      .update({ course_id: first })
+      .eq("id", sessionId);
+
+    const elsewhere = await seedCourse(host, "Somewhere Else");
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: elsewhere })
+      .eq("id", sessionId);
+    expectDenied(error);
+    expect(await storedCourseId(sessionId)).toBe(first);
+  });
+
+  it("still refuses the link being nulled by hand", async () => {
+    // The obvious way round the rule above: clear it, then point somewhere
+    // else. `course_id` is in the host's column grant, so this has to be
+    // refused explicitly — and it is what makes "the course is gone" the only
+    // way the link can be cleared.
+    const sessionId = await seedSession(host, fee);
+    const filed = await seedCourse(host, "Still In The Book");
+    await host.db
+      .from("caddy_sessions")
+      .update({ course_id: filed })
+      .eq("id", sessionId);
+
+    const { error } = await host.db
+      .from("caddy_sessions")
+      .update({ course_id: null })
+      .eq("id", sessionId);
+    expectDenied(error);
+    expect(await storedCourseId(sessionId)).toBe(filed);
+  });
+
+  it("keeps another host's fee out of it entirely", async () => {
+    // RLS first, rule second. A stranger cannot see this session, so their
+    // write matches no rows — silence rather than a constraint violation, and
+    // the stored row is what proves it.
+    const stranger = await signedInUser("Passing Stranger");
+    const sessionId = await seedSession(host, fee);
+    const { error } = await stranger.db
+      .from("caddy_sessions")
+      .update({ course_id: await seedCourse(stranger, "Not Yours") })
+      .eq("id", sessionId);
+    expect(error).toBeNull();
+    expect(await storedCourseId(sessionId)).toBeNull();
+  });
+});

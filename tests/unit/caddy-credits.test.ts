@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { CADDY_TOPUP_LOOKUP_KEYS, CADDY_TOPUPS } from "@/lib/billing";
-import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
+import {
+  CADDY_COURSES_PER_FEE,
+  CADDY_GRANT_SIZE,
+  CADDY_QUOTAS,
+  CADDY_TOPUP_OFFERS,
+} from "@/lib/caddy/credits";
 import { sticker, TARIFF } from "@/lib/tariff";
 
 describe("the top-up offers and the tariff agree", () => {
@@ -71,5 +76,44 @@ describe("the button counts what the purchase grants", () => {
       (offer) => CADDY_TOPUPS[offer.lookupKey].redesign === 1,
     );
     expect(single?.rounds).toBe("1 round");
+  });
+});
+
+/**
+ * The shape of what a fee sells, held together on the TypeScript side.
+ *
+ * The db tier proves these equal `caddy_grant_size()`; this proves they are
+ * *coherent* — that the numbers make the product the tariff describes. Both
+ * matter, and only one of them needs a database.
+ */
+describe("the quotas a fee is made of", () => {
+  it("names every quota the grant table sizes", () => {
+    // `Record<CaddyQuota, number>` makes this a compile error rather than a
+    // failure, which is the point — but a quota added to the enum and given a
+    // size of zero would compile and read as "granted nothing".
+    for (const quota of CADDY_QUOTAS) {
+      expect(CADDY_GRANT_SIZE[quota], quota).toBeGreaterThan(0);
+      expect(Number.isInteger(CADDY_GRANT_SIZE[quota]), quota).toBe(true);
+    }
+  });
+
+  it("sells one course and four revisions of it", () => {
+    expect(CADDY_GRANT_SIZE.course).toBe(1);
+    expect(CADDY_COURSES_PER_FEE).toBe(5);
+  });
+
+  it("never lets a top-up buy a second saved course", () => {
+    // The invariant seen from the top-up ladder, and the reason it is worth
+    // stating: a fee files one course (`caddy_sessions_one_course_per_fee`),
+    // and a top-up grants re-designs and tweaks — never a course credit. So
+    // "another round" is another go at the card in hand, not a second card to
+    // keep. A course credit appearing in `CADDY_TOPUPS` would quietly make the
+    // rule per-purchase instead of per-fee.
+    for (const offer of CADDY_TOPUP_OFFERS) {
+      expect(
+        Object.keys(CADDY_TOPUPS[offer.lookupKey]),
+        `${offer.lookupKey} grants`,
+      ).not.toContain("course");
+    }
   });
 });
