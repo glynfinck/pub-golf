@@ -271,7 +271,7 @@ export function patchBlock(
     holes: brief.holes,
     startId: candidateIdFor(candidates, brief.startVenueId),
     finishId: candidateIdFor(candidates, brief.finishVenueId),
-    targetKm: targetKmFor(brief.stretch, brief.holes),
+    targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
   });
   const routes = routesBlock(graph);
   return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);

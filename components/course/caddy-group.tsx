@@ -35,7 +35,7 @@ import { startCaddyTopupCheckout } from "@/lib/actions/billing";
 import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
-import { stretchWarning } from "@/lib/caddy/brief";
+import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
@@ -120,7 +120,17 @@ export function CaddyGroup({
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
-  const stretchNote = stretchMeaning(stretch);
+  // Once a finish is named the pace stops being a choice and becomes a
+  // reading: the destination and the hole count decide it between them, and
+  // the chips would otherwise sit there claiming otherwise. Nothing is
+  // disabled — a host who changes their mind about the pace is really telling
+  // us to change the hole count, and seeing both move says so better than a
+  // greyed-out control would.
+  const derivedPace = reach && whereTo.trim() ? paceForReach(reach.km, holes) : null;
+  const stretchNote =
+    derivedPace === null
+      ? stretchMeaning(stretch)
+      : `${paceNote(derivedPace)} Set by finishing in ${whereTo.trim()}.`;
 
   /**
    * Where the caddy is about to look, resolved as the host types.
@@ -199,6 +209,9 @@ export function CaddyGroup({
           body: JSON.stringify({
             where,
             whereTo,
+            // Resolved on this screen, so the plan aims at the place the host
+            // watched the ring reach rather than at a pace they did not choose.
+            reachKm: reach?.km ?? 0,
             holes,
             vibe,
             particulars,
@@ -653,7 +666,7 @@ export function CaddyGroup({
             is something worth saying — a warning on every plan is a warning
             nobody reads — and it appears *before* the fee is spent, which is
             the whole point of doing the arithmetic on the brief screen. */}
-        {reach && reach.km > 0 ? (
+        {reach && whereTo.trim() ? (
           <StretchNote km={reach.km} holes={holes} />
         ) : null}
       </div>
@@ -782,9 +795,23 @@ export function CaddyGroup({
   );
 }
 
-/** The stretch warning, or nothing. Split out so the form stays a form. */
+/**
+ * What the destination does to the pace, and the warning if it is a lot.
+ *
+ * Both lines, because they are the same fact at two volumes. The first always
+ * shows once a finish is named — the host has just handed over the number that
+ * sets the pace, and watching it change is how they learn the two controls are
+ * one control. The second only shows when the walk is long enough to be worth
+ * a second thought.
+ */
 function StretchNote({ km, holes }: { km: number; holes: number }) {
-  const note = stretchWarning(km, holes);
-  if (!note) return null;
-  return <p className="mt-2 text-[10px] text-hazard">{note}</p>;
+  const warning = stretchWarning(km, holes);
+  return (
+    <>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        Finishing there sets the pace: {paceNote(paceForReach(km, holes)).toLowerCase()}
+      </p>
+      {warning ? <p className="mt-1 text-[10px] text-hazard">{warning}</p> : null}
+    </>
+  );
 }

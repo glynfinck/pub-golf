@@ -4,6 +4,7 @@ import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { CADDY_SYSTEM_TOOLS, patchBlock } from "@/lib/caddy/plan";
 import {
   buildRouteGraph,
+  driftsFor,
   routesBlock,
   targetKmFor,
   kindOf,
@@ -580,5 +581,62 @@ describe("the caddy is told to name the course", () => {
 
   it("tells it to make the name this round's rather than any round's", () => {
     expect(CADDY_SYSTEM_TOOLS).toMatch(/this round's rather than any round's/);
+  });
+});
+
+describe("the destination outranks the pace", () => {
+  it("aims at the place the host named, not the chip they picked", () => {
+    // The bug this closes, in one assertion: a host asked for Covent Garden
+    // and for a steady five minutes, and got the tight round the pace implied
+    // because that was the only number the router read. Pace times legs *is*
+    // distance, so the two controls set one value and the named place is the
+    // concrete one.
+    const steadyOverNine = targetKmFor(5, 9);
+    expect(steadyOverNine).toBeCloseTo(3, 1);
+    // With a destination four kilometres out, the target follows the place.
+    expect(targetKmFor(5, 9, 4)).toBeGreaterThan(steadyOverNine);
+    expect(targetKmFor(5, 9, 4)).toBeCloseTo(4.6, 1);
+  });
+
+  it("leaves the pace in charge when no finish is named", () => {
+    expect(targetKmFor(5, 9, 0)).toBe(targetKmFor(5, 9));
+  });
+
+  it("allows some slack over the straight line", () => {
+    // A walk forced to be exactly as the crow flies could not visit anything,
+    // since pubs are not on the line between two places.
+    expect(targetKmFor(5, 9, 4)).toBeGreaterThan(4);
+  });
+});
+
+describe("driftsFor", () => {
+  it("adds an appetite for ground the fixed ladder cannot reach", () => {
+    // A four-kilometre round over nine holes needs half-kilometre legs, and
+    // no fixed drift asks for that — the host got the tightest route the patch
+    // allowed and no way to say otherwise.
+    const long = driftsFor(4, 9);
+    expect(Math.max(...long)).toBeGreaterThan(1.4);
+  });
+
+  it("keeps the tight options too", () => {
+    // A long target should not stop the router offering something compact:
+    // the model still chooses, and a menu of one is not a menu.
+    const long = driftsFor(4, 9);
+    expect(long).toContain(0.2);
+    expect(long.length).toBeGreaterThan(3);
+  });
+
+  it("leaves an ordinary round alone", () => {
+    expect(driftsFor(null, 9)).toHaveLength(3);
+    expect(driftsFor(0, 9)).toHaveLength(3);
+  });
+
+  it("never asks for a negative or absurd appetite", () => {
+    for (const km of [0.1, 1, 4, 40]) {
+      for (const drift of driftsFor(km, 9)) {
+        expect(drift).toBeGreaterThan(0);
+        expect(Number.isFinite(drift)).toBe(true);
+      }
+    }
   });
 });

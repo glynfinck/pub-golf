@@ -133,6 +133,32 @@ const DIVERSITY_FLOOR = 0.3;
  */
 const SNAKE_DRIFTS = [0.2, 0.7, 1.4];
 
+/**
+ * The drifts to try for a given brief.
+ *
+ * The fixed ladder above covers ordinary rounds and cannot cover a long one.
+ * `drift` is kilometres of detour accepted per kilometre of progress, so a
+ * round that has to reach four kilometres needs a far greater appetite for
+ * ground than one crossing a neighbourhood — and with only the fixed values on
+ * offer, a host who asked for Covent Garden got the tightest route the patch
+ * allowed and no way to say otherwise.
+ *
+ * So the ladder gains a rung sized to the leg the brief actually demands. It
+ * is added rather than substituted: a long target should not stop the router
+ * also offering something tighter, since the model still chooses.
+ */
+export function driftsFor(targetKm: number | null, holes: number): number[] {
+  if (!targetKm || targetKm <= 0) return SNAKE_DRIFTS;
+  const perLeg = targetKm / Math.max(holes - 1, 1);
+  // Above 1.0 a forward step costs less than nothing, which is what makes the
+  // program reach for distant pubs rather than merely accept them — so a round
+  // that has to cover ground needs to start there rather than end there.
+  const demanded = Math.round(Math.max(0.2, 0.6 + perLeg * 2) * 100) / 100;
+  return SNAKE_DRIFTS.includes(demanded)
+    ? SNAKE_DRIFTS
+    : [...SNAKE_DRIFTS, demanded];
+}
+
 /** Chains give themselves away by repeating their name, which is all the
  * "kind of place" this needs. Punctuation and the branch suffix go, so
  * "BrewDog Shoreditch" and "Brewdog — Camden" read as one kind. */
@@ -755,6 +781,7 @@ export function buildRouteGraph(
     table,
   );
 
+  const target = request.targetKm ?? null;
   const pool = nodes.map((node) => node.id);
   const holes = Math.min(request.holes, pool.length);
   // Nothing to route: one stop is not a crawl, and the caller gets the
@@ -787,7 +814,7 @@ export function buildRouteGraph(
     // what the scoring terms could only ever ask for — a route that gets
     // somewhere has to be *built*, and no amount of penalising a wandering one
     // puts a jaunt in the pool that was never constructed.
-    for (const drift of SNAKE_DRIFTS) {
+    for (const drift of driftsFor(target, holes)) {
       // Exact, so it supersedes the greedy snake wherever it can answer at
       // all. The greedy one is kept behind it: the exact walk needs a pinned
       // tee to sit at the end of the line it travels, and refuses rather than
@@ -806,7 +833,6 @@ export function buildRouteGraph(
     return twoOpt(table, route, startId !== null, finishId !== null);
   });
 
-  const target = request.targetKm ?? null;
   const described = [...improved, ...snakes].map((stops) => describe(table, byId, stops, ""));
 
   // Each objective picks its own winner from the same pool, which is what
@@ -851,7 +877,19 @@ const STROLL_KMH = 4.5;
  * minutes between pubs wants a walk, and handing them nine doors on one street
  * is answering a different question.
  */
-export function targetKmFor(stretchMinutes: number, holes: number): number {
+export function targetKmFor(
+  stretchMinutes: number,
+  holes: number,
+  reachKm = 0,
+): number {
+  // A named destination outranks a chosen pace, and it has to: pace times legs
+  // *is* distance, so a host asking for a steady five minutes and for a finish
+  // four kilometres away has described two different rounds. The place they
+  // named is the concrete one.
+  //
+  // A little slack over the straight line, because pubs are not on it — a walk
+  // that had to be exactly as the crow flies could not visit anything.
+  if (reachKm > 0) return reachKm * 1.15;
   return (stretchMinutes / 60) * STROLL_KMH * Math.max(holes - 1, 1);
 }
 

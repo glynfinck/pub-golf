@@ -660,7 +660,7 @@ function fallbackBoard(
     holes: brief.holes,
     startId: candidateIdFor(candidates, brief.startVenueId),
     finishId: candidateIdFor(candidates, brief.finishVenueId),
-    targetKm: targetKmFor(brief.stretch, brief.holes),
+    targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
   });
   const best = graph.routes[0];
   if (!best) return { name: "", holes: [] };

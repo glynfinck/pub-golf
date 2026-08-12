@@ -142,6 +142,19 @@ export interface CaddyBrief {
    * crawl or a route march depending on how far apart they are.
    */
   whereTo: string;
+  /**
+   * How far apart the two areas actually are, resolved before the plan runs.
+   *
+   * Zero for a single-patch round. When it is set it **outranks `stretch`**,
+   * and that is the point rather than a caveat: pace times legs is distance,
+   * so a host who asks for a steady five minutes *and* for Covent Garden four
+   * kilometres away has asked for two different rounds. The named destination
+   * is the concrete one, so it wins and the pace is derived from it.
+   *
+   * Bounded on the way in — it arrives from the browser, so it is a hint
+   * rather than a fact until the gather agrees with it.
+   */
+  reachKm: number;
   /** Venue ids of pinned tees, or null. A pin is a real `venues` row before
    * the caddy hears of it — the pub search put it there. */
   startVenueId: string | null;
@@ -172,6 +185,12 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     typeof input.where === "string" ? input.where.trim().slice(0, WHERE_MAX) : "";
   const whereTo =
     typeof input.whereTo === "string" ? input.whereTo.trim().slice(0, WHERE_MAX) : "";
+  // Anything past a long day's walk is a typo or a joke, and anything negative
+  // is neither. Rounded, because a ring drawn to the metre is false precision.
+  const reachKm =
+    typeof input.reachKm === "number" && Number.isFinite(input.reachKm)
+      ? Math.min(40, Math.max(0, Math.round(input.reachKm * 100) / 100))
+      : 0;
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
   // Nothing to aim at: no patch named and no pin dropped.
@@ -194,6 +213,7 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     // The same patch twice is one patch: a host who picks their own area
     // for both ends wants a tight round, not a walk back to where they began.
     whereTo: whereTo.toLowerCase() === where.toLowerCase() ? "" : whereTo,
+    reachKm: whereTo.toLowerCase() === where.toLowerCase() ? 0 : reachKm,
     startVenueId,
     finishVenueId,
     holes,
@@ -248,4 +268,31 @@ export function stretchWarning(
     return `Those are close enough to be one patch, so this will play as a tight round rather than a walk across town.`;
   }
   return null;
+}
+
+/**
+ * The pace a destination forces, in minutes between pubs.
+ *
+ * The inverse of `targetKmFor`, and it exists because the host is offered two
+ * controls that set one number. Pace times legs is distance: "steady" over
+ * nine holes is about three kilometres, so a round that also has to reach
+ * Covent Garden four kilometres away cannot be steady — one of the two has to
+ * give, and it should be the abstract one rather than the place they named.
+ *
+ * So when a destination is set this is what the pace *becomes*, and the screen
+ * shows it rather than asking. Nothing is silently overridden; the host sees
+ * the number change and can shorten the walk by adding holes or moving the
+ * finish, both of which are honest levers.
+ */
+export function paceForReach(reachKm: number, holes: number): number {
+  const legs = Math.max(holes - 1, 1);
+  // 4.5 km/h, the stroll the rest of the app estimates walks at.
+  return Math.round(((reachKm / legs) / 4.5) * 60);
+}
+
+/** How the derived pace reads on screen, in the voice the chips use. */
+export function paceNote(minutes: number): string {
+  if (minutes <= 0) return "Whatever's closest.";
+  if (minutes === 1) return "About a minute between pubs.";
+  return `About ${minutes} minutes' walk between pubs.`;
 }

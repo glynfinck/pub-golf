@@ -48,6 +48,18 @@ const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
 const TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
 /** A walk, not a bus ride: the radius one leg of a crawl should stay inside. */
 const PATCH_RADIUS_M = 1_200;
+
+/**
+ * How wide a corridor between two areas is, per sample.
+ *
+ * Narrower than a single patch on purpose. Two areas four kilometres apart
+ * searched at the full patch radius are two fat blobs with a gap: the gather
+ * comes back with everything around both ends and nothing in between, and the
+ * router can only pick a route that hops between them. Half the radius, with
+ * enough samples to overlap, draws a line and gathers what is beside it —
+ * which is what a host walking from one place to another actually passes.
+ */
+const CORRIDOR_RADIUS_M = 600;
 /** Circles sampled down the line when both tees are pinned. */
 
 interface GooglePlace {
@@ -196,6 +208,7 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   const { key, language } = input;
   const centres: { lat: number; lng: number }[] = [];
 
+  const corridor = Boolean(input.start && input.finish);
   if (input.start && input.finish) {
     const samples = corridorSamples(
       haversineKm(input.start.lat, input.start.lng, input.finish.lat, input.finish.lng),
@@ -253,7 +266,12 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   // Fill the patch. Independent circles, so they go out together.
   const rings = await Promise.all(
     centres.map((centre) =>
-      call(key, NEARBY_URL, nearbyBody(centre, PATCH_RADIUS_M), language),
+      call(
+        key,
+        NEARBY_URL,
+        nearbyBody(centre, corridor ? CORRIDOR_RADIUS_M : PATCH_RADIUS_M),
+        language,
+      ),
     ),
   );
   rings.forEach((ring) => found.push(...ring));

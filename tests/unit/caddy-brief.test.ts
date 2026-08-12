@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { readBrief, stretchWarning } from "@/lib/caddy/brief";
+import {
+  paceForReach,
+  paceNote,
+  readBrief,
+  stretchWarning,
+} from "@/lib/caddy/brief";
 
 
 describe("a night that goes somewhere", () => {
@@ -65,5 +70,70 @@ describe("stretchWarning", () => {
 
   it("never divides by zero on a one-hole round", () => {
     expect(() => stretchWarning(3, 1)).not.toThrow();
+  });
+});
+
+describe("a named finish sets the pace", () => {
+  it("derives the pace from the distance and the hole count", () => {
+    // Four kilometres over nine holes is eight legs of 500m, which at a stroll
+    // is about seven minutes. The host does not choose this — the place they
+    // named and the number of holes decide it between them.
+    expect(paceForReach(4, 9)).toBe(7);
+    // Same walk, fewer holes: longer legs. This is the lever a host actually
+    // has, and it is why nothing is disabled on screen.
+    expect(paceForReach(4, 5)).toBe(13);
+  });
+
+  it("reads the derived pace in the voice the chips use", () => {
+    expect(paceNote(7)).toBe("About 7 minutes' walk between pubs.");
+    expect(paceNote(1)).toBe("About a minute between pubs.");
+    expect(paceNote(0)).toBe("Whatever's closest.");
+  });
+
+  it("carries a bounded reach and drops it for a single patch", () => {
+    const far = readBrief({
+      where: "Shoreditch",
+      whereTo: "Covent Garden",
+      reachKm: 4.2,
+      holes: 9,
+      vibe: "traditional",
+      particulars: [],
+      note: "",
+      stretch: 5,
+    });
+    expect(far?.reachKm).toBeCloseTo(4.2, 5);
+
+    // The same area twice is one patch, so the reach goes with the
+    // destination rather than lingering as a distance to nowhere.
+    const same = readBrief({
+      where: "Shoreditch",
+      whereTo: "shoreditch",
+      reachKm: 4.2,
+      holes: 9,
+      vibe: "traditional",
+      particulars: [],
+      note: "",
+      stretch: 5,
+    });
+    expect(same?.reachKm).toBe(0);
+  });
+
+  it("refuses a reach that is a typo or a joke", () => {
+    const brief = (reachKm: unknown) =>
+      readBrief({
+        where: "Shoreditch",
+        whereTo: "Tokyo",
+        reachKm,
+        holes: 9,
+        vibe: "traditional",
+        particulars: [],
+        note: "",
+        stretch: 5,
+      });
+    // It arrives from the browser, so it is a hint rather than a fact.
+    expect(brief(9000)?.reachKm).toBe(40);
+    expect(brief(-5)?.reachKm).toBe(0);
+    expect(brief("far")?.reachKm).toBe(0);
+    expect(brief(Number.NaN)?.reachKm).toBe(0);
   });
 });

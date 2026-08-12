@@ -117,11 +117,14 @@ export function boundsAround(center: LatLng, radiusMeters: number): Bounds {
  * cannot fire off thirty searches.
  */
 const CORRIDOR_SAMPLES = 3;
-const CORRIDOR_MAX_SAMPLES = 9;
+const CORRIDOR_MAX_SAMPLES = 12;
 
-export function corridorSamples(apartKm: number): number {
-  // Circles at 1.2km reach cover ~2km of line each once overlap is allowed for.
-  const needed = Math.ceil(apartKm / 1.2) + 1;
+export function corridorSamples(apartKm: number, radiusKm = 0.6): number {
+  // Each circle covers about its diameter of line once overlap is allowed for.
+  // The radius is the caller's, because a corridor is searched at half the
+  // width of a single patch — two fat circles four kilometres apart are two
+  // blobs with a gap, and the router can only hop between them.
+  const needed = Math.ceil(apartKm / Math.max(radiusKm * 1.4, 0.1)) + 1;
   return Math.min(CORRIDOR_MAX_SAMPLES, Math.max(CORRIDOR_SAMPLES, needed));
 }
 

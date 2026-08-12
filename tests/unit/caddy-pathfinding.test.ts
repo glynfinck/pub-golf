@@ -322,12 +322,13 @@ describe("orderWalk and forwardOrder agree about what they are given", () => {
 
 describe("corridorSamples", () => {
   it("covers a long walk instead of gathering only its ends", () => {
-    // Finsbury Park to Broadway Market is about 4km. Three circles at 1.2km
-    // reach would find both ends and nothing between — a corridor with a hole
-    // in the middle, which routes as a march between two clumps.
+    // Finsbury Park to Broadway Market is about 4km. A handful of circles at
+    // corridor width has to reach all the way along it — anything less is a
+    // corridor with a hole in the middle, which routes as a march between two
+    // clumps because that is genuinely all the gather found.
     expect(corridorSamples(4)).toBeGreaterThan(3);
-    // Enough that the circles actually overlap along the line.
-    expect(corridorSamples(4) * 1.2).toBeGreaterThanOrEqual(4);
+    // Enough that the circles overlap rather than leaving gaps between them.
+    expect(corridorSamples(4) * 0.6 * 1.4).toBeGreaterThanOrEqual(4);
   });
 
   it("still takes three for a short hop", () => {
@@ -337,8 +338,15 @@ describe("corridorSamples", () => {
 
   it("refuses to fire off a search per street", () => {
     // A pair of areas on opposite sides of the country must not turn into
-    // thirty Places calls on one plan.
-    expect(corridorSamples(400)).toBeLessThanOrEqual(9);
+    // thirty Places calls on one plan. The cap is the corridor's, and it is
+    // higher than it was because the circles are narrower.
+    expect(corridorSamples(400)).toBeLessThanOrEqual(12);
+  });
+
+  it("widens its stride when the circles are wider", () => {
+    // The radius is the caller's: a corridor is searched at half the width of
+    // a single patch, and the sample count has to know that or it leaves gaps.
+    expect(corridorSamples(4, 1.2)).toBeLessThan(corridorSamples(4, 0.6));
   });
 
   it("never returns something unusable", () => {

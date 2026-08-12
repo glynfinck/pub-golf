@@ -43,6 +43,7 @@ const CANDIDATES = buildCandidates(Array.from({ length: 12 }, (_, i) => source(i
 const BRIEF = {
   where: "Shoreditch, London",
       whereTo: "",
+      reachKm: 0,
   startVenueId: null,
   finishVenueId: null,
   holes: 3,
@@ -368,15 +369,18 @@ describe("particulars", () => {
 describe("readBrief", () => {
   it("clamps a hole count off the menu back to the default", () => {
     expect(readBrief({ where: "Soho",
-      whereTo: "", holes: 400 })?.holes).toBe(9);
+      whereTo: "",
+      reachKm: 0, holes: 400 })?.holes).toBe(9);
     expect(readBrief({ where: "Soho",
-      whereTo: "", holes: 12 })?.holes).toBe(12);
+      whereTo: "",
+      reachKm: 0, holes: 12 })?.holes).toBe(12);
   });
 
   it("keeps only particulars that exist", () => {
     const brief = readBrief({
       where: "Soho",
       whereTo: "",
+      reachKm: 0,
       particulars: ["beer-gardens", "free-beer", "pets"],
     });
     expect(brief?.particulars).toEqual(["beer-gardens", "pets"]);
@@ -386,18 +390,21 @@ describe("readBrief", () => {
     expect(readBrief({ where: "   " })).toBeNull();
     expect(readBrief(null)).toBeNull();
     expect(readBrief({ where: "",
-      whereTo: "", startVenueId: "not-a-uuid" })).toBeNull();
+      whereTo: "",
+      reachKm: 0, startVenueId: "not-a-uuid" })).toBeNull();
   });
 
   it("takes a pinned tee as an aim of its own", () => {
     const id = "00000000-0000-4000-8000-000000000001";
     expect(readBrief({ where: "",
-      whereTo: "", startVenueId: id })?.startVenueId).toBe(id);
+      whereTo: "",
+      reachKm: 0, startVenueId: id })?.startVenueId).toBe(id);
   });
 
   it("bounds the note", () => {
     expect(readBrief({ where: "Soho",
-      whereTo: "", note: "x".repeat(400) })?.note).toHaveLength(120);
+      whereTo: "",
+      reachKm: 0, note: "x".repeat(400) })?.note).toHaveLength(120);
   });
 });
 
