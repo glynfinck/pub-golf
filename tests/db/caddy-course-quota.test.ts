@@ -90,6 +90,33 @@ async function seedSpentFee(buyer: Actor) {
   return data.id;
 }
 
+/**
+ * Spend a whole card the way a plan does, so the session may hold a course.
+ *
+ * `guard_caddy_course_slot` lets a host keep as many courses as they have
+ * spent `course` credits — keyed on what was bought rather than on the
+ * purchase row, which is what stops a rung that grants no course from holding
+ * one. In production the spend always exists by the time `course_id` is
+ * stamped: `runTurn` writes the turn, `guard_caddy_spend` writes the spend off
+ * the back of it, and only then does the drafting table remember the course.
+ *
+ * These fixtures used to stamp the link with no turn behind it, which is a
+ * state the app cannot reach — so they were testing the guard against a
+ * history that never happens.
+ */
+async function spendACard(host: Actor, sessionId: string) {
+  const { error } = await host.db.from("caddy_turns").insert({
+    session_id: sessionId,
+    host: host.userId,
+    kind: "plan" as const,
+    result: { name: "The Crawl", holes: [] },
+    model: "claude-sonnet-5",
+    input_tokens: 1_000,
+    output_tokens: 1_000,
+  });
+  if (error) throw error;
+}
+
 async function seedSession(host: Actor, entitlementId: string | null) {
   const { data, error } = await adminClient()
     .from("caddy_sessions")
@@ -612,6 +639,7 @@ describe("a fee files one course", () => {
 
   it("lets the fee file its course", async () => {
     const sessionId = await seedSession(host, fee);
+    await spendACard(host, sessionId);
     const courseId = await seedCourse(host);
     const { error } = await host.db
       .from("caddy_sessions")
@@ -623,9 +651,13 @@ describe("a fee files one course", () => {
 
   it("refuses a second course on the same fee", async () => {
     // The bug, exactly: a host plans twice, so there are two sessions under
-    // one fee, and the second files a course of its own.
+    // one fee, and the second files a course of its own. Both plans spend —
+    // the first off the fee's one `course` credit, the second off a
+    // re-design — so the second has no course credit behind it.
     const first = await seedSession(host, fee);
     const second = await seedSession(host, fee);
+    await spendACard(host, first);
+    await spendACard(host, second);
     await host.db
       .from("caddy_sessions")
       .update({ course_id: await seedCourse(host, "The First") })
@@ -636,11 +668,14 @@ describe("a fee files one course", () => {
       .update({ course_id: await seedCourse(host, "The Second") })
       .eq("id", second);
 
-    // 23505 rather than 42501: this rule is a unique partial index, not a
-    // policy, so `expectDenied` deliberately does not recognise it. Asserted
-    // directly here — and the re-read is what actually proves it, per the
-    // tier's own rule about writes that report success.
-    expect(error?.code).toBe("23505");
+    // 42501, and it used to be 23505. The rule was a unique partial index on
+    // the *purchase* until `guard_caddy_course_slot` re-keyed it on the
+    // `course` credit — which is what stops `caddy_topup_1`, a rung that
+    // grants no course at all, from holding one. A trigger rather than an
+    // index because it is a count across sibling rows, which no `with check`
+    // can see. The re-read is what actually proves it, per the tier's own
+    // rule about writes that report success.
+    expect(error?.code).toBe("42501");
     expect(await storedCourseId(second)).toBeNull();
   });
 
@@ -659,6 +694,7 @@ describe("a fee files one course", () => {
     // narrows the guard to what it was always about: re-pointing. See the two
     // tests below, which are the half of it that must not be lost.
     const first = await seedSession(host, fee);
+    await spendACard(host, first);
     const doomed = await seedCourse(host, "The Regrettable");
     await host.db
       .from("caddy_sessions")
@@ -673,6 +709,7 @@ describe("a fee files one course", () => {
     expect(await storedCourseId(first)).toBeNull();
 
     const second = await seedSession(host, fee);
+    await spendACard(host, second);
     const { error } = await host.db
       .from("caddy_sessions")
       .update({ course_id: await seedCourse(host, "The Replacement") })
@@ -686,6 +723,10 @@ describe("a fee files one course", () => {
     const secondFee = await seedFee(host);
     const a = await seedSession(host, fee);
     const b = await seedSession(host, secondFee);
+    // One plan each: two fees are two `course` credits, and the rule counts
+    // credits *spent*, so both have to be.
+    await spendACard(host, a);
+    await spendACard(host, b);
     const first = await host.db
       .from("caddy_sessions")
       .update({ course_id: await seedCourse(host, "Fee One") })
@@ -720,6 +761,7 @@ describe("a fee files one course", () => {
     // The rule `20260827000000` exists for, and the one the delete fix must
     // not cost. A movable link is a way to make the duplicate it prevents.
     const sessionId = await seedSession(host, fee);
+    await spendACard(host, sessionId);
     const first = await seedCourse(host, "The One It Filed");
     await host.db
       .from("caddy_sessions")
@@ -741,6 +783,7 @@ describe("a fee files one course", () => {
     // refused explicitly — and it is what makes "the course is gone" the only
     // way the link can be cleared.
     const sessionId = await seedSession(host, fee);
+    await spendACard(host, sessionId);
     const filed = await seedCourse(host, "Still In The Book");
     await host.db
       .from("caddy_sessions")

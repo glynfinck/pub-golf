@@ -8,7 +8,11 @@ import {
   CADDY_TOPUPS,
   type CaddyTopupKey,
 } from "@/lib/billing";
-import { CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
+import {
+  CADDY_COURSES_PER_FEE,
+  CADDY_GRANT_SIZE,
+  CADDY_QUOTAS,
+} from "@/lib/caddy/credits";
 import { caddyBudgetMicroPence, MODEL_PRICES } from "@/lib/caddy/budget";
 import {
   adminClient,
@@ -95,6 +99,33 @@ async function seedSession(host: Actor, entitlementId?: string) {
 }
 
 /** One turn, as the pipeline writes it. */
+/**
+ * Spend a whole card the way a plan does, so the session may hold a course.
+ *
+ * `guard_caddy_course_slot` lets a host keep as many courses as they have
+ * spent `course` credits — keyed on what was bought rather than on the
+ * purchase row, which is what stops a rung that grants no course from holding
+ * one. In production the spend always exists by the time `course_id` is
+ * stamped: `runTurn` writes the turn, `guard_caddy_spend` writes the spend off
+ * the back of it, and only then does the drafting table remember the course.
+ *
+ * These fixtures used to stamp the link with no turn behind it, which is a
+ * state the app cannot reach — so they were testing the guard against a
+ * history that never happens.
+ */
+async function spendACard(host: Actor, sessionId: string) {
+  const { error } = await host.db.from("caddy_turns").insert({
+    session_id: sessionId,
+    host: host.userId,
+    kind: "plan" as const,
+    result: { name: "The Crawl", holes: [] },
+    model: "claude-sonnet-5",
+    input_tokens: 1_000,
+    output_tokens: 1_000,
+  });
+  if (error) throw error;
+}
+
 function turnRow(host: Actor, sessionId: string, over: Record<string, unknown> = {}) {
   return {
     session_id: sessionId,
@@ -378,6 +409,8 @@ describe("the course a session filed", () => {
       signedInUser("Filing Other"),
     ]);
     sessionId = await seedSession(host, await seedFee(host));
+    // The plan that paid for the course this block is about to file.
+    await spendACard(host, sessionId);
   });
 
   it("lets a host record which course their session filed", async () => {
@@ -449,7 +482,7 @@ describe("the ledger: granted, spent, and expired", () => {
   let feeId: string;
   let sessionId: string;
 
-  async function balance(quota: "redesign" | "tweak") {
+  async function balance(quota: (typeof CADDY_QUOTAS)[number]) {
     const { data } = await adminClient().rpc("caddy_balance", {
       who: host.userId,
       quota,
@@ -465,6 +498,17 @@ describe("the ledger: granted, spent, and expired", () => {
     return count ?? 0;
   }
 
+  /**
+   * Whole cards left, both rungs together.
+   *
+   * `guard_caddy_spend` pays for a card out of the `course` credit first and
+   * falls through to the re-designs, so a test that watches `redesign` alone
+   * watches the second rung and misses the first. Every assertion below that
+   * used to read `redesign` was written before the `course` quota existed and
+   * quietly went one out when it arrived.
+   */
+  const cards = async () => (await balance("course")) + (await balance("redesign"));
+
   beforeEach(async () => {
     host = await signedInUser("Ledger Host");
     feeId = await seedFee(host);
@@ -474,6 +518,8 @@ describe("the ledger: granted, spent, and expired", () => {
   it("grants the package with the fee, in one transaction", async () => {
     // On the entitlement rather than in the webhook's code, so there is no
     // window in which a host has paid and holds nothing.
+    expect(await cards()).toBe(CADDY_COURSES_PER_FEE);
+    expect(await balance("course")).toBe(CADDY_GRANT_SIZE.course);
     expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign);
     expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak);
   });
@@ -485,7 +531,9 @@ describe("the ledger: granted, spent, and expired", () => {
     await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "roll" }));
     await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "tweak" }));
 
-    expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign - 2);
+    // Two whole cards, off whichever rung the ladder reached for — the host
+    // cannot tell which paid, and neither should this.
+    expect(await cards()).toBe(CADDY_COURSES_PER_FEE - 2);
     expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak - 1);
   });
 
@@ -493,18 +541,18 @@ describe("the ledger: granted, spent, and expired", () => {
     await host.db
       .from("caddy_turns")
       .insert(turnRow(host, sessionId, { kind: "plan", failed: true, result: {} }));
-    expect(await balance("redesign")).toBe(CADDY_GRANT_SIZE.redesign);
+    expect(await cards()).toBe(CADDY_COURSES_PER_FEE);
     expect(await spendsFor()).toBe(0);
   });
 
-  it("keeps the two quotas apart, which is the whole point of two", async () => {
+  it("keeps the card and tweak quotas apart, which is the whole point", async () => {
     // Sharing one allowance meant two expensive plans ate the tweaking
     // budget — so the loudest promise the caddy makes was being consumed by
     // the thing next to it.
-    for (let i = 0; i < CADDY_GRANT_SIZE.redesign; i += 1) {
+    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
       await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
     }
-    expect(await balance("redesign")).toBe(0);
+    expect(await cards()).toBe(0);
     expect(await balance("tweak")).toBe(CADDY_GRANT_SIZE.tweak);
 
     const { error } = await host.db
@@ -514,7 +562,7 @@ describe("the ledger: granted, spent, and expired", () => {
   });
 
   it("refuses the action once its own quota is gone", async () => {
-    for (let i = 0; i < CADDY_GRANT_SIZE.redesign; i += 1) {
+    for (let i = 0; i < CADDY_COURSES_PER_FEE; i += 1) {
       await host.db.from("caddy_turns").insert(turnRow(host, sessionId, { kind: "plan" }));
     }
     const { error } = await host.db
@@ -833,10 +881,13 @@ describe("the ceilings hold in Postgres", () => {
     // `caddyBudgetMicroPence()` is the only copy there is.
     // Cast through `unknown` because the generated types no longer know the
     // name — which is itself half of what this asserts.
-    const rpc = adminClient().rpc as unknown as (
-      fn: string,
-    ) => PromiseLike<{ error: unknown }>;
-    const { error } = await rpc("caddy_budget_micropence");
+    // Called through the client rather than off it: `rpc` reads `this`, so a
+    // detached reference throws before it ever reaches Postgres — which looks
+    // like the assertion passing and is not.
+    const client = adminClient() as unknown as {
+      rpc: (fn: string) => PromiseLike<{ error: unknown }>;
+    };
+    const { error } = await client.rpc("caddy_budget_micropence");
     expect(error).not.toBeNull();
     expect(caddyBudgetMicroPence()).toBeGreaterThan(0);
   });
@@ -968,13 +1019,15 @@ describe("the ledger is not the host's to write", () => {
       .from("caddy_grants")
       .select("id", { count: "exact", head: true })
       .eq("host", host.userId);
-    // Exactly the one package the seeded fee bought: one grant per quota.
-    expect(count).toBe(2);
+    // Exactly the one package the seeded fee bought: one grant per quota,
+    // counted from the quota list rather than typed, because this said `2`
+    // for a release after `course` made it three.
+    expect(count).toBe(CADDY_QUOTAS.length);
   });
 
   it("shows a host their own ledger and nobody else's", async () => {
     const mine = await host.db.from("caddy_grants").select("id");
-    expect(mine.data?.length).toBe(2);
+    expect(mine.data?.length).toBe(CADDY_QUOTAS.length);
 
     const theirs = await other.db.from("caddy_grants").select("id").eq("id", grantId);
     expect(theirs.error).toBeNull();
@@ -992,12 +1045,16 @@ describe("the ledger is not the host's to write", () => {
     // gives nothing back, because the caddy did the work and we paid for it.
     // The holdings design this replaced refunded here, which made the quota
     // unbounded for anybody patient.
-    for (let round = 0; round < CADDY_GRANT_SIZE.redesign; round += 1) {
+    //
+    // Every whole card the fee bought, both rungs: the `course` credit is
+    // spent before the re-designs, so a loop over `redesign` alone stopped one
+    // short of the ladder and the refusal below never came.
+    for (let round = 0; round < CADDY_COURSES_PER_FEE; round += 1) {
       const session = await seedSession(host, feeId);
       const { error } = await host.db
         .from("caddy_turns")
         .insert(turnRow(host, session, { kind: "plan" }));
-      expect(error, `re-design ${round + 1} should be allowed`).toBeNull();
+      expect(error, `card ${round + 1} should be allowed`).toBeNull();
 
       // The host files it, looks at it, dislikes the area, tears it out.
       const { data: course } = await adminClient()
@@ -1043,7 +1100,9 @@ describe("the ledger is not the host's to write", () => {
       who: host.userId,
       quota: "tweak",
     });
-    expect(Number(redesigns.data)).toBe(CADDY_GRANT_SIZE.redesign - 1);
+    // The plan came off the course credit, so the re-designs are untouched —
+    // which is the point of the test either way: tweaking spends no cards.
+    expect(Number(redesigns.data)).toBe(CADDY_GRANT_SIZE.redesign);
     expect(Number(tweaks.data)).toBe(CADDY_GRANT_SIZE.tweak - 5);
   });
 });

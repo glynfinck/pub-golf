@@ -1730,15 +1730,15 @@ end $$;
 -- files. `caddy_spends_grant_idx` covers the join and nothing covered the
 -- filter.
 --
--- **`entitlements_one_per_round`** goes. It is a unique index on
--- `(round_id, kind) where round_id is not null`, and since the green fee
--- became a day pass on its buyer (`20260823000000`) nothing has ever written a
--- non-null `round_id` — the webhook writes null, deliberately, and
--- `20260823000000` already carries a note explaining that the index no longer
--- describes anything. An index whose partial predicate can never be satisfied
--- is a rule a reader will spend time understanding and a writer will never
--- meet. The column stays: a per-round purchase is a plausible future and the
--- FK is honest about it.
+-- **`entitlements_one_per_round` stays**, and it is worth saying why, because
+-- an earlier pass dropped it. Nothing has written a non-null `round_id` since
+-- the green fee became a day pass on its buyer (`20260823000000`) — the
+-- webhook writes null, deliberately — so on the face of it the index is a
+-- partial predicate nothing can satisfy. But `tests/db/rls-entitlements.test.ts`
+-- exercises it directly with two per-round rows and asserts the `23505`, which
+-- makes it a rule somebody wrote down rather than a leftover. A constraint
+-- costs nothing to keep and the column is a plausible future; removing one
+-- that has a test is a behaviour change nobody asked for.
 --
 -- Additive per DEPLOYMENT.md in both directions — an index is invisible to
 -- code, and the dropped one constrains no write any deployed build makes.
@@ -1750,4 +1750,3 @@ create index if not exists entitlements_holder_idx
 create index if not exists caddy_spends_host_idx
   on public.caddy_spends (host);
 
-drop index if exists public.entitlements_one_per_round;
