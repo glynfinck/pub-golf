@@ -16,7 +16,7 @@ import {
   targetKmFor,
 } from "@/lib/caddy/route-graph";
 import { drinkForHazard, HAZARDS, type HazardId } from "@/lib/hazards";
-import { orderWalk } from "@/lib/caddy/route";
+import { forwardOrder, orderWalk } from "@/lib/caddy/route";
 import {
   GOOD_COURSE,
   HOLE_PARTS,
@@ -457,15 +457,37 @@ export function parsePlan(
     minLegMinutes: brief.stretch,
   });
 
+  // One last pass, and the reason it exists is a real card.
+  //
+  // `orderWalk` minimises the walk, and the shortest tour of a dense patch is
+  // not a night out — it is a lap. A real nine-hole card came back running
+  // forward, back, forward, back and forward again along its own start-to-
+  // finish line, 2.47km of walking to cover 0.97km of ground. Every stop was
+  // a good pub and the sequence was still wrong.
+  //
+  // So the interior is sorted by how far along that line each pub sits. The
+  // tees stay where they are — the host's pins, or whichever pubs `orderWalk`
+  // put at the ends — and everything between them is walked in the order it is
+  // passed. Monotone by construction: with the ends fixed, a walk ordered by
+  // projection onto the line between them cannot double back.
+  //
+  // It gives up some distance to do it, and that is the trade being made
+  // deliberately. A hundred metres of extra walking buys a night that goes
+  // somewhere, and going somewhere is what a crawl is.
+  const walked = forwardOrder(ordered, {
+    first: Boolean(brief.startVenueId),
+    last: Boolean(brief.finishVenueId),
+  });
+
   // Kept as an assertion on our own output rather than on the model's. If this
   // ever fires the router has a bug, and refusing the card is the right way to
   // find out — a group sent to the wrong first pub is worse than no card.
-  if (brief.startVenueId && ordered[0].venue_id !== brief.startVenueId) {
+  if (brief.startVenueId && walked[0].venue_id !== brief.startVenueId) {
     return { ok: false, reason: "pin-moved" };
   }
   if (
     brief.finishVenueId &&
-    ordered[ordered.length - 1].venue_id !== brief.finishVenueId
+    walked[walked.length - 1].venue_id !== brief.finishVenueId
   ) {
     return { ok: false, reason: "pin-moved" };
   }
@@ -475,14 +497,14 @@ export function parsePlan(
   // now. Water is the one hazard that cannot finish a round: its relief is
   // deferred until the hole is filed, and the last hole is the one nobody
   // leaves (`lib/hazards.ts`).
-  const final = ordered[ordered.length - 1];
+  const final = walked[walked.length - 1];
   if (final.hazard && !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole) {
-    ordered[ordered.length - 1] = { ...final, hazard: null, hazard_note: null };
+    walked[walked.length - 1] = { ...final, hazard: null, hazard_note: null };
   }
 
   const name =
     clampText(payload.courseName, COURSE_NAME_MAX) || "The caddy's round";
-  return { ok: true, course: { name, holes: ordered } };
+  return { ok: true, course: { name, holes: walked } };
 }
 
 /** The line a refusal earns on screen. None of these spend anything. */

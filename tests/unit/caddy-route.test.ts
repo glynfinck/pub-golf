@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  forwardOrder,
   orderWalk,
   tryRoute,
   type WalkStop,
@@ -308,5 +309,83 @@ describe("tryRoute — what the caddy gets to see before it commits", () => {
     });
     expect(doorstep.shortLegs).toBe(0);
     expect(doorstep.worstRun).toBe(0);
+  });
+});
+
+describe("forwardOrder", () => {
+  /** The real card that prompted this, in the order it shipped: 2.47km of
+   * walking to cover 0.97km of ground, running forward and back three times
+   * along its own line. Every pub was good; the sequence was not. */
+  const SHOREDITCH = [
+    { venue_id: "1", lat: 51.52441, lng: -0.08013 },
+    { venue_id: "2", lat: 51.52685, lng: -0.07822 },
+    { venue_id: "3", lat: 51.52274, lng: -0.07801 },
+    { venue_id: "4", lat: 51.52655, lng: -0.08018 },
+    { venue_id: "5", lat: 51.52616, lng: -0.08110 },
+    { venue_id: "6", lat: 51.52250, lng: -0.07818 },
+    { venue_id: "7", lat: 51.52238, lng: -0.07778 },
+    { venue_id: "8", lat: 51.51935, lng: -0.07429 },
+    { venue_id: "9", lat: 51.51692, lng: -0.07302 },
+  ];
+
+  function positions(stops: typeof SHOREDITCH) {
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    const scale = Math.cos(first.lat * (Math.PI / 180));
+    const ax = (last.lng - first.lng) * scale;
+    const ay = last.lat - first.lat;
+    const len = Math.hypot(ax, ay);
+    return stops.map(
+      (stop) =>
+        (((stop.lng - first.lng) * scale * ax + (stop.lat - first.lat) * ay) / len) *
+        111.32,
+    );
+  }
+
+  it("turns the real backtracking card into one continuous walk", () => {
+    const before = positions(SHOREDITCH);
+    // Proof the fixture is the bug: it goes forward, back, forward, back.
+    expect(before.some((t, i) => i > 0 && t < before[i - 1])).toBe(true);
+
+    const after = positions(forwardOrder(SHOREDITCH) as typeof SHOREDITCH);
+    for (let i = 1; i < after.length; i += 1) {
+      expect(after[i], `hole ${i + 1} steps backwards`).toBeGreaterThanOrEqual(
+        after[i - 1],
+      );
+    }
+  });
+
+  it("holds a pinned tee and moves everything else", () => {
+    // Pins are the host's. Without them every stop is free to move, which is
+    // what makes the whole walk monotone rather than merely its middle — an
+    // earlier cut fixed the ends unconditionally and the card still opened by
+    // walking 200m the wrong way.
+    const pinned = forwardOrder(SHOREDITCH, { first: true, last: true });
+    expect(pinned[0].venue_id).toBe("1");
+    expect(pinned[pinned.length - 1].venue_id).toBe("9");
+
+    const free = forwardOrder(SHOREDITCH);
+    expect(free[0].venue_id).not.toBe("1");
+  });
+
+  it("loses nothing and invents nothing", () => {
+    const walked = forwardOrder(SHOREDITCH);
+    expect(walked).toHaveLength(SHOREDITCH.length);
+    expect(new Set(walked.map((stop) => stop.venue_id))).toEqual(
+      new Set(SHOREDITCH.map((stop) => stop.venue_id)),
+    );
+  });
+
+  it("leaves a walk with no interior alone", () => {
+    const two = SHOREDITCH.slice(0, 2);
+    expect(forwardOrder(two)).toEqual(two);
+    const three = SHOREDITCH.slice(0, 3);
+    expect(forwardOrder(three)).toEqual(three);
+  });
+
+  it("leaves a walk with no width alone", () => {
+    // Every stop in one spot: no line to sort along, so nothing to sort.
+    const stack = [0, 1, 2, 3].map(() => ({ ...SHOREDITCH[0] }));
+    expect(forwardOrder(stack)).toEqual(stack);
   });
 });
