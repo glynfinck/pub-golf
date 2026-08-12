@@ -42,6 +42,7 @@ const CANDIDATES = buildCandidates(Array.from({ length: 12 }, (_, i) => source(i
 
 const BRIEF = {
   where: "Shoreditch, London",
+      whereTo: "",
   startVenueId: null,
   finishVenueId: null,
   holes: 3,
@@ -366,13 +367,16 @@ describe("particulars", () => {
 
 describe("readBrief", () => {
   it("clamps a hole count off the menu back to the default", () => {
-    expect(readBrief({ where: "Soho", holes: 400 })?.holes).toBe(9);
-    expect(readBrief({ where: "Soho", holes: 12 })?.holes).toBe(12);
+    expect(readBrief({ where: "Soho",
+      whereTo: "", holes: 400 })?.holes).toBe(9);
+    expect(readBrief({ where: "Soho",
+      whereTo: "", holes: 12 })?.holes).toBe(12);
   });
 
   it("keeps only particulars that exist", () => {
     const brief = readBrief({
       where: "Soho",
+      whereTo: "",
       particulars: ["beer-gardens", "free-beer", "pets"],
     });
     expect(brief?.particulars).toEqual(["beer-gardens", "pets"]);
@@ -381,16 +385,19 @@ describe("readBrief", () => {
   it("refuses a brief with nothing to aim at", () => {
     expect(readBrief({ where: "   " })).toBeNull();
     expect(readBrief(null)).toBeNull();
-    expect(readBrief({ where: "", startVenueId: "not-a-uuid" })).toBeNull();
+    expect(readBrief({ where: "",
+      whereTo: "", startVenueId: "not-a-uuid" })).toBeNull();
   });
 
   it("takes a pinned tee as an aim of its own", () => {
     const id = "00000000-0000-4000-8000-000000000001";
-    expect(readBrief({ where: "", startVenueId: id })?.startVenueId).toBe(id);
+    expect(readBrief({ where: "",
+      whereTo: "", startVenueId: id })?.startVenueId).toBe(id);
   });
 
   it("bounds the note", () => {
-    expect(readBrief({ where: "Soho", note: "x".repeat(400) })?.note).toHaveLength(120);
+    expect(readBrief({ where: "Soho",
+      whereTo: "", note: "x".repeat(400) })?.note).toHaveLength(120);
   });
 });
 

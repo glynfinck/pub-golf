@@ -102,3 +102,26 @@ export function boundsAround(center: LatLng, radiusMeters: number): Bounds {
     west: wrap(center.lng - dLng),
   };
 }
+
+/**
+ * How many circles to sample down a corridor, and why it is not a constant.
+ *
+ * Each circle reaches `PATCH_RADIUS_M`, so three of them cover a couple of
+ * kilometres and no more. A host walking Finsbury Park to Broadway Market is
+ * asking about four, and three samples would gather both ends and miss
+ * everything between — a corridor with a hole in the middle, which routes as a
+ * long march between two clumps.
+ *
+ * So the count follows the distance: enough circles that their reaches
+ * overlap, floored at three and capped so a wildly optimistic pair of areas
+ * cannot fire off thirty searches.
+ */
+const CORRIDOR_SAMPLES = 3;
+const CORRIDOR_MAX_SAMPLES = 9;
+
+export function corridorSamples(apartKm: number): number {
+  // Circles at 1.2km reach cover ~2km of line each once overlap is allowed for.
+  const needed = Math.ceil(apartKm / 1.2) + 1;
+  return Math.min(CORRIDOR_MAX_SAMPLES, Math.max(CORRIDOR_SAMPLES, needed));
+}
+

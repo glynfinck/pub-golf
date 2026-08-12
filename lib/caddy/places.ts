@@ -1,6 +1,7 @@
 import "server-only";
 
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
+import { corridorSamples, haversineKm } from "@/lib/geo";
 import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
 /**
@@ -48,7 +49,6 @@ const TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
 /** A walk, not a bus ride: the radius one leg of a crawl should stay inside. */
 const PATCH_RADIUS_M = 1_200;
 /** Circles sampled down the line when both tees are pinned. */
-const CORRIDOR_SAMPLES = 3;
 
 interface GooglePlace {
   id?: string;
@@ -197,10 +197,13 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
   const centres: { lat: number; lng: number }[] = [];
 
   if (input.start && input.finish) {
-    for (let i = 0; i < CORRIDOR_SAMPLES; i++) {
+    const samples = corridorSamples(
+      haversineKm(input.start.lat, input.start.lng, input.finish.lat, input.finish.lng),
+    );
+    for (let i = 0; i < samples; i++) {
       // Evenly down the line, ends included. Guarded so a future single-sample
       // corridor lands on the start rather than on NaN.
-      const t = i / Math.max(1, CORRIDOR_SAMPLES - 1);
+      const t = i / Math.max(1, samples - 1);
       centres.push({
         lat: input.start.lat + (input.finish.lat - input.start.lat) * t,
         lng: input.start.lng + (input.finish.lng - input.start.lng) * t,

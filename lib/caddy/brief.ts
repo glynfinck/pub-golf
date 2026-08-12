@@ -132,6 +132,16 @@ export function particularLabel(id: ParticularId): string {
 export interface CaddyBrief {
   /** The patch, in the host's own words. */
   where: string;
+  /**
+   * Where the night ends, when it is going somewhere.
+   *
+   * Empty for a round that stays in one patch, which is most of them. A second
+   * area turns the plan from "pubs near here" into a walk across town —
+   * Finsbury Park to Broadway Market rather than nine doors off one street —
+   * and it is the host's call, because the same two words can mean a gentle
+   * crawl or a route march depending on how far apart they are.
+   */
+  whereTo: string;
   /** Venue ids of pinned tees, or null. A pin is a real `venues` row before
    * the caddy hears of it — the pub search put it there. */
   startVenueId: string | null;
@@ -160,6 +170,8 @@ export function readBrief(raw: unknown): CaddyBrief | null {
 
   const where =
     typeof input.where === "string" ? input.where.trim().slice(0, WHERE_MAX) : "";
+  const whereTo =
+    typeof input.whereTo === "string" ? input.whereTo.trim().slice(0, WHERE_MAX) : "";
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
   // Nothing to aim at: no patch named and no pin dropped.
@@ -179,6 +191,9 @@ export function readBrief(raw: unknown): CaddyBrief | null {
 
   return {
     where,
+    // The same patch twice is one patch: a host who picks their own area
+    // for both ends wants a tight round, not a walk back to where they began.
+    whereTo: whereTo.toLowerCase() === where.toLowerCase() ? "" : whereTo,
     startVenueId,
     finishVenueId,
     holes,
@@ -204,4 +219,33 @@ function readId(value: unknown): string | null {
  */
 export function candidateFloor(holes: number): number {
   return holes + 3;
+}
+
+/**
+ * How far apart the two ends leave each leg, and whether to say something.
+ *
+ * A pure function of the two things the host has already chosen, so the brief
+ * screen can warn *before* the fee is spent rather than the card explaining
+ * afterwards. Returns null when the round is unremarkable, which is most of
+ * them — a warning on every plan is a warning nobody reads.
+ *
+ * The thresholds are what a walk feels like rather than round numbers. Much
+ * under 300m a leg and two "different" areas are the same place, which is
+ * worth saying because the host probably meant somewhere else. Over about a
+ * kilometre a leg it stops being a crawl and becomes a march between drinks,
+ * and eighteen holes of that is a day out.
+ */
+export function stretchWarning(
+  apartKm: number,
+  holes: number,
+): string | null {
+  const legs = Math.max(holes - 1, 1);
+  const perLeg = apartKm / legs;
+  if (perLeg > 1.1) {
+    return `Those are about ${apartKm.toFixed(1)}km apart, so ${holes} holes means roughly ${Math.round(perLeg * 1000)}m between drinks. That is a proper walk — fewer holes or closer ends will keep it a crawl.`;
+  }
+  if (apartKm > 0.15 && perLeg < 0.2) {
+    return `Those are close enough to be one patch, so this will play as a tight round rather than a walk across town.`;
+  }
+  return null;
 }

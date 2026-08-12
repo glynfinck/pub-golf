@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { buildRouteGraph, principalAxis, routableNodes } from "@/lib/caddy/route-graph";
 import { forwardOrder, orderWalk, walkKm, type WalkStop } from "@/lib/caddy/route";
+import { corridorSamples } from "@/lib/geo";
 
 /**
  * The routing, tested by property rather than by example.
@@ -315,6 +316,36 @@ describe("orderWalk and forwardOrder agree about what they are given", () => {
         new Set(stops.map((s) => s.venue_id)),
       );
       expect(walkKm(walked)).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("corridorSamples", () => {
+  it("covers a long walk instead of gathering only its ends", () => {
+    // Finsbury Park to Broadway Market is about 4km. Three circles at 1.2km
+    // reach would find both ends and nothing between — a corridor with a hole
+    // in the middle, which routes as a march between two clumps.
+    expect(corridorSamples(4)).toBeGreaterThan(3);
+    // Enough that the circles actually overlap along the line.
+    expect(corridorSamples(4) * 1.2).toBeGreaterThanOrEqual(4);
+  });
+
+  it("still takes three for a short hop", () => {
+    expect(corridorSamples(0.5)).toBe(3);
+    expect(corridorSamples(0)).toBe(3);
+  });
+
+  it("refuses to fire off a search per street", () => {
+    // A pair of areas on opposite sides of the country must not turn into
+    // thirty Places calls on one plan.
+    expect(corridorSamples(400)).toBeLessThanOrEqual(9);
+  });
+
+  it("never returns something unusable", () => {
+    for (const km of [0, 0.1, 1, 2.4, 3.7, 12, 100]) {
+      const n = corridorSamples(km);
+      expect(Number.isInteger(n)).toBe(true);
+      expect(n).toBeGreaterThanOrEqual(3);
     }
   });
 });
