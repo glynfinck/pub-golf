@@ -264,9 +264,22 @@ export function CaddyGroup({
           body: JSON.stringify({
             where,
             whereTo,
-            // Resolved on this screen, so the plan aims at the place the host
-            // watched the ring reach rather than at a pace they did not choose.
-            reachKm: reach?.km ?? 0,
+            /**
+             * The reach, but **only when a finish was actually named.**
+             *
+             * `reachOf` answers `{ km: 1.2 }` for a single patch — that is the
+             * ring's *radius*, not a distance to walk — and `targetKmFor`
+             * short-circuits on any `reachKm > 0`, returning `reachKm * 1.15`
+             * and never reaching the stretch arm. So every single-patch round
+             * was routed at a 1.38km target whatever the host picked, and the
+             * spacing chips did nothing at all: at 9 holes on Stretch the
+             * honest target is 6km.
+             *
+             * The same guard already exists ten lines up for the on-screen
+             * pace note, which is how the screen could say "steady" while the
+             * router ignored it.
+             */
+            reachKm: whereTo.trim() ? (reach?.km ?? 0) : 0,
             holes,
             vibe,
             particulars,

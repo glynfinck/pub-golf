@@ -137,3 +137,78 @@ describe("a named finish sets the pace", () => {
     expect(brief(Number.NaN)?.reachKm).toBe(0);
   });
 });
+
+/**
+ * The aim survives the parser.
+ *
+ * `openPlan` resolves both area centres and stamps them onto the session's
+ * brief; every router downstream reads them. But `readBrief` built a fresh
+ * object literal without the two keys, so all of them received `undefined`,
+ * `nearestTo` never fired, and a round asked to finish in Covent Garden walked
+ * wherever the candidate cloud happened to be widest.
+ *
+ * **`tests/unit/caddy-real-patches.test.ts` pins that behaviour hard, at real
+ * coordinates, and passed throughout** — because it hands `aimFrom` straight to
+ * `buildRouteGraph`. The algorithm was proven and the seam between the
+ * algorithm and the brief was not, which is the shape of test this file exists
+ * to add: not "does the router aim", but "does the aim reach the router".
+ */
+describe("the aim survives the brief parser", () => {
+  const MARYLEBONE = { lat: 51.5175, lng: -0.1535 };
+  const COVENT_GARDEN = { lat: 51.5115, lng: -0.1245 };
+
+  it("reads back an aim the server resolved", () => {
+    const brief = readBrief({
+      where: "Marylebone",
+      whereTo: "Covent Garden",
+      holes: 9,
+      aimFrom: MARYLEBONE,
+      aimTo: COVENT_GARDEN,
+    });
+    expect(brief?.aimFrom).toEqual(MARYLEBONE);
+    expect(brief?.aimTo).toEqual(COVENT_GARDEN);
+  });
+
+  it("answers null before a gather has resolved anything", () => {
+    // The ordinary case on the way in: a host's form has no coordinates on it,
+    // and the router reads a missing aim as "no destination named".
+    const brief = readBrief({ where: "Shoreditch", holes: 9 });
+    expect(brief?.aimFrom).toBeNull();
+    expect(brief?.aimTo).toBeNull();
+  });
+
+  it("refuses a coordinate that is not one", () => {
+    // The brief is the only door host input comes through, and this key is the
+    // one thing on it the *server* writes — so anything that does not look
+    // like a resolved point is nothing, rather than a NaN reaching the router.
+    for (const bad of [
+      { lat: "51.5", lng: -0.15 },
+      { lat: 51.5 },
+      { lat: Number.NaN, lng: -0.15 },
+      { lat: 91, lng: 0 },
+      { lat: 0, lng: 181 },
+      "Marylebone",
+      null,
+      [],
+    ]) {
+      const brief = readBrief({ where: "Shoreditch", holes: 9, aimFrom: bad });
+      expect(brief?.aimFrom, JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it("keeps the aim through the same-patch collapse", () => {
+    // Naming one area for both ends collapses `whereTo` and zeroes the reach.
+    // The aim is the server's own resolution and is not part of that rule —
+    // a single patch still has a centre worth walking out from.
+    const brief = readBrief({
+      where: "Shoreditch",
+      whereTo: "shoreditch",
+      holes: 9,
+      aimFrom: MARYLEBONE,
+      aimTo: MARYLEBONE,
+    });
+    expect(brief?.whereTo).toBe("");
+    expect(brief?.reachKm).toBe(0);
+    expect(brief?.aimFrom).toEqual(MARYLEBONE);
+  });
+});

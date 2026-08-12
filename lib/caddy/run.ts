@@ -355,7 +355,14 @@ async function gatherFor(
   brief: CaddyBrief,
   placesKey: string,
 ): Promise<
-  | { candidates: CandidateDossier[]; from: unknown; to: unknown }
+  | {
+      candidates: CandidateDossier[];
+      /** The two area centres the gather actually resolved. Typed rather than
+       * `unknown`: they were `unknown` here, which is precisely what let a
+       * brief that never carried them compile for weeks. */
+      from: { lat: number; lng: number } | null;
+      to: { lat: number; lng: number } | null;
+    }
   | { error: string }
 > {
   const pins = await pinCoords(supabase, [
@@ -457,19 +464,29 @@ export async function reopenCaddyPatch(
   const gathered = await gatherFor(supabase, brief, placesKey);
   if ("error" in gathered) return gathered;
 
+  /**
+   * The dossier alone, because that is the only column a host may write.
+   *
+   * This used to write `brief` as well, to re-stamp the resolved area centres.
+   * `caddy_sessions` grants `update (completed_at, dossier, course_id)` and
+   * nothing else — `brief` is granted to nobody, deliberately, because it is
+   * what the turns were charged against. So **the update was refused for every
+   * host, every time**, and the refusal was mapped to "That patch isn't on
+   * your table" — after `gatherFor` had already spent a Text Search and up to
+   * a dozen Nearby calls at the dear field mask. A live button that could not
+   * work and cost money to press.
+   *
+   * The db suite even asserts a host may not write `brief`, so the tier pinned
+   * the rule that broke the feature.
+   *
+   * The aim is simply not rewritten, and does not need to be: it was stamped
+   * on the brief by the original `openPlan` and describes the *areas the host
+   * named*, which a re-gather does not change. `readBrief` reads it back, so
+   * a re-opened conversation routes the same way the first one did.
+   */
   const { error } = await supabase
     .from("caddy_sessions")
-    .update({
-      // The ends resolve again with the patch, so a re-opened conversation
-      // aims the same way a fresh one would rather than carrying whatever the
-      // first gather happened to find.
-      brief: {
-        ...brief,
-        aimFrom: gathered.from,
-        aimTo: gathered.to,
-      } as unknown as never,
-      dossier: gathered.candidates as unknown as never,
-    })
+    .update({ dossier: gathered.candidates as unknown as never })
     .eq("id", sessionId);
   if (error) return { error: "That patch isn't on your table." };
   return {};
@@ -584,7 +601,17 @@ export async function openPlan(rawBrief: unknown): Promise<
       } ${sessionError?.message ?? ""}`.trim(),
     };
 
-  return { supabase, userId: user.id, sessionId: created.id, brief, candidates };
+  // The **aimed** brief, not the parsed one. The row above was written with the
+  // resolved area centres on it; handing back the pre-gather brief meant the
+  // plan that follows routed with no destination, which is the other half of
+  // the dead-aim bug (`readBrief` is the first half).
+  return {
+    supabase,
+    userId: user.id,
+    sessionId: created.id,
+    brief: { ...brief, aimFrom: from, aimTo: to },
+    candidates,
+  };
 }
 
 /** Roll a fresh card, or answer something the host said. Both re-read the
@@ -748,7 +775,15 @@ function midConversation(brief: CaddyBrief) {
         // Through the same cache the first gather used, so a pub the caddy
         // finds mid-conversation has a real `venues` row and real coordinates
         // before it can ever be put on a hole.
-        return buildCandidates(await cachePubs(supabase, gatheredSearch.pubs));
+        // The `s` namespace, so a search cannot shadow the gather. Numbering
+        // these from `p1` again meant two different real pubs answered to
+        // `p3` after one search, and every `Map` downstream let the later one
+        // win — so the caddy chose one pub and the card carried another.
+        return buildCandidates(
+          await cachePubs(supabase, gatheredSearch.pubs),
+          [],
+          "s",
+        );
       } catch {
         return [];
       }

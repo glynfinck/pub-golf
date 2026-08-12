@@ -390,7 +390,20 @@ export function tryRoute<T extends WalkStop & { id: string }>(
   stops: T[],
   pins: WalkPins = {},
 ): RouteTrial {
-  const ordered = orderWalk(stops, pins);
+  /**
+   * Both passes, because the finished card gets both.
+   *
+   * This ran `orderWalk` alone while `parsePlan` runs `orderWalk` **and then**
+   * `forwardOrder` — so the tool's own description ("the same router the
+   * finished card goes through, so what it reports is what the group will
+   * walk") was false, and the caddy was optimising against a walk nobody
+   * takes. The test that claimed to pin this compared `tryRoute` against
+   * `orderWalk`: the half that agreed.
+   */
+  const ordered = forwardOrder(orderWalk(stops, pins), {
+    first: pins.first != null,
+    last: pins.last != null,
+  });
   const minKm = kmForWalkMinutes(Math.max(0, pins.minLegMinutes ?? 0));
   const legs: TrialLeg[] = [];
   let worstRun = 0;

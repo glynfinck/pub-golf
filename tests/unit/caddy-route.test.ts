@@ -294,13 +294,43 @@ describe("tryRoute — what the caddy gets to see before it commits", () => {
   });
 
   it("promises what the finished card will actually walk like", () => {
-    // A trial that routed differently from the real thing would be worse than
-    // no trial: the caddy would optimise against a walk nobody takes.
+    // A trial that routed differently from the real thing is worse than no
+    // trial: the caddy optimises against a walk nobody takes, and the tool's
+    // own description promises otherwise in as many words.
+    //
+    // **This test used to compare against `orderWalk` alone — the half that
+    // agreed.** `parsePlan` runs `orderWalk` and then `forwardOrder`, so the
+    // second pass was the one that made the promise false, and the assertion
+    // was written against exactly the part that could not catch it. Comparing
+    // against the real pipeline is the whole point.
     const stops = [pub("p1", 0, 0), pub("p2", 9, 2), pub("p3", 3, 7), pub("p4", 7, 1)];
     const pins = { minLegMinutes: 5 } as const;
-    expect(tryRoute(stops, pins).order).toEqual(
-      orderWalk(stops, pins).map((stop) => stop.id),
-    );
+    const asTheCardWalksIt = forwardOrder(orderWalk(stops, pins), {
+      first: false,
+      last: false,
+    }).map((stop) => stop.id);
+    expect(tryRoute(stops, pins).order).toEqual(asTheCardWalksIt);
+  });
+
+  it("reports a walk that never doubles back", () => {
+    // The property the second pass exists for, asserted on the trial rather
+    // than only on the card — a shape where the two passes genuinely disagree.
+    const zigzag = [
+      pub("p1", 0, 0),
+      pub("p2", 8, 0.4),
+      pub("p3", 2, 0.1),
+      pub("p4", 6, 0.3),
+      pub("p5", 4, 0.2),
+    ];
+    const trial = tryRoute(zigzag, { minLegMinutes: 0 });
+    const byId = new Map(zigzag.map((s) => [s.id, s]));
+    const walked = trial.order.map((id) => byId.get(id)!);
+    for (let i = 1; i < walked.length; i += 1) {
+      expect(
+        walked[i].lng!,
+        `hole ${i + 1} steps back to ${trial.order[i]}`,
+      ).toBeGreaterThanOrEqual(walked[i - 1].lng! - 1e-9);
+    }
   });
 
   it("turns spacing off when the host asked for none", () => {

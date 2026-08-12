@@ -566,3 +566,68 @@ describe("the house rules the caddy is given", () => {
     HAZARDS.forEach((hazard) => expect(CADDY_SYSTEM).toContain(hazard.id));
   });
 });
+
+/**
+ * A mid-conversation search must not shadow the patch.
+ *
+ * The loop appends whatever `search_pubs` brings back to the candidates the
+ * caddy is already working from, and `buildCandidates` numbered every list
+ * from `p1`. So after one search there were two different real pubs answering
+ * to `p3` — and every consumer builds a `Map`, in which the later duplicate
+ * silently wins. `set_hole p3` put a pub on the card the caddy had not chosen,
+ * `boardBlock` read the wrong name back to it, and the router received
+ * duplicate ids.
+ *
+ * The rule "never invent a pub" held throughout — every id was a real pub —
+ * which is why nothing caught it. What broke was the quieter promise: that the
+ * pub the caddy picked is the pub the group walks to.
+ */
+describe("search results live in their own namespace", () => {
+  const source = (venueId: string, name: string) => ({
+    venueId,
+    name,
+    address: null,
+    rating: 4.2,
+    reviewCount: 100,
+    lat: 51.52,
+    lng: -0.08,
+    priceLevel: 2,
+    facts: { ...EMPTY_FACTS },
+    editorial: null,
+    reviews: [],
+  });
+
+  it("numbers a gather from p1", () => {
+    const built = buildCandidates([source("v1", "The First"), source("v2", "The Second")]);
+    expect(built.map((c) => c.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("numbers a search from s1, so nothing collides", () => {
+    const built = buildCandidates([source("v9", "The Found")], [], "s");
+    expect(built.map((c) => c.id)).toEqual(["s1"]);
+  });
+
+  it("keeps every id distinct once the two are pooled", () => {
+    // Exactly what the loop does: gather, then append what a search returned.
+    const gathered = buildCandidates([
+      source("v1", "The Old Blue Last"),
+      source("v2", "Nancy Spains"),
+      source("v3", "The Fox"),
+    ]);
+    const found = buildCandidates(
+      [source("v7", "The Beer Garden"), source("v8", "The Yard")],
+      [],
+      "s",
+    );
+    const pooled = [...gathered, ...found];
+    const ids = pooled.map((c) => c.id);
+    expect(new Set(ids).size, `collision in ${ids.join(",")}`).toBe(pooled.length);
+
+    // And the property that actually broke: the last writer of a Map keyed by
+    // id must be the pub that owns the id.
+    const byId = new Map(pooled.map((c) => [c.id, c]));
+    for (const candidate of pooled) {
+      expect(byId.get(candidate.id)!.name).toBe(candidate.name);
+    }
+  });
+});

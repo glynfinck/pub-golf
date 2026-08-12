@@ -97,6 +97,22 @@ export interface CandidateDossier extends PubSource {
 export function buildCandidates(
   sources: PubSource[],
   pinned: string[] = [],
+  /**
+   * The namespace these ids live in. `p` for the gather; `s` for anything a
+   * mid-conversation search brings back.
+   *
+   * **Two namespaces because one collided.** A search returned a fresh list
+   * numbered from `p1` again, and the loop appends it to the candidates the
+   * caddy is already working from — so after one `search_pubs` there were two
+   * different real pubs called `p3`. Every consumer builds a `Map`, in which
+   * the later duplicate silently wins: `set_hole p3` put a pub on the card
+   * that the caddy had not chosen, `boardBlock` read the wrong name back to
+   * it, and `buildRouteGraph` received duplicate ids.
+   *
+   * The unit suite missed it by hand-picking fixture ids that never collide,
+   * which is the hazard of choosing your own test data.
+   */
+  prefix: "p" | "s" = "p",
 ): CandidateDossier[] {
   const seen = new Set<string>();
   const unique = sources.filter((source) => {
@@ -108,7 +124,7 @@ export function buildCandidates(
   const ordered = [...unique.filter(isPinned), ...unique.filter((s) => !isPinned(s))];
   return ordered
     .slice(0, MAX_CANDIDATES)
-    .map((source, index) => ({ ...source, id: `p${index + 1}` }));
+    .map((source, index) => ({ ...source, id: `${prefix}${index + 1}` }));
 }
 
 /** The dossier's own lookup, for resolution. */

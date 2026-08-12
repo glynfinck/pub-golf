@@ -226,7 +226,39 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     stretch: readStretch(input.stretch),
     particulars,
     note: typeof input.note === "string" ? input.note.trim().slice(0, NOTE_MAX) : "",
+    /**
+     * Where the round is aimed, read back off a brief that has already been
+     * through a gather.
+     *
+     * **These were declared and never constructed, so A-to-B routing was dead
+     * in production.** `openPlan` resolves both area centres and stamps them
+     * onto `caddy_sessions.brief`, and every consumer reads them —
+     * `patchBlock`, the loop's own graph, `fallbackBoard`. But this parser
+     * built a fresh object literal without the two keys, so every one of them
+     * received `undefined`, `nearestTo` never fired, and the walk fell back to
+     * the principal eigenvector of the candidate cloud. A round asked to
+     * finish in Covent Garden went wherever the cloud was widest.
+     *
+     * It survived a suite that pins the behaviour hard
+     * (`tests/unit/caddy-real-patches.test.ts`, at real coordinates) because
+     * those tests hand `aimFrom` straight to `buildRouteGraph`. The algorithm
+     * was proven; the seam between the algorithm and the brief was not.
+     */
+    aimFrom: readPoint(input.aimFrom),
+    aimTo: readPoint(input.aimTo),
   };
+}
+
+/** A coordinate the server itself resolved, read back. Anything that is not a
+ * finite pair is nothing — the router treats a missing aim as "no destination
+ * named", which is exactly right for a brief that has not been gathered yet. */
+function readPoint(value: unknown): { lat: number; lng: number } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { lat, lng } = value as { lat?: unknown; lng?: unknown };
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
 }
 
 function readId(value: unknown): string | null {

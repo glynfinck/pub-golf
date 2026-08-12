@@ -26,7 +26,12 @@ import {
 import { caddyCredentials } from "@/lib/caddy/credentials";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { dispatchTool } from "@/lib/caddy/session";
-import { trimTrace, type CaddyTrace, type TracedCall } from "@/lib/caddy/trace";
+import {
+  EMPTY_TRACE,
+  trimTrace,
+  type CaddyTrace,
+  type TracedCall,
+} from "@/lib/caddy/trace";
 import type { WalkPins } from "@/lib/caddy/route";
 import {
   CADDY_TOOLS,
@@ -177,7 +182,15 @@ export async function askCaddy(input: CaddyAsk): Promise<CaddyOutcome> {
       ...requestOf(input, call.model),
       thinking: THINKING,
     });
-    return interpret(response, input, call.model);
+    return {
+      ...interpret(response, input, call.model),
+      trace: trimTrace({
+        ...EMPTY_TRACE,
+        turns: 1,
+        stopReason: response.stop_reason ?? "end_turn",
+        candidates: input.candidates.length,
+      }),
+    };
   } catch (cause) {
     return lostBall(cause, call, "");
   }
@@ -218,7 +231,30 @@ export async function askCaddyStreamed(
         narrate({ answer: event.delta.text });
       }
     });
-    return interpret(await stream.finalMessage(), input, call.model);
+    const finished = await stream.finalMessage();
+    return {
+      ...interpret(finished, input, call.model),
+      /**
+       * A trace for the toolless paths too.
+       *
+       * Only the looped plan has tool calls, so this one carries no `calls` —
+       * and that is the honest record rather than an absence. Every roll and
+       * every tweak used to store `trace: null`, which meant the feedback loop
+       * had nothing at all for **exactly the turns a drafting-table bug report
+       * is most likely to be about**: a host complains after a tweak, far more
+       * often than after the first plan.
+       *
+       * What is left still answers most of the question — how the model
+       * stopped, and how many pubs it had to choose from. `candidates` is what
+       * distinguishes "it picked badly" from "it had nothing to pick from".
+       */
+      trace: trimTrace({
+        ...EMPTY_TRACE,
+        turns: 1,
+        stopReason: finished.stop_reason ?? "end_turn",
+        candidates: input.candidates.length,
+      }),
+    };
   } catch (cause) {
     return lostBall(cause, call, "stream ");
   }
@@ -592,6 +628,19 @@ export async function askCaddyLooped(
           holes: input.brief.holes,
           aim,
         });
+        /**
+         * Whether the call moved anything, captured **before** the board is
+         * reassigned.
+         *
+         * This compared `board !== answered.board` *after* `board =
+         * answered.board`, so the second disjunct was always false and every
+         * successful replace, `move_hole` and `name_course` recorded
+         * `changed: false`. The warning below had the identical defect and
+         * logged "changed nothing" for every successful replace — which is
+         * precisely the diagnostic its own comment says was written to end an
+         * evening of guessing.
+         */
+        const moved = board !== answered.board || board.holes.length !== before;
         board = answered.board;
 
         /**
@@ -606,7 +655,7 @@ export async function askCaddyLooped(
          * whether `drink` arrived at all, which is the question, and the
          * values are a host's course rather than ours to print.
          */
-        if (isDraftTool(block.name) && board.holes.length === before) {
+        if (isDraftTool(block.name) && !moved) {
           const keys =
             typeof block.input === "object" && block.input !== null
               ? Object.keys(block.input as Record<string, unknown>).sort()
@@ -619,9 +668,7 @@ export async function askCaddyLooped(
           name: block.name,
           input: block.input,
           replyBytes: answered.reply.length,
-          ...(isDraftTool(block.name)
-            ? { changed: board.holes.length !== before || board !== answered.board }
-            : {}),
+          ...(isDraftTool(block.name) ? { changed: moved } : {}),
         });
         if (answered.added.length) candidates = [...candidates, ...answered.added];
         if (answered.narration) narrate({ doing: answered.narration });
