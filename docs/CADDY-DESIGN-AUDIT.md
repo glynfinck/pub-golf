@@ -439,3 +439,31 @@ hold a slot.
 prose because the code had invented an unstated exemption. 7.1 states it: a
 price may render only inside a refusal branch. That is a rule a test can hold,
 which is what the covenant needed to stop being a matter of taste.
+
+### Where each decision landed
+
+Written after the fact, so this section is the record rather than the plan.
+Every row is in the branch; the one thing outstanding is named at the bottom.
+
+| # | Landed as |
+|---|-----------|
+| 7.1 | `CaddyOffer` (`lib/caddy/stream.ts`) replaces the `spent` boolean, so a refusal names its own door: `GreenFeeSheet` for a host who has not paid, `CaddyMoreSheet` for one whose fee is used up. The badge and the footer price are gone. **`tests/unit/covenant-money.test.ts` is the rule** — an allowlist of the six modules that may hold a price. |
+| 7.2 | `tearOutWarning` → `tearOutNotice`, returning `canReplace`/`canTweak` beside the line, and `components/course/tear-out-sheet.tsx` renders both doors above the hold-to-confirm. Money appears only when the caddy genuinely cannot replace what is going. |
+| 7.3 | `20260913000000_slot_follows_the_credit.sql`. The unique index is gone; `guard_caddy_course_slot` counts spent `course` credits against filed courses under an advisory lock. Probed on preview: six cases, all correct. |
+| 7.4 | £9 in `lib/tariff.ts`, in `scripts/stripe-seed.mjs` (whose *foreign* ladder was also stale — cad and aud were two rungs behind), and in Stripe test mode via `transfer_lookup_key`. |
+| 7.5 | `caddy_fair_use_cap()` 25 → 80, in the same migration as 7.3. |
+| 7.6 | `move_hole` deleted — tool block, constant, `DRAFT_TOOLS` entry, reducer arm — and the prompt no longer offers it. The `try_route` description stops telling the caddy to measure what it was just told. |
+| 7.7 | `gatherPubs`'s Text Search leg no longer pushes results into the candidate pool. It locates the area; Nearby fills the patch, under `includedPrimaryTypes`. |
+| 7.8 | The loop asks once for a name before handing over an unnamed board. `parsePlan`'s formula goes back to being a floor. |
+| 7.9 | Recorded, not coded: a drop belongs in a migration one deploy *after* the last build that used the thing. |
+| 7.10 | `20260914000000_report_names_the_turn.sql`: `bug_reports.caddy_turn_id`, guarded by `owns_caddy_turn` because a foreign key check runs with row security off. Threaded from the `card` event through the drafting table. Probed on preview. |
+| 7.11 | `20260915000000_sweep_the_dossier.sql`: `sweep_caddy_dossiers()`, scheduled hourly by pg_cron behind an availability guard so a stack without the extension still applies the migration. The notice now also discloses `venues`. |
+| 7.12 | `/tariff` lists all three top-ups and reads its foreign prices off the price object — the sentence above the board had been naming the £4 launch fee under a board rendering £12. |
+| 7.13a | No code. |
+| 7.13b | One line in `CADDY_SYSTEM`: the caddy is the club's caddy and does not call itself a model, an AI or an assistant. |
+| 7.14 | `secondFeeRefusal` in `lib/billing.ts`, pure and tested. A running fee refuses; a dormant one refuses only while it can still do something. The bug it fixes: a fee bought, spent and never teed off had `expires_at` null, which read as "live" and locked its owner out of buying another. |
+
+**Outstanding.** The live Stripe account is not reachable from this
+environment and still carries the £4 green fee with no top-up SKUs at all. It
+needs `node scripts/stripe-seed.mjs` against the live key before the caddy is
+sold to anybody.
