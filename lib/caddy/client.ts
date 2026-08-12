@@ -452,6 +452,26 @@ export async function askCaddyLooped(
   let candidates = input.candidates;
   let usage: CaddyUsage = { ...NO_USAGE };
 
+  /**
+   * What the caddy remembers between turns.
+   *
+   * All three outlive a single tool call on purpose. A pub ruled out on turn
+   * two must still be out on turn five or "another walk, without those" means
+   * nothing; a draft kept before a rework must survive the rework; and the aim
+   * is the brief's, so a re-plan faces the same way the first one did.
+   *
+   * They live here rather than in the conversation because they are facts
+   * about this session rather than things the model said — and because the
+   * prefix above the cache breakpoint has to stay byte-identical every turn.
+   */
+  const excluded = new Map<string, string>();
+  const drafts: { note: string; board: CaddyBoard }[] = [];
+  const aim = {
+    from: input.brief.aimFrom,
+    to: input.brief.aimTo,
+    targetKm: targetKmFor(input.brief.stretch, input.brief.holes, input.brief.reachKm),
+  };
+
   const startedAt = Date.now();
   try {
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn += 1) {
@@ -541,6 +561,10 @@ export async function askCaddyLooped(
           candidates,
           pins: deps.pins,
           search: deps.search,
+          excluded,
+          drafts,
+          holes: input.brief.holes,
+          aim,
         });
         board = answered.board;
 

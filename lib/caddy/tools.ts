@@ -120,6 +120,10 @@ export const TOOL_REMOVE = "remove_hole";
 export const TOOL_MOVE = "move_hole";
 export const TOOL_NAME = "name_course";
 export const TOOL_ROUTE = "try_route";
+export const TOOL_ROUTES = "plan_routes";
+export const TOOL_EXCLUDE = "exclude_pubs";
+export const TOOL_KEEP = "keep_draft";
+export const TOOL_RESTORE = "restore_draft";
 
 /** One hole as the caddy holds it: an id and its dressing. The venue behind
  * the id is the server's business, which is the whole point. */
@@ -159,6 +163,84 @@ export type ToolOutcome =
  * request. A description assembled from a template would re-write the prefix on
  * every call and quietly turn every cache read back into a cache write. */
 export const CADDY_TOOLS = [
+  {
+    name: TOOL_ROUTES,
+    description:
+      "Work out fresh walks over the pubs in the patch. Free and instant — it re-uses what has already been gathered and never goes back to Google, so ask again whenever the last set did not suit. Excluded pubs are left out.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: [],
+      properties: {
+        holes: {
+          type: "integer",
+          description: "How many stops. Defaults to the brief's own count.",
+        },
+        startNear: {
+          type: ["string", "null"],
+          description:
+            "Begin at the pub with this id, or near it. Null to let the walk choose.",
+        },
+        finishNear: {
+          type: ["string", "null"],
+          description: "End at the pub with this id. Null to let the walk choose.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_EXCLUDE,
+    description:
+      "Rule pubs out for the rest of this conversation, with a reason. Use it when a pub cannot meet the brief — no garden when one was asked for, wrong sort of place, already tried and it did not fit. Then plan_routes again and they will not come back.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["candidateIds", "why"],
+      properties: {
+        candidateIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids from the patch. Only ids you have been given.",
+        },
+        why: {
+          type: "string",
+          description: "One short line — what the brief asked for that these cannot give.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_KEEP,
+    description:
+      "Save the card as it stands, so a change can be tried and undone. Keep a draft before reworking something that already looks good.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["note"],
+      properties: {
+        note: {
+          type: "string",
+          description: "What this draft is, in a few words — how you will recognise it.",
+        },
+      },
+    },
+  },
+  {
+    name: TOOL_RESTORE,
+    description:
+      "Put a saved draft back on the table, replacing what is there. Use it when a change turned out worse than what it replaced.",
+    input_schema: {
+      type: "object" as const,
+      additionalProperties: false,
+      required: ["draft"],
+      properties: {
+        draft: {
+          type: "integer",
+          description: "Which saved draft, counting from 1.",
+        },
+      },
+    },
+  },
   {
     name: TOOL_READ,
     description:

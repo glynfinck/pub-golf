@@ -109,6 +109,17 @@ describe("the caddy cannot name a pub", () => {
       // the course's own name, and a plain-words search
       "name",
       "query",
+      // the curator's own vocabulary: how many stops to plan, which end to
+      // pin (by id — `startNear` and `finishNear` take the same ids as
+      // `candidateId` and are refused the same way), why a pub was ruled out,
+      // and how to recognise a kept draft. None of them can say *what a pub
+      // is*, which is the line this list defends.
+      "holes",
+      "startNear",
+      "finishNear",
+      "why",
+      "note",
+      "draft",
     ]);
     const names = new Set(propertyNames(CADDY_TOOLS.map((t) => t.input_schema)));
     expect([...names].filter((n) => !allowed.has(n))).toEqual([]);
