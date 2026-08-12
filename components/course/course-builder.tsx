@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Copy, Map as MapIcon, Plus } from "lucide-react";
+import { Copy, Map as MapIcon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
@@ -39,7 +39,9 @@ import {
   type DraftHole,
 } from "@/lib/course-draft";
 import type { CaddyAllowance, ResumedCaddy } from "@/lib/data/caddy";
-import { tearOutWarning } from "@/lib/caddy/credits";
+import { CADDY_CREDITS_SPENT, tearOutNotice } from "@/lib/caddy/credits";
+import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
+import { TearOutSheet } from "@/components/course/tear-out-sheet";
 import { closeCaddySession, rememberCaddyCourse } from "@/lib/actions/caddy";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -180,6 +182,10 @@ export function CourseBuilder({
   const [patch, setPatch] = useState<LivePatch | null>(null);
   /** The report door, when the caddy planned what is on the table. */
   const [reporting, setReporting] = useState(false);
+  // The tear-out sheet, and the caddy's money door behind it. Held here
+  // rather than inside either sheet so only one is ever open at a time.
+  const [tearing, setTearing] = useState(false);
+  const [wantsMore, setWantsMore] = useState(false);
   /**
    * The row a caddy-planned course was filed into the moment it arrived.
    *
@@ -439,10 +445,10 @@ export function CourseBuilder({
     });
   }
 
-  // What tearing this out would cost, when the caddy planned it. Null for a
+  // What tearing this out would cost, and which ways on are open. Null for a
   // hand-plotted course, which costs nothing to rebuild.
   const tearNote = allowance
-    ? tearOutWarning({
+    ? tearOutNotice({
         // The caddy is on this page only when a session for this course was
         // found, which is the same fact — so this needs no extra query.
         caddyPlanned: caddy && editing,
@@ -768,19 +774,51 @@ export function CourseBuilder({
           <Button variant="outline" onClick={copy} disabled={pending}>
             <Copy aria-hidden /> File a copy beside it
           </Button>
-          {/* Said before the button, not after it. A fee files one course and
-              tearing this out is what frees it to file another — so how many
-              goes are left stops being trivia here and becomes the difference
-              between a decision and a loss. */}
+          {/* A caddy-planned course is torn out through a sheet, because a
+              fee files one course and this is the button that spends it — the
+              count, and the ways on, belong beside the decision rather than in
+              a line of small print above it. A hand-plotted one costs nothing
+              to rebuild and keeps the plain hold it always had. */}
           {tearNote ? (
-            <p className="text-center text-[11px] text-hazard">{tearNote}</p>
-          ) : null}
-          <HoldToConfirm
-            label="Hold to tear out of the book"
-            holdingLabel="Keep holding — tearing it out"
-            disabled={pending}
-            onConfirm={tearOut}
-          />
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setTearing(true)}
+                disabled={pending}
+                className="text-hazard"
+              >
+                <Trash2 aria-hidden /> Tear out of the book
+              </Button>
+              <TearOutSheet
+                open={tearing}
+                onOpenChange={setTearing}
+                notice={tearNote}
+                courseName={name.trim() || course?.name || "This course"}
+                pending={pending}
+                onConfirm={tearOut}
+                onMore={() => {
+                  // One sheet at a time: this closes as the caddy's own door
+                  // opens, the way the round's rules sheet hands over to the
+                  // report sheet.
+                  setTearing(false);
+                  setWantsMore(true);
+                }}
+              />
+              <CaddyMoreSheet
+                open={wantsMore}
+                onOpenChange={setWantsMore}
+                courseId={allowance?.courseId}
+                standing={CADDY_CREDITS_SPENT}
+              />
+            </>
+          ) : (
+            <HoldToConfirm
+              label="Hold to tear out of the book"
+              holdingLabel="Keep holding — tearing it out"
+              disabled={pending}
+              onConfirm={tearOut}
+            />
+          )}
           <p className="text-center text-[11px] text-muted-foreground">
             The copy is the course as last saved. Tearing it out never touches
             a round already played on it.

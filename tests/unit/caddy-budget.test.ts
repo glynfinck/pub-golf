@@ -5,7 +5,7 @@ import {
   coursesLeftNote,
   CADDY_COURSES_PER_FEE,
   freshCourseNotice,
-  tearOutWarning,
+  tearOutNotice,
 } from "@/lib/caddy/credits";
 import {
   CADDY_BUDGET_NOTE,
@@ -422,56 +422,96 @@ describe("what tearing out a caddy course costs", () => {
     // Revisions have nothing to do with it, and a warning here would be the
     // fee's machinery leaking onto the free table.
     expect(
-      tearOutWarning({ caddyPlanned: false, cardsLeft: 0, tweaksLeft: 0 }),
+      tearOutNotice({ caddyPlanned: false, cardsLeft: 0, tweaksLeft: 0 }),
     ).toBeNull();
   });
 
   it("names the goes left when there are some", () => {
-    const many = tearOutWarning({
+    const many = tearOutNotice({
       caddyPlanned: true,
       cardsLeft: 3,
       tweaksLeft: 20,
     });
-    expect(many).toContain("3 more goes");
-    expect(many).toMatch(/frees your fee/i);
+    expect(many?.line).toContain("3 more goes");
+    expect(many?.line).toMatch(/frees your fee/i);
   });
 
   it("counts one properly, in words", () => {
     expect(
-      tearOutWarning({ caddyPlanned: true, cardsLeft: 1, tweaksLeft: 5 }),
+      tearOutNotice({ caddyPlanned: true, cardsLeft: 1, tweaksLeft: 5 })?.line,
     ).toContain("one more go");
   });
 
   it("warns when there is nothing left to rebuild with", () => {
     // The case the warning exists for. Finding this out after the course is
     // gone is the worst possible order to learn it in.
-    const note = tearOutWarning({
+    const notice = tearOutNotice({
       caddyPlanned: true,
       cardsLeft: 0,
       tweaksLeft: 12,
     });
-    expect(note).toMatch(/no more courses/i);
+    expect(notice?.line).toMatch(/no more courses/i);
     // Tweaks are named here and nowhere else: an answer to a question the host
     // is asking by reaching for the button, rather than a meter.
-    expect(note).toMatch(/tweaks left/i);
+    expect(notice?.line).toMatch(/tweaks left/i);
   });
 
   it("says so plainly when neither is left", () => {
-    const note = tearOutWarning({
+    const notice = tearOutNotice({
       caddyPlanned: true,
       cardsLeft: 0,
       tweaksLeft: 0,
     });
-    expect(note).toMatch(/no more courses and no tweaks/i);
+    expect(notice?.line).toMatch(/no more courses and no tweaks/i);
     // Still no guilt and no sales clock — the covenant holds inside a warning.
-    expect(note).toMatch(/free/i);
+    expect(notice?.line).toMatch(/free/i);
   });
 
   it("never puts a countdown or a price in front of a destructive button", () => {
     for (const cardsLeft of [0, 1, 4]) {
       for (const tweaksLeft of [0, 30]) {
-        const note = tearOutWarning({ caddyPlanned: true, cardsLeft, tweaksLeft });
-        expect(note).not.toMatch(/£|\$|hurry|expires? in|only .* left today/i);
+        const notice = tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft });
+        expect(notice?.line).not.toMatch(/£|\$|hurry|expires? in|only .* left today/i);
+      }
+    }
+  });
+
+  /**
+   * The doors, which are the half of this that was missing.
+   *
+   * The requirement asked for a warning that offered a way on — buy more, or
+   * just tweak — and for a release the code produced the sentence and no
+   * doors at all. So the doors are decided here, next to the sentence, and
+   * asserted here too: a screen that re-derived them would be a second place
+   * for them to disagree with the words above them.
+   */
+  it("offers more caddy only when the caddy cannot replace what is going", () => {
+    // Goes left: the fee they hold already covers this, so nothing is sold.
+    expect(tearOutNotice({ caddyPlanned: true, cardsLeft: 2, tweaksLeft: 0 }))
+      .toMatchObject({ canReplace: true });
+    // No goes left: the refusal is real, and this is where money may answer.
+    expect(tearOutNotice({ caddyPlanned: true, cardsLeft: 0, tweaksLeft: 4 }))
+      .toMatchObject({ canReplace: false });
+  });
+
+  it("offers the tweak door exactly when tweaks remain", () => {
+    for (const cardsLeft of [0, 1, 4]) {
+      expect(
+        tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft: 0 })?.canTweak,
+      ).toBe(false);
+      expect(
+        tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft: 1 })?.canTweak,
+      ).toBe(true);
+    }
+  });
+
+  it("agrees with its own sentence about tweaks", () => {
+    // The failure this guards is the sentence saying "there are tweaks left"
+    // beside a sheet that offers no way to spend them, or the reverse.
+    for (const cardsLeft of [0, 3]) {
+      for (const tweaksLeft of [0, 7]) {
+        const notice = tearOutNotice({ caddyPlanned: true, cardsLeft, tweaksLeft });
+        expect(notice?.canTweak).toBe(tweaksLeft > 0);
       }
     }
   });

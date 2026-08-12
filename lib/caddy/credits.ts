@@ -162,11 +162,29 @@ export function freshCourseNotice(input: {
  * mistake that argument is about.
  *
  * No pressure and no sales clock, per the covenant. It says what is true and
- * stops; the door to more is where it has always been, on the spent sheet.
+ * stops. It also says which ways on are actually open, because a host being
+ * told "the caddy can't rebuild this" needs the alternatives in the same
+ * breath as the warning — that is the whole of the requirement this answers,
+ * and answering it in prose alone left the two doors unbuilt for a release.
+ *
+ * The sentence and the doors are decided together, here, rather than in the
+ * sheet: which ways on exist follows from the same two counts as the wording
+ * does, and a screen re-deriving them is a second place for them to disagree.
  *
  * Null for a hand-plotted course, which has nothing to do with any of this.
  */
-export function tearOutWarning(input: {
+export interface TearOutNotice {
+  /** What is true, in one sentence. */
+  line: string;
+  /** Whether the caddy could plan a replacement for what is about to go. When
+   * it could not, the sheet offers more caddy — and only then. */
+  canReplace: boolean;
+  /** Whether changing this course instead is still a thing they can do. The
+   * "just tweak it" door, and the reason the warning is not a dead end. */
+  canTweak: boolean;
+}
+
+export function tearOutNotice(input: {
   /** Whether the caddy planned this one. A course somebody typed out by hand
    * costs nothing to rebuild and gets no warning. */
   caddyPlanned: boolean;
@@ -174,19 +192,32 @@ export function tearOutWarning(input: {
    * together, which is what `caddyAllowance` reports. */
   cardsLeft: number;
   tweaksLeft: number;
-}): string | null {
+}): TearOutNotice | null {
   if (!input.caddyPlanned) return null;
+  const canTweak = input.tweaksLeft > 0;
   if (input.cardsLeft > 0) {
     const goes =
       input.cardsLeft === 1
         ? "one more go at it"
         : `${input.cardsLeft} more goes at it`;
-    return `Tearing this out frees your fee to plan another — you have ${goes}.`;
+    return {
+      line: `Tearing this out frees your fee to plan another — you have ${goes}.`,
+      canReplace: true,
+      canTweak,
+    };
   }
-  if (input.tweaksLeft > 0) {
-    return "This fee has no more courses in it, so the caddy can't plan you a replacement. Changing this one is still free, and there are tweaks left on it.";
+  if (canTweak) {
+    return {
+      line: "This fee has no more courses in it, so the caddy can't plan you a replacement. Changing this one is still free, and there are tweaks left on it.",
+      canReplace: false,
+      canTweak: true,
+    };
   }
-  return "This fee has no more courses and no tweaks left. Tear this out and the caddy can't rebuild it — though the drafting table is free, as always.";
+  return {
+    line: "This fee has no more courses and no tweaks left. Tear this out and the caddy can't rebuild it — though the drafting table is free, as always.",
+    canReplace: false,
+    canTweak: false,
+  };
 }
 
 /**
