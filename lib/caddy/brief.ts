@@ -155,6 +155,11 @@ export interface CaddyBrief {
    * rather than a fact until the gather agrees with it.
    */
   reachKm: number;
+  /** Where the two named areas actually resolved to, filled in by the gather.
+   * The router needs them: they are what turns the walk's axis from a line
+   * into a direction. */
+  aimFrom?: { lat: number; lng: number } | null;
+  aimTo?: { lat: number; lng: number } | null;
   /** Venue ids of pinned tees, or null. A pin is a real `venues` row before
    * the caddy hears of it — the pub search put it there. */
   startVenueId: string | null;

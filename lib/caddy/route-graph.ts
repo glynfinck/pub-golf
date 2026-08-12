@@ -105,6 +105,19 @@ export interface RouteRequest {
   neighbours?: number;
   /** How many routes to hand over. */
   routes?: number;
+  /**
+   * The middles of the two areas the host named.
+   *
+   * With no pinned venues the walk's axis is a *line* and nothing says which
+   * way along it to travel — a real round asked to finish in Covent Garden
+   * walked the right corridor westwards into Marylebone, because "the two
+   * furthest-apart candidates" has no direction in it. These give it one: the
+   * walk starts at the pub nearest the first middle and finishes at the pub
+   * nearest the second, which is what a host means by going from one place to
+   * another.
+   */
+  aimFrom?: { lat: number; lng: number } | null;
+  aimTo?: { lat: number; lng: number } | null;
 }
 
 const DEFAULT_NEIGHBOURS = 5;
@@ -788,12 +801,31 @@ export function buildRouteGraph(
   // neighbour map alone rather than a fabricated route.
   if (holes < 2) return { nodes, neighbours, routes: [] };
 
+  /** The candidate nearest a point — how an *area* becomes a stop. */
+  const nearestTo = (aim: { lat: number; lng: number } | null | undefined) => {
+    if (!aim) return null;
+    let best: string | null = null;
+    let bestKm = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+      const km = haversineKm(aim.lat, aim.lng, node.lat, node.lng);
+      if (km < bestKm) {
+        bestKm = km;
+        best = node.id;
+      }
+    }
+    return best;
+  };
+
+  // A pinned venue is the host's own choice and beats an area every time. An
+  // area only decides an end when nothing was pinned there.
   const startId =
-    request.startId && byId.has(request.startId) ? request.startId : null;
+    (request.startId && byId.has(request.startId) ? request.startId : null) ??
+    nearestTo(request.aimFrom);
+  const aimedFinish = nearestTo(request.aimTo);
   const finishId =
-    request.finishId && byId.has(request.finishId) && request.finishId !== startId
+    (request.finishId && byId.has(request.finishId) && request.finishId !== startId
       ? request.finishId
-      : null;
+      : null) ?? (aimedFinish && aimedFinish !== startId ? aimedFinish : null);
 
   // With no pinned tee, try several origins so the seeds genuinely differ.
   const origins = startId ? [startId] : pool.slice(0, 6);

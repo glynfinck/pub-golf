@@ -395,7 +395,7 @@ export async function openPlan(rawBrief: unknown): Promise<
   const finish = pins.get(brief.finishVenueId ?? "");
 
   const requestHeaders = await headers();
-  const gathered = await gatherPubs({
+  const gather = await gatherPubs({
     key: placesKey,
     where: brief.where,
     whereTo: brief.whereTo,
@@ -409,7 +409,7 @@ export async function openPlan(rawBrief: unknown): Promise<
     language: primaryLanguage(requestHeaders.get("accept-language")),
   });
 
-  const cached = await cachePubs(supabase, gathered);
+  const cached = await cachePubs(supabase, gather.pubs);
   // Pinned tees always join the table, whatever the gather returned.
   const withPins = [
     ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
@@ -433,7 +433,13 @@ export async function openPlan(rawBrief: unknown): Promise<
     .insert({
       host: user.id,
       entitlement_id: fee.id,
-      brief: brief as unknown as never,
+      // The areas as they actually resolved, so the router faces the way the
+      // host asked rather than guessing a direction from the candidate cloud.
+      brief: {
+        ...brief,
+        aimFrom: gather.from,
+        aimTo: gather.to,
+      } as unknown as never,
       dossier: candidates as unknown as never,
     })
     .select("id")
@@ -546,7 +552,7 @@ function midConversation(brief: CaddyBrief) {
       if (!key) return [];
       try {
         const supabase = await createClient();
-        const found = await gatherPubs({
+        const gatheredSearch = await gatherPubs({
           key,
           where: query,
           // A mid-plan search is one place the caddy went looking for, not a
@@ -560,7 +566,7 @@ function midConversation(brief: CaddyBrief) {
         // Through the same cache the first gather used, so a pub the caddy
         // finds mid-conversation has a real `venues` row and real coordinates
         // before it can ever be put on a hole.
-        return buildCandidates(await cachePubs(supabase, found));
+        return buildCandidates(await cachePubs(supabase, gatheredSearch.pubs));
       } catch {
         return [];
       }

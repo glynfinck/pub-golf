@@ -272,6 +272,8 @@ export function patchBlock(
     startId: candidateIdFor(candidates, brief.startVenueId),
     finishId: candidateIdFor(candidates, brief.finishVenueId),
     targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
+    aimFrom: brief.aimFrom,
+    aimTo: brief.aimTo,
   });
   const routes = routesBlock(graph);
   return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);
@@ -395,7 +397,7 @@ export function parsePlan(
   // after the host's own patch rather than after the app.
   brief: Pick<
     CaddyBrief,
-    "holes" | "startVenueId" | "finishVenueId" | "stretch" | "where"
+    "holes" | "startVenueId" | "finishVenueId" | "stretch" | "where" | "reachKm" | "aimFrom" | "aimTo"
   >,
 ): PlanResult {
   if (typeof raw !== "object" || raw === null) {

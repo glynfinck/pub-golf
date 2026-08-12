@@ -215,7 +215,17 @@ export interface GatherInput {
  * between them, so the candidates lie along the corridor the group will
  * actually walk rather than in a ring around a midpoint.
  */
-export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
+export interface Gathered {
+  pubs: GatheredPub[];
+  /** Where the two named areas actually resolved to. Handed back rather than
+   * kept, because the router needs them: a corridor tells the gather *where*
+   * to look and tells the walk *which way to face*, and without the second the
+   * route can march the right line in the wrong direction. */
+  from: { lat: number; lng: number } | null;
+  to: { lat: number; lng: number } | null;
+}
+
+export async function gatherPubs(input: GatherInput): Promise<Gathered> {
   const { key, language } = input;
   const found: GooglePlace[] = [];
 
@@ -318,6 +328,6 @@ export async function gatherPubs(input: GatherInput): Promise<GatheredPub[]> {
     seen.add(pub.googlePlaceId);
     gathered.push(pub);
   }
-  return gathered;
+  return { pubs: gathered, from, to };
 }
 
