@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   CADDY_GRANT_SIZE,
   coursesLeftNote,
+  CADDY_COURSES_PER_FEE,
+  tearOutWarning,
 } from "@/lib/caddy/credits";
 import {
   CADDY_BUDGET_NOTE,
@@ -290,5 +292,90 @@ describe("what a fee buys, counted", () => {
     expect(coursesLeftNote(0)).toMatch(/no courses left/i);
     expect(coursesLeftNote(1)).toMatch(/one course left/i);
     expect(coursesLeftNote(3)).toMatch(/^3 courses left/i);
+  });
+});
+
+/**
+ * What a fee buys, and what tearing the course out of it costs.
+ *
+ * The rule: a green fee is one caddy course plus four revisions of it, and the
+ * host keeps **one** course. Four revisions amounting to four saved courses
+ * would be four evenings' work for the price of one — and until
+ * `caddy_sessions_one_course_per_fee` that is exactly what a fee could produce,
+ * with a real one on preview to prove it.
+ */
+describe("what a green fee buys", () => {
+  it("is one course and four revisions of it", () => {
+    expect(CADDY_GRANT_SIZE.course).toBe(1);
+    expect(CADDY_GRANT_SIZE.redesign).toBe(4);
+  });
+
+  it("counts both rungs as goes at the card", () => {
+    // `guard_caddy_spend` takes the course credit first and re-designs after,
+    // so a host cannot tell which one paid for the card in front of them.
+    // Quoting only the re-designs would be one short of what they bought.
+    expect(CADDY_COURSES_PER_FEE).toBe(
+      CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign,
+    );
+  });
+});
+
+describe("what tearing out a caddy course costs", () => {
+  it("says nothing about a course somebody plotted by hand", () => {
+    // Revisions have nothing to do with it, and a warning here would be the
+    // fee's machinery leaking onto the free table.
+    expect(
+      tearOutWarning({ caddyPlanned: false, cardsLeft: 0, tweaksLeft: 0 }),
+    ).toBeNull();
+  });
+
+  it("names the goes left when there are some", () => {
+    const many = tearOutWarning({
+      caddyPlanned: true,
+      cardsLeft: 3,
+      tweaksLeft: 20,
+    });
+    expect(many).toContain("3 more goes");
+    expect(many).toMatch(/frees your fee/i);
+  });
+
+  it("counts one properly, in words", () => {
+    expect(
+      tearOutWarning({ caddyPlanned: true, cardsLeft: 1, tweaksLeft: 5 }),
+    ).toContain("one more go");
+  });
+
+  it("warns when there is nothing left to rebuild with", () => {
+    // The case the warning exists for. Finding this out after the course is
+    // gone is the worst possible order to learn it in.
+    const note = tearOutWarning({
+      caddyPlanned: true,
+      cardsLeft: 0,
+      tweaksLeft: 12,
+    });
+    expect(note).toMatch(/no more courses/i);
+    // Tweaks are named here and nowhere else: an answer to a question the host
+    // is asking by reaching for the button, rather than a meter.
+    expect(note).toMatch(/tweaks left/i);
+  });
+
+  it("says so plainly when neither is left", () => {
+    const note = tearOutWarning({
+      caddyPlanned: true,
+      cardsLeft: 0,
+      tweaksLeft: 0,
+    });
+    expect(note).toMatch(/no more courses and no tweaks/i);
+    // Still no guilt and no sales clock — the covenant holds inside a warning.
+    expect(note).toMatch(/free/i);
+  });
+
+  it("never puts a countdown or a price in front of a destructive button", () => {
+    for (const cardsLeft of [0, 1, 4]) {
+      for (const tweaksLeft of [0, 30]) {
+        const note = tearOutWarning({ caddyPlanned: true, cardsLeft, tweaksLeft });
+        expect(note).not.toMatch(/£|\$|hurry|expires? in|only .* left today/i);
+      }
+    }
   });
 });

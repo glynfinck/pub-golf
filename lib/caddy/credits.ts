@@ -28,7 +28,7 @@ import { sticker, TARIFF } from "@/lib/tariff";
  * test — a number the screen misquotes is a host told they have something they
  * do not.
  */
-export const CADDY_QUOTAS = ["redesign", "tweak"] as const;
+export const CADDY_QUOTAS = ["course", "redesign", "tweak"] as const;
 export type CaddyQuota = (typeof CADDY_QUOTAS)[number];
 
 /**
@@ -41,16 +41,28 @@ export type CaddyQuota = (typeof CADDY_QUOTAS)[number];
  * so a fussy host does — which is why one is shown and the other is not.
  */
 export const CADDY_GRANT_SIZE: Record<CaddyQuota, number> = {
-  // Four, so the fee is a discount rather than merely a bundle: £12 over four
-  // is £3 a round, where the smallest top-up is £4. See docs/CADDY-TOPUPS.md —
-  // the bundle has to be the best rate anyone can get, or it is the option to
-  // avoid.
+  // The course itself: one, and the whole point of the quota existing. A fee
+  // buys an evening's legwork and the host keeps the evening — not four of
+  // them. `caddy_sessions_one_course_per_fee` is what actually holds the line;
+  // this is what pays for the first card.
+  course: 1,
+  // Four revisions of that course, so the fee is a discount rather than merely
+  // a bundle: £12 over five goes is £2.40 a go, where the smallest top-up is
+  // £5 for one. See docs/CADDY-TOPUPS.md — the bundle has to be the best rate
+  // anyone can get, or it is the option to avoid.
   redesign: 4,
   tweak: 60,
 };
 
-/** The countable one, for the copy that names it. */
-export const CADDY_COURSES_PER_FEE = CADDY_GRANT_SIZE.redesign;
+/**
+ * How many whole cards a fee can produce: the course, plus every revision.
+ *
+ * Both rungs, because the ladder in `guard_caddy_spend` spends them in order
+ * and a host cannot tell which one paid for the card in front of them. Naming
+ * only the revisions would quote them a number one short of what they bought.
+ */
+export const CADDY_COURSES_PER_FEE =
+  CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign;
 
 /**
  * The line for a host who has spent every course on the fee they hold.
@@ -67,6 +79,51 @@ export const CADDY_CREDITS_SPENT =
 export function coursesLeftNote(left: number): string {
   if (left <= 0) return "No courses left on this fee";
   return left === 1 ? "One course left on this fee" : `${left} courses left on this fee`;
+}
+
+/**
+ * What a host should know before tearing out a course the caddy planned.
+ *
+ * A fee files one course (`caddy_sessions_one_course_per_fee`), and tearing it
+ * out is what frees the fee to file another — so this button is the one place
+ * where "how many goes are left" stops being trivia and becomes the difference
+ * between a decision and a loss. A host with no goes left who bins their course
+ * has nothing to rebuild it with, and finding that out afterwards is the worst
+ * possible order to learn it in.
+ *
+ * **This is the one place a tweak count appears**, and the exception is
+ * deliberate. `lib/caddy/fair-use.ts` argues that a permanent meter on "ask as
+ * often as you like" turns membership back into credits, and that still holds:
+ * this is not a meter, it is an answer to a question the host is asking by
+ * reaching for a destructive button. Naming it anywhere else would be the
+ * mistake that argument is about.
+ *
+ * No pressure and no sales clock, per the covenant. It says what is true and
+ * stops; the door to more is where it has always been, on the spent sheet.
+ *
+ * Null for a hand-plotted course, which has nothing to do with any of this.
+ */
+export function tearOutWarning(input: {
+  /** Whether the caddy planned this one. A course somebody typed out by hand
+   * costs nothing to rebuild and gets no warning. */
+  caddyPlanned: boolean;
+  /** Whole cards left on the fee — the course credit and the revisions
+   * together, which is what `caddyAllowance` reports. */
+  cardsLeft: number;
+  tweaksLeft: number;
+}): string | null {
+  if (!input.caddyPlanned) return null;
+  if (input.cardsLeft > 0) {
+    const goes =
+      input.cardsLeft === 1
+        ? "one more go at it"
+        : `${input.cardsLeft} more goes at it`;
+    return `Tearing this out frees your fee to plan another — you have ${goes}.`;
+  }
+  if (input.tweaksLeft > 0) {
+    return "This fee has no more courses in it, so the caddy can't plan you a replacement. Changing this one is still free, and there are tweaks left on it.";
+  }
+  return "This fee has no more courses and no tweaks left. Tear this out and the caddy can't rebuild it — though the drafting table is free, as always.";
 }
 
 /**

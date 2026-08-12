@@ -1,0 +1,28 @@
+-- ---------------------------------------------------------------------------
+-- A third quota: the course itself.
+--
+-- The green fee has been sold as "a course, planned in twenty seconds", and the
+-- ledger has never had a way to say that. It counted `redesign` and `tweak`,
+-- and the *first* plan spent a re-design like any other — so a fee that reads
+-- as "one course plus four revisions" was really four generations, and nothing
+-- anywhere said how many of them a host got to keep.
+--
+-- That second half is the one that bit. With no rule about courses, the only
+-- thing stopping a fee producing several was the drafting table remembering
+-- which one it had already filed, in React state — and it forgot, exactly as
+-- client state does. One fee on preview has two saved courses to show for it.
+--
+-- So the thing being sold becomes a thing the database counts.
+--
+-- **This migration adds the value and nothing else, on purpose.** Postgres will
+-- not let a new enum value be *used* in the transaction that adds it, and
+-- Supabase runs each migration in one. `20260906000000` is where it is spent,
+-- granted and indexed; splitting them is the only way both can run.
+--
+-- Additive per DEPLOYMENT.md, and about as additive as a change gets: code that
+-- has never heard of this value keeps reading `redesign` and `tweak` exactly as
+-- before. `enum_range` picks the new one up wherever a quota is iterated, which
+-- is why the grant sizes have to land in the same push — see the next file.
+-- ---------------------------------------------------------------------------
+
+alter type public.caddy_quota add value if not exists 'course';

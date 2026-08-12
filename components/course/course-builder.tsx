@@ -38,6 +38,7 @@ import {
   type DraftHole,
 } from "@/lib/course-draft";
 import type { CaddyAllowance, ResumedCaddy } from "@/lib/data/caddy";
+import { tearOutWarning } from "@/lib/caddy/credits";
 import { closeCaddySession, rememberCaddyCourse } from "@/lib/actions/caddy";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -109,6 +110,7 @@ export function CourseBuilder({
   hasPass = false,
   resumed = null,
   reopen = null,
+  filedCourseId = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -121,6 +123,17 @@ export function CourseBuilder({
    * one trip back to Google before it can be spoken to. The id is all the
    * caddy needs; everything else is already on the session row. */
   reopen?: string | null;
+  /**
+   * The course this host's live fee has already filed, if any.
+   *
+   * Separate from `resumed.courseId` because they answer different questions
+   * and only one of them survives a second plan. A host who plans twice has
+   * two sessions; the newest has filed nothing yet, so resuming it hands back
+   * a null course and the next card mints a *second* course on a fee that
+   * bought one. This is asked of the fee instead, so it is right whichever
+   * session is on top.
+   */
+  filedCourseId?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -173,7 +186,12 @@ export function CourseBuilder({
    * all. A card that filed itself is still a draft being worked on, with the
    * caddy still sitting beside it.
    */
-  const [savedId, setSavedId] = useState<string | null>(resumed?.courseId ?? null);
+  // The fee's answer first. `resumed.courseId` is the same fact seen through
+  // one session, and it is null exactly when a host has planned twice — which
+  // is the case that used to file a duplicate.
+  const [savedId, setSavedId] = useState<string | null>(
+    filedCourseId ?? resumed?.courseId ?? null,
+  );
   const [changed, setChanged] = useState<number[]>([]);
   const [picking, setPicking] = useState<PickTarget | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
@@ -412,6 +430,18 @@ export function CourseBuilder({
       router.push("/courses");
     });
   }
+
+  // What tearing this out would cost, when the caddy planned it. Null for a
+  // hand-plotted course, which costs nothing to rebuild.
+  const tearNote = allowance
+    ? tearOutWarning({
+        // The caddy is on this page only when a session for this course was
+        // found, which is the same fact — so this needs no extra query.
+        caddyPlanned: caddy && editing,
+        cardsLeft: allowance.left,
+        tweaksLeft: allowance.tweaks,
+      })
+    : null;
 
   const par = holes.reduce((sum, hole) => sum + hole.par, 0);
   // In the book by either door: opened from it, or filed there on arrival by
@@ -702,6 +732,13 @@ export function CourseBuilder({
           <Button variant="outline" onClick={copy} disabled={pending}>
             <Copy aria-hidden /> File a copy beside it
           </Button>
+          {/* Said before the button, not after it. A fee files one course and
+              tearing this out is what frees it to file another — so how many
+              goes are left stops being trivia here and becomes the difference
+              between a decision and a loss. */}
+          {tearNote ? (
+            <p className="text-center text-[11px] text-hazard">{tearNote}</p>
+          ) : null}
           <HoldToConfirm
             label="Hold to tear out of the book"
             holdingLabel="Keep holding — tearing it out"

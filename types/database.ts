@@ -899,7 +899,7 @@ export type Database = {
       }
     }
     Enums: {
-      caddy_quota: "redesign" | "tweak"
+      caddy_quota: "course" | "redesign" | "tweak"
     }
     CompositeTypes: {
       [_ in never]: never

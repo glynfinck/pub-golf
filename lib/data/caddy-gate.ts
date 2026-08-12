@@ -1,7 +1,7 @@
 import "server-only";
 
 import { caddyReady, shutGates, showCaddyDiagnostics } from "@/lib/caddy/readiness";
-import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
+import { CADDY_COURSES_PER_FEE, CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import { caddyAllowance } from "@/lib/data/caddy";
 import { getDayPass } from "@/lib/data/billing";
 import { getSessionUser } from "@/lib/data/rounds";
@@ -63,7 +63,12 @@ export async function caddyStand(): Promise<CaddyStand> {
 
   const allowance = tablesPresent
     ? await caddyAllowance()
-    : { canPlan: true, left: CADDY_COURSES_PER_FEE, courseId: null };
+    : {
+        canPlan: true,
+        left: CADDY_COURSES_PER_FEE,
+        courseId: null,
+        tweaks: CADDY_GRANT_SIZE.tweak,
+      };
 
   const gateInput = {
     signedIn: user != null,

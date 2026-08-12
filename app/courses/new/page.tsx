@@ -1,7 +1,7 @@
 import { CaddyGates } from "@/components/course/caddy-gates";
 import { CourseBuilder } from "@/components/course/course-builder";
 import { caddyStand, caddyTablesPresent } from "@/lib/data/caddy-gate";
-import { resumeCaddy } from "@/lib/data/caddy";
+import { feeFiledCourse, resumeCaddy } from "@/lib/data/caddy";
 
 /** The drafting table with a blank sheet on it (components/course/course-builder). */
 export default async function NewCoursePage() {
@@ -10,8 +10,17 @@ export default async function NewCoursePage() {
   // What the host was in the middle of, if anything. Asked here rather than
   // remembered on the client: a refresh used to lose the thread to a card that
   // was still sitting in the database, and the next plan filed a duplicate
-  // course on top of it (`lib/data/caddy.ts`).
-  const resumed = (await caddyTablesPresent()) ? await resumeCaddy() : null;
+  // course on top of it.
+  //
+  // Two questions, deliberately separate. `resumeCaddy` is "is there a
+  // conversation to continue" and depends on the patch still being there.
+  // `feeFiledCourse` is "has this fee already bought a course", which does not
+  // — and answering the second from the first is what put two courses on one
+  // fee (lib/data/caddy.ts).
+  const present = await caddyTablesPresent();
+  const [resumed, filed] = present
+    ? await Promise.all([resumeCaddy(), feeFiledCourse()])
+    : [null, null];
 
   return (
     <>
@@ -19,6 +28,7 @@ export default async function NewCoursePage() {
         caddy={stand.ready}
         hasPass={stand.hasPass}
         resumed={resumed}
+        filedCourseId={filed}
         allowance={stand.allowance}
       />
       {/* Absence rather than apology stays the rule for players; this is for
