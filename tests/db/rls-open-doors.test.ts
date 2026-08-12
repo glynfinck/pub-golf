@@ -271,4 +271,72 @@ describe("a foreign key is not an access check", () => {
     });
     expect(error).toBeNull();
   });
+
+  /**
+   * The same shape one level down, on the turn.
+   *
+   * A session is up to sixty-five cards, so a report that names only the
+   * session leaves whoever triages it guessing which one went wrong.
+   * `caddy_turn_id` narrows it — and needs its own guard for the reason the
+   * session link needed one: a foreign key check runs with row security off,
+   * so the reference proves the turn exists and nothing about whose it is.
+   */
+  async function turnFor(host: { userId: string }) {
+    const { data: session } = await adminClient()
+      .from("caddy_sessions")
+      .insert({
+        host: host.userId,
+        brief: { where: "Shoreditch", holes: 9 },
+        dossier: [{ id: "p1" }],
+      })
+      .select("id")
+      .single();
+    const { data: turn } = await adminClient()
+      .from("caddy_turns")
+      .insert({
+        session_id: session!.id,
+        host: host.userId,
+        kind: "plan",
+        result: { name: "A card", holes: [] },
+      })
+      .select("id")
+      .single();
+    return { sessionId: session!.id, turnId: turn!.id };
+  }
+
+  it("refuses a report naming a stranger's card", async () => {
+    const theirs = await turnFor(owner);
+    const mine = await turnFor(stranger);
+    const { error } = await stranger.db.from("bug_reports").insert({
+      reporter: stranger.userId,
+      area: "courses",
+      body: "Fishing for somebody else's card.",
+      caddy_session_id: mine.sessionId,
+      caddy_turn_id: theirs.turnId,
+    });
+    expectDenied(error);
+  });
+
+  it("lets a reporter name their own card", async () => {
+    const mine = await turnFor(owner);
+    const { error } = await owner.db.from("bug_reports").insert({
+      reporter: owner.userId,
+      area: "courses",
+      body: "Hole four is a Wetherspoons and we asked for none.",
+      caddy_session_id: mine.sessionId,
+      caddy_turn_id: mine.turnId,
+    });
+    expect(error).toBeNull();
+  });
+
+  it("still takes a report that names no card at all", async () => {
+    // The profile screen files one of these, and a drafting table that has
+    // planned nothing files one too. Both ids stay nullable for good.
+    const { error } = await owner.db.from("bug_reports").insert({
+      reporter: owner.userId,
+      area: "other",
+      body: "The masthead sweeps the wrong way on a fold.",
+    });
+    expect(error).toBeNull();
+  });
 });

@@ -38,6 +38,7 @@ export type Database = {
         Row: {
           area: string
           caddy_session_id: string | null
+          caddy_turn_id: string | null
           body: string
           context: Json
           created_at: string
@@ -50,6 +51,7 @@ export type Database = {
         Insert: {
           area?: string
           caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body: string
           context?: Json
           created_at?: string
@@ -62,6 +64,7 @@ export type Database = {
         Update: {
           area?: string
           caddy_session_id?: string | null
+          caddy_turn_id?: string | null
           body?: string
           context?: Json
           created_at?: string

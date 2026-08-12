@@ -131,7 +131,12 @@ export async function POST(request: Request) {
           offer: result.offer,
         });
       } else {
-        say({ type: "card", course: result.course, sessionId: result.sessionId });
+        say({
+          type: "card",
+          course: result.course,
+          sessionId: result.sessionId,
+          turnId: result.turnId ?? null,
+        });
       }
       if (open) controller.close();
     },

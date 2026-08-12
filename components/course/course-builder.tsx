@@ -164,6 +164,16 @@ export function CourseBuilder({
   const [caddySession, setCaddySession] = useState<string | null>(
     resumed?.sessionId ?? null,
   );
+  /**
+   * The turn that produced what is on the table, when this page watched it
+   * arrive.
+   *
+   * Null on a resumed session, and honestly so: the card was restored from the
+   * book rather than handed over, and pointing a report at the session's
+   * *latest* turn would be a guess dressed as evidence. The session id is
+   * still there and still says which conversation — this only ever narrows it.
+   */
+  const [caddyTurn, setCaddyTurn] = useState<string | null>(null);
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
@@ -556,6 +566,7 @@ export function CourseBuilder({
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           onSession={setCaddySession}
+          onTurn={setCaddyTurn}
           session={caddySession}
           reopen={reopen}
           passExpiresAt={passExpiresAt}
@@ -764,6 +775,7 @@ export function CourseBuilder({
             open={reporting}
             onOpenChange={setReporting}
             caddySessionId={caddySession}
+            caddyTurnId={caddyTurn}
             area="courses"
           />
         </div>

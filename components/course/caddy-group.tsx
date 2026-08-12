@@ -70,6 +70,7 @@ export function CaddyGroup({
   onCourse,
   onPatch,
   onPicked,
+  onTurn,
   allowance,
   onSession,
   onReach,
@@ -96,6 +97,10 @@ export function CaddyGroup({
   allowance?: { canPlan: boolean; left: number; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
+  /** The turn behind *this* card, so a report can name the card rather than
+   * the conversation. Null on a resumed session until the caddy is asked
+   * something: the id belongs to a turn this page watched happen. */
+  onTurn?: (turnId: string | null) => void;
   /**
    * A conversation the server found already open, if there is one.
    *
@@ -337,6 +342,7 @@ export function CaddyGroup({
         } else if (event.type === "card") {
           setSessionId(event.sessionId);
           onSession(event.sessionId);
+          onTurn?.(event.turnId ?? null);
           await onCourse(event.course, []);
           landed = true;
         } else if (event.offer) {
@@ -412,7 +418,10 @@ export function CaddyGroup({
     run(async () => {
       const result = await askTheCaddy({ sessionId, ...input });
       if (result.error) return { error: result.error, detail: result.detail };
-      if (result.course) await onCourse(result.course, result.changed ?? []);
+      if (result.course) {
+        onTurn?.(result.turnId ?? null);
+        await onCourse(result.course, result.changed ?? []);
+      }
       setAsk("");
       return {};
     });

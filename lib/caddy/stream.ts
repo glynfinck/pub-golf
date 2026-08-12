@@ -59,8 +59,16 @@ export type CaddyEvent =
    * (`lib/caddy/route.ts`), which is exactly why these land as pins and the
    * numbers arrive with the finished card. */
   | { type: "picked"; ids: string[] }
-  /** The card, routed and dressed. The end of a good run. */
-  | { type: "card"; course: PlannedCourse; sessionId: string }
+  /** The card, routed and dressed, and the two ids behind it: the
+   * conversation, and the turn that produced *this* card. A report needs the
+   * second — a session runs to sixty-five turns and only one of them is the
+   * one that went wrong. */
+  | {
+      type: "card";
+      course: PlannedCourse;
+      sessionId: string;
+      turnId?: string | null;
+    }
   /** The end of a bad one. `error` is the line the host reads; `detail` is
    * for the staging note and the log, and is never shown to a player. */
   | { type: "failed"; error: string; detail?: string; offer?: CaddyOffer };

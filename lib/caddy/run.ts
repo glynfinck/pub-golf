@@ -67,6 +67,14 @@ export interface CaddyResult {
    */
   offer?: CaddyOffer;
   sessionId?: string;
+  /**
+   * The turn that produced this card.
+   *
+   * Carried so a report filed from the drafting table can name the card rather
+   * than the conversation — `bug_reports.caddy_turn_id`, and the first step of
+   * the feedback loop the session id alone could only guess at.
+   */
+  turnId?: string | null;
   course?: PlannedCourse;
   /** Which holes moved on a tweak, so the screen can hold the rest still. */
   changed?: number[];
@@ -865,7 +873,7 @@ export async function runTurn(input: {
   /** The ledger line. Written for a failure too — the vendor billed us for it
    * either way — but marked `failed`, which is what keeps the host's promise
    * honest: the money counts, the card does not. */
-  const record = async (failed: boolean, result: unknown) =>
+  const record = (failed: boolean, result: unknown) =>
     input.supabase.from("caddy_turns").insert({
       session_id: input.sessionId,
       host: input.userId,
@@ -910,7 +918,13 @@ export async function runTurn(input: {
   }
 
   // The card arrived, so the turn is written — and only now does it count.
-  const { error } = await record(false, outcome.course);
+  // The id comes back because a report about this card needs to name *it*
+  // rather than the conversation it happened in: a session runs to sixty-five
+  // turns, and by the time anyone triages "the caddy put a Wetherspoons on
+  // hole four" the card they meant may have been rolled over twice.
+  const { data: filed, error } = await record(false, outcome.course)
+    .select("id")
+    .maybeSingle();
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
     if (error.code === "42501") return { error: FULL_SHIFT, offer: "more" };
@@ -921,6 +935,7 @@ export async function runTurn(input: {
   const { changedHoles } = await import("@/lib/caddy/plan");
   return {
     sessionId: input.sessionId,
+    turnId: filed?.id ?? null,
     course: outcome.course,
     changed: input.kind === "tweak" ? changedHoles(previous, outcome.course.holes) : [],
   };

@@ -42,6 +42,7 @@ export function ReportBugSheet({
   hole,
   phase,
   caddySessionId,
+  caddyTurnId,
   area: initialArea,
 }: {
   open: boolean;
@@ -58,6 +59,10 @@ export function ReportBugSheet({
    * its turns, from a turn's trace to what the caddy actually did.
    */
   caddySessionId?: string | null;
+  /** The exact card the report is about, when the page watched it arrive.
+   * Narrows the session to one turn, which is the difference between a
+   * feedback loop and a search. */
+  caddyTurnId?: string | null;
   /** Where the report is being filed from, so the door picks the right one and
    * the player is not asked a question the screen already answers. */
   area?: BugArea;
@@ -91,6 +96,7 @@ export function ReportBugSheet({
         body: text,
         roundCode: roundCode ?? null,
         caddySessionId: caddySessionId ?? null,
+        caddyTurnId: caddyTurnId ?? null,
         hole: hole ?? null,
         phase: phase ?? null,
         // Read at the tap, never in render — the route and the viewport are
