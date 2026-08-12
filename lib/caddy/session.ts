@@ -15,6 +15,7 @@ import {
   TOOL_ROUTES,
   TOOL_SEARCH,
   SEARCH_QUERY_MAX,
+  SEARCH_RESULTS_MAX,
   type CaddyBoard,
 } from "@/lib/caddy/tools";
 
@@ -115,7 +116,10 @@ export async function dispatchTool(
         reply: "That search was empty. Say what you are looking for.",
       });
     }
-    const found = await context.search(query);
+    // Capped here rather than at Google, so the reply and the dossier can
+    // never disagree: a pub named in the tool result that did not reach
+    // `added` is a pub the caddy is offered and then refused for using.
+    const found = (await context.search(query)).slice(0, SEARCH_RESULTS_MAX);
     return answer({
       board: context.board,
       reply: searchResultBlock(found),

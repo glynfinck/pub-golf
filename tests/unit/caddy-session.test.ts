@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { dispatchTool, type ToolContext } from "@/lib/caddy/session";
 import {
   CADDY_TOOLS,
+  SEARCH_RESULTS_MAX,
   TOOL_EXCLUDE,
   TOOL_KEEP,
   TOOL_NAME,
@@ -95,6 +96,22 @@ describe("dispatching a tool call", () => {
     expect(answer.added).toEqual(found);
     expect(answer.reply).toContain("The Beer Garden");
     expect(answer.narration).toBe("Looking for beer garden");
+  });
+
+  it("caps what a follow-up search may bring back", async () => {
+    // A follow-up ("anywhere with a garden?"), not a second gather. The cap
+    // has to be the same for the reply and for `added` — a pub named in the
+    // tool result that did not reach the dossier is one the caddy is offered
+    // and then refused for using.
+    const many = Array.from({ length: 20 }, (_, i) => pub(`x${i}`, `Pub ${i}`, i, 1));
+    const answer = await dispatchTool(
+      TOOL_SEARCH,
+      { query: "garden" },
+      context({ search: vi.fn(async () => many) }),
+    );
+    expect(answer.added).toHaveLength(SEARCH_RESULTS_MAX);
+    expect(answer.reply).toContain("Pub 0");
+    expect(answer.reply).not.toContain("Pub 19");
   });
 
   it("answers an empty search rather than calling Google with nothing", async () => {
