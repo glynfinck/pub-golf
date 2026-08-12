@@ -175,15 +175,14 @@ function dearest(): ModelPrice {
  * point of a share rather than a number is that a heavy day cannot cost more
  * than a light one earns.
  *
- * What that buys, at Opus prices and measured rather than guessed (the figures
- * are asserted in `tests/unit/caddy-budget.test.ts`): a fresh plan — a twelve
- * thousand token patch written to cache, three thousand tokens of answer —
- * costs a little over twelve pence, and a *roll* inside that same session about
- * half of it, because the patch is read back out of cache instead of bought
- * again. So the £4 fee covers three complete courses and £12 covers about a
- * dozen, or twice that in rolls. Comfortable for the ordinary night, and it is
- * the tail this exists for: thirty rolls against one fee is what "unlimited"
- * quietly means, and thirty is where the arithmetic turns over.
+ * What that buys, measured on the ledger rather than guessed: a fresh plan —
+ * the agentic loop, several turns, a patch written to cache and read back —
+ * has averaged **21.4p** across real runs (19.8p to 22.2p), a roll **6.4p**
+ * and a tweak **5.2p**. So the worst case a fee can reach — one plan, four
+ * re-designs, sixty tweaks — is about £3.92 against £12 taken, and the
+ * ordinary night is a fraction of that. The share is not the binding
+ * constraint on spend and is not meant to be: the *credits* are, and this is
+ * the runaway breaker behind them.
  *
  * If that headroom ever feels tight, the first lever is the model and not this
  * number. Output is five times input on every tier and dominates the bill, so

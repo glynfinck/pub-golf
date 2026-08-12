@@ -23,14 +23,15 @@ export const TARIFF = {
   /**
    * More caddy, and the only thing on this board that does not expire.
    *
-   * Priced well clear of the fee's own rate rather than just above it. The fee
-   * is £3 a round; these are £5 and £4, so buying the bundle is obviously the
-   * better deal and a top-up reads as the convenience it is. A floor that only
-   * just clears the fee makes the fee look like a rounding error.
+   * Priced well clear of the fee's own rate rather than just above it. A green
+   * fee is £12 for five whole cards — £2.40 each — and these are £5.00, £4.50
+   * and £4.00, so the bundle is obviously the better deal and a top-up reads
+   * as the convenience it is. A floor that only just clears the fee makes the
+   * fee look like a rounding error. Both properties have a unit test.
    *
    * £12 for the three-pack is the same sticker as a whole green fee, and that
    * is the point: at one price a host sees three rounds they keep for ever
-   * against four that expire tonight. The comparison does the selling.
+   * against five that go with the day. The comparison does the selling.
    */
   caddyTopupOne: {
     lookupKey: CADDY_TOPUP_LOOKUP_KEYS[0],

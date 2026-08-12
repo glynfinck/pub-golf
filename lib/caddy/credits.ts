@@ -24,9 +24,11 @@ import { sticker, TARIFF } from "@/lib/tariff";
  *   A course the host then edits by hand, for ever, free. The fee bought the
  *   planning, not the ownership.
  *
- * Hand-kept mirror of `public.caddy_courses_per_fee()`, proved equal by a db
- * test — a number the screen misquotes is a host told they have something they
- * do not.
+ * Hand-kept mirror of the `public.caddy_quota` enum and of
+ * `caddy_grant_size()`, proved equal by a db test — a number the screen
+ * misquotes is a host told they have something they do not. (It used to name
+ * `caddy_courses_per_fee()`, which the ledger migration `20260831000000`
+ * dropped; the mirror is real, the function it named is not.)
  */
 export const CADDY_QUOTAS = ["course", "redesign", "tweak"] as const;
 export type CaddyQuota = (typeof CADDY_QUOTAS)[number];
@@ -236,13 +238,19 @@ export function tearOutNotice(input: {
 }
 
 /**
- * What the spent sheet offers, and the only place more caddy is named.
+ * What the refusal sheet offers, and the only place more caddy is *offered*.
  *
- * Two rungs and no third: demand is lopsided — most hosts need none, some need
- * one — and a third turns one honest tariff into a pricing page. Prices are
- * derived from `TARIFF` rather than written here, so the board and the button
- * cannot disagree; `docs/CADDY-TOPUPS.md` carries the arithmetic behind them
- * and the rule that neither may sell a round below what the fee implies.
+ * Three rungs, and the third is a different kind of thing rather than a third
+ * size: `caddy_topup_1` and `caddy_topup_3` buy more goes at the course in the
+ * book, and `caddy_topup_course` buys a second course to keep. That is why the
+ * list stops at three — a fourth would be another *size*, which is where one
+ * honest tariff turns into a pricing page.
+ *
+ * Prices are derived from `TARIFF` rather than written here, so the board and
+ * the button cannot disagree; `docs/CADDY-TOPUPS.md` carries the arithmetic
+ * behind them and the rule that no rung may sell a card below what the fee
+ * implies. `/tariff` lists all three as well, which is disclosure rather than
+ * offering — see `tests/unit/covenant-money.test.ts`.
  *
  * The rounds are described, never counted down. A host reads "3 rounds"
  * because that is what they are buying, not because anything is running out.

@@ -1,6 +1,9 @@
 # Stages, not a loop
 
-A redesign of how a plan is produced. Nothing here is built.
+A redesign of how a plan is produced. **Built**, and this is the record of
+why — the per-turn timeout (`TURN_TIMEOUT_MS`), the rewritten system prompt,
+and the routes-first drafting table all shipped. Read it for the reasoning; the
+code is `lib/caddy/client.ts` and `lib/caddy/plan.ts`.
 
 ## What is actually wrong
 

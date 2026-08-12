@@ -94,6 +94,27 @@ is this Next version's middleware convention (see the `home` sibling repo).
   score) — a 0 never scores as a free under-par hole. The in-progress hole
   only counts once swigs > 0. This still holds after a mulligan:
   resetting a hole never buys a free one.
+- **The caddy never invents a pub.** It selects and orders from real Google
+  Places results and dresses them (drink, par, hazard, local rules, course
+  name). Enforced structurally rather than by instruction: the model only ever
+  sees candidate *ids*, `applyDraftTool` refuses an id it was not given, and
+  `parsePlan` resolves every id back against the dossier. It is also not a
+  route planner — the walk is arithmetic's (`lib/caddy/route-graph.ts`), the
+  model chooses between routes it is handed. A rule a unit test can hold does
+  not belong in a prompt.
+- Copy never mentions the machinery: "your night, planned in twenty seconds",
+  never "AI-generated". Generated courses arrive as a **draft in the existing
+  builder**, never as a finished card — the manual builder stays free and
+  untouched, which is the covenant expressed as layout.
+- **Money answers a refusal and never speaks first.**
+  `tests/unit/covenant-money.test.ts` holds it: an allowlist of the modules
+  that may render a price, which is two refusal sheets, `/tariff` and round
+  creation. A price on a new screen has to be argued for in that list.
+- The caddy's ceilings live in Postgres and its *courtesies* live in TypeScript
+  — `liveFee` and `caddyAllowance` check the balance before the model is
+  called, and the trigger is still the enforcement. When the ledger is
+  mid-deploy both answer "yes", deliberately: refusing a paid host because a
+  function is missing is the failure that branch keeps re-learning.
 - The report-a-bug sheet files a GitHub issue on a **public** repository, so
   `lib/bug-report.ts` is the only thing that decides what may leave and is
   pure for exactly that reason. The load-bearing rule: **a round code never
@@ -207,6 +228,31 @@ makes it one-way; and `anon` is granted nothing at all, so a signed-out
 request gets the gate rather than a policy's empty list. Regenerate types after schema changes:
 `supabase gen types typescript --local > types/database.ts`.
 
+**The caddy** is four more tables and one rule that outranks all of them: it
+never invents a pub. `caddy_sessions` (one conversation: the brief, the
+`dossier` of real Places results, the `course_id` it filed) → `caddy_turns`
+(one card each — a row exists only where a card arrived, which is the whole of
+"nothing counts unless a card arrives"; carries the token counts and a `trace`
+of the caddy's own tool *inputs*, never the replies, because a reply is mostly
+Google's data). What a host may spend is a counted ledger: `caddy_grants`
+(quota, amount, expiry) minus `caddy_spends`, read through `caddy_balance` and
+`caddy_next_grant`. Three quotas — `course`, `redesign`, `tweak` — and a green
+fee grants 1 / 4 / 60. Every enforcement is a trigger, never a policy, because
+each is a count across sibling rows: `guard_caddy_spend` (the allowance),
+`guard_caddy_fair_use` (80/day, anti-script armour above anything honest), and
+`guard_caddy_course_slot` — **a host may keep as many caddy courses as they
+have spent `course` credits**, which is the one-course-per-fee rule keyed on
+what was bought rather than on the purchase row. `sweep_caddy_dossiers()` runs
+hourly on pg_cron and is what makes the privacy notice's retention promise
+true; the card it produced is never swept.
+
+The green fee's day **starts at tee-off, not at purchase** (`activate_day_pass`,
+`entitlements.activated_at`) — a null `expires_at` means dormant, not expired,
+and every point-of-sale sentence has to say so. Three top-up SKUs sit above it
+and never expire, because cost is incurred at redemption. `docs/CADDY-DESIGN-AUDIT.md`
+is the design of record for all of this; `docs/CADDY-TOPUPS.md` carries the
+measured cost of a plan, a roll and a tweak.
+
 Two hosted environments, both deployed by the platforms rather than from this
 repo — Vercel's git integration builds the app, Supabase's GitHub integration
 applies the migrations, and CI ships nothing (see `DEPLOYMENT.md`). `main` →
@@ -291,6 +337,13 @@ in the PR gate, not on a schedule. It needs `[auth.rate_limit]
 anonymous_users` raised in `config.toml` (local only, never preview): every
 guest is an anonymous sign-in and gotrue's default 30/hour is under two
 tables' worth.
+
+The caddy's own logic is unit-tested and must stay that way: route order and
+spacing (`lib/caddy/route.ts`, `route-graph.ts`), the tool reducer
+(`lib/caddy/tools.ts`), candidate ids, the allowance arithmetic, the tariff's
+ladder. **If a browser or a model is proving something a function call could
+prove, it is in the wrong place** — the caddy is a curator and a tweaker, and
+everything it is not deciding should be provable without it.
 
 `npm run test:e2e` runs Playwright (port 3105) against the real local
 Supabase stack, once per row of a platform matrix — Android Chrome

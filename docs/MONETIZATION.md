@@ -63,7 +63,10 @@ Created via the Stripe MCP (live mode, account `acct_1U2ZUZRvKayBe2Nz`,
 
 | Product | lookup_key | GBP | USD | EUR | CAD | AUD |
 | --- | --- | --- | --- | --- | --- | --- |
-| The green fee (`prod_V2ewNtObRI3fq7`) | `green_fee` | £4 | $5 | €5 | C$7 | A$8 |
+| The green fee (`prod_V2ewNtObRI3fq7`) | `green_fee` | £12 | $15 | €15 | C$21 | A$24 |
+| Another round | `caddy_topup_1` | £5 | $6 | €6 | C$9 | A$10 |
+| Another course | `caddy_topup_course` | £9 | $11 | €11 | C$16 | A$18 |
+| A few more rounds | `caddy_topup_3` | £12 | $15 | €15 | C$21 | A$24 |
 | The honesty box (`prod_V2ewOnbYvJY3Ul`) | `honesty_box` | min £3 · preset £5 | min $4 · preset $7 | min €4 · preset €6 | min C$5 · preset C$9 | min A$6 · preset A$10 |
 
 The honesty box is a customer-chooses-amount price
@@ -306,9 +309,13 @@ estimate: the estimates in this file's history have been wrong twice.
 
 ## What we sell
 
-- **The green fee** (core): ~£4, one-time, host pays — and it is a **day
+- **The green fee** (core): £12, one-time, host pays — and it is a **day
   pass**, which is what a green fee means in real golf: 24 hours of the
   caddy planning courses for you, and of whatever else joins the list —
+  *(£4 at launch; tripled when the caddy shipped, because the fee stopped
+  being a day of small extras and became a night planned for you. The day
+  also stopped running from the charge: since `20260908000000` it starts at
+  tee-off, so buying on Wednesday for Saturday costs nothing.)*
   the printed pack (A4 card + trophy card), colours/crest on the recap,
   curated course packs. All *new* features; the free game is untouched,
   and the league left this list on purpose (see "Why the league is free"). The day window is the
@@ -319,7 +326,7 @@ estimate: the estimates in this file's history have been wrong twice.
   (`entitlements.expires_at`), granted rounds don't, so a slow crawl
   crossing the 24-hour line and a refunded pass alike can never brick a
   live round. Several tables on one day-pass is accepted generosity,
-  capped at £4; the day boundary is the protection — yesterday's pass
+  capped at one fee; the day boundary is the protection — yesterday's pass
   doesn't cover a new day, and the members' group says so plainly
   ("extras for a new day take a new fee"), never with a lock icon.
   Enforcement follows house doctrine when phase two builds it: the
@@ -366,7 +373,9 @@ revenue.
 
 House copy rules apply: dry, in the golf fiction, no exclamation marks, no
 emojis. Every price sentence answers *how much, for whom, how often* in one
-breath ("Green fee · £4 — one round, the whole table"). Free is the first
+breath ("Green fee · £12 — one round, the whole table") — **on the surfaces
+allowed to quote one**, which since the caddy shipped is two refusal sheets,
+`/tariff` and round creation, held by `tests/unit/covenant-money.test.ts`. Free is the first
 line of the tariff page. Declines are plain ("Not this round"), never
 guilt. Copy never assumes a time of day — rounds are played in daylight as
 often as after dark, so no "tonight", no "today", no "evening" anywhere.

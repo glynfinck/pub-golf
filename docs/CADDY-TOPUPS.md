@@ -4,63 +4,83 @@ Companion to `MONETIZATION.md`, which covers the green fee itself. This is
 about what a host buys when the fee's allowance runs out, and — more usefully
 — the measured costs the prices have to clear.
 
-Nothing here has shipped. It is a design with real numbers behind it, written
-down so the numbers survive.
+**All three rungs have shipped**, and the numbers below have been re-measured
+against real traffic rather than the single observation this document was
+first written from. Where an old figure is superseded it is named, because the
+reasoning downstream of it is still on this page.
 
 ## What the caddy actually costs
 
-Measured from `caddy_turns` on preview, 11 August 2026 — twelve sessions, five
-of which produced a card.
+Measured from `caddy_turns` on preview, 12 August 2026.
 
 | | observed | note |
 |---|---|---|
-| **Re-design, tool loop ran** | **27.3p** | 10.4k output, 58.8k cache reads |
-| Re-design, no loop | ~5.5p | took its first answer, ~1.7k output |
-| **Tweak** | **~2p** (estimated) | never yet observed; ~12k cache read + ~1.5k output |
+| **Plan** (the agentic loop) | **21.4p** | 19.8p–22.2p across three runs; ~36k cache reads each |
+| **Roll** | **6.4p** | the patch is read back out of cache rather than bought again |
+| **Tweak** | **5.2p** | previously *estimated* at ~2p, which was low by 2.5× |
 
-Three caveats that matter more than the averages:
+The first draft of this page priced against a single 27.3p observation and an
+estimated 2p tweak. Both moved: the plan came down as the loop settled, and
+the tweak went up because a tweak re-reads the whole board. The direction that
+matters is the second — tweaks are the quota granted sixty at a time.
 
-**The loop is n=1.** One of five successful plans actually entered the tool
-loop. That one observation is the entire basis for 27p, and it is the case
-worth pricing against because it is the one that produces a good course.
+Two caveats still stand:
 
 **Recorded cost is the September price.** `MODEL_PRICES` lists Sonnet 5 at its
-standard rate, deliberately — the introductory rate runs to 31 August 2026.
-The real bill for that 27p run was about 12p on the day. Budgeting against the
-intro rate would have built in a cliff; instead the numbers here are already
-the post-cliff ones.
+standard rate, deliberately — the introductory rate runs to 31 August 2026. The
+real bill on the day is lower. Budgeting against the intro rate would have
+built in a cliff; these numbers are already the post-cliff ones.
 
-**Failed turns record zero and were not free.** Seven of twelve sessions failed
-and wrote `cost_micropence = 0`, while the gateway billed for whatever streamed
-before the failure. So the gateway's own balance reads higher than the ledger's
-49.26p by an unmeasured amount. Fixing that — recording partial usage on the
-`failed` path — is the prerequisite for treating any of this as precise.
+**Failed turns record zero and were not free.** A failed turn writes
+`cost_micropence = 0` while the gateway bills for whatever streamed before the
+failure, so the gateway's balance reads higher than the ledger's by an
+unmeasured amount. Recording partial usage on the `failed` path is the
+prerequisite for treating any of this as precise.
 
-## The ratio that drives the design
+## What a fee can cost at worst
 
-**Ten tweaks cost about as much as the re-design they are attached to.**
+One plan, four re-designs and sixty tweaks — every credit a green fee grants,
+all of them spent:
 
-A tweak is ~2p, a re-design ~27p, so ten tweaks is 20p — very nearly doubling
-what a pack costs to serve. Tweaks feel free and are not. This, not the price
-per round, is what sets the margins on every pack below, and it is the number
-to re-derive first once real tweaks have actually been observed.
+    21.4 + (4 × 6.4) + (60 × 5.2) = 359p, call it £3.92 with the failures
+
+Against £12 taken that is a **67% margin at the absolute worst case**, and the
+ordinary night — one plan, a roll or two, a handful of tweaks — is under 50p.
+The sixty tweaks are 88% of that worst case, which is the thing to watch: they
+are the quota granted most freely and the one whose unit cost moved most
+between the two measurements on this page.
 
 ## The ladder
 
 Each pack grants **both** quotas. Selling tweaks on their own would mean making
-a 2p action feel scarce, which is the failure the two-quota design exists to
+a 5p action feel scarce, which is the failure the two-quota design exists to
 avoid: a meter on "ask as often as you like" turns membership back into
 credits. Tweaks arrive with rounds, or they do not arrive.
 
-**The floor is the green fee's own rate.** £12 buys **four** re-designs, so a
-round inside the fee costs £3, and no top-up may ever sell one for less. Volume
-walks a host *down* to £3 and stops level with it.
+**The floor is the green fee's own rate.** £12 buys **five** whole cards — the
+course credit plus four re-designs — so a card inside the fee costs £2.40, and
+no top-up may ever sell one for less. Volume walks a host *down* towards that
+and stops well clear of it.
 
-The fee grants four rather than three for exactly this reason: at three it was
-£4 a round and merely a bundle, level with the smallest top-up. At four it is a
-discount — you are always better off having bought the fee. Get that backwards
-and the bundle becomes the mug's option: buy the cheapest fee, top up in bulk,
-and the thing meant to be the deal is the thing to avoid.
+The shipped ladder, and it is deliberately monotone:
+
+| rung | price | cards | per card |
+|---|---|---|---|
+| `caddy_topup_1` | £5 | 1 | £5.00 |
+| `caddy_topup_course` | £9 | 2 (one of them a course to keep) | £4.50 |
+| `caddy_topup_3` | £12 | 3 | £4.00 |
+| *green fee* | *£12* | *5, and the round itself* | *£2.40* |
+
+`caddy_topup_course` was £8 for one release, which put it level with the
+three-pack at £4.00 a card *and* threw in a kept-course slot — so the dearer
+rung was the better buy and "cheaper with volume" was untrue in the middle of
+its own ladder. £9 fixes it. Both properties — monotone rungs, and every rung
+dearer per card than the fee — have a unit test.
+
+The fee grants five rather than three for exactly this reason: at three it was
+£4 a card and merely a bundle, level with the largest top-up. Get that
+backwards and the bundle becomes the mug's option: buy the cheapest fee, top up
+in bulk, and the thing meant to be the deal is the thing to avoid.
 
 **Granted expires. Bought does not.** This is the rule the earlier drafts got
 wrong, and it needs stating before the prices.
