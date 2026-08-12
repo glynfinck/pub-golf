@@ -93,21 +93,13 @@ export function honestyBoxHref(
 export const DAY_PASS_HOURS = 24;
 
 /**
- * When a pass *started* at this instant runs out.
- *
- * Started, not bought — and the distinction is the whole of `20260908000000`.
- * The webhook used to call this and write the answer at purchase, which ran
- * the day from the charge: a host buying on Wednesday to plan a Saturday crawl
- * had a dead pass by Thursday. The day now begins when a round tees off
- * covered, and Postgres does the arithmetic in `activate_day_pass`.
- *
- * Kept because the number has to exist on this side too — a screen that wants
- * to say when a pass will run out should not have to ask the database — and
- * because it is the mirror `DAY_PASS_HOURS` is proved against.
+ * `dayPassExpiry` stood here — a purchase time plus 24 hours — and stopped
+ * having a caller when `20260908000000` moved the day to tee-off. The webhook
+ * writes `expires_at: null` now, and the stamp is `activate_day_pass`'s, in
+ * Postgres, where the tee-off happens. A second implementation in TypeScript
+ * would be a second answer to when a host's day ends.
  */
-export function dayPassExpiry(startedAtMs: number): string {
-  return new Date(startedAtMs + DAY_PASS_HOURS * 3_600_000).toISOString();
-}
+
 
 /** Is this pass still running? `null` expiry never runs out — the column's
  * own contract, and how a comped pass would read. */

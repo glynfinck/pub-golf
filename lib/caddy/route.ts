@@ -67,6 +67,25 @@ export interface WalkStop {
 export type WalkShape = "path" | "loop";
 
 /**
+ * **Nothing sets `loop` today**, and it is left in rather than removed on
+ * purpose. `midConversation` builds `WalkPins` as `{ minLegMinutes }` and the
+ * brief has no field for a shape, so every route this app has ever produced is
+ * a path. That makes the loop arms — in `legsOf`, `routeCost`, `twoOpt` and
+ * `tryRoute` — unreached code, and the argument for deleting them is a good
+ * one.
+ *
+ * The argument against is stronger here than it would be for a dead component:
+ * the walk is the most safety-critical arithmetic in the caddy, it has no test
+ * tier below the unit one, and the loop is threaded through four functions as
+ * a boolean that changes what an *endpoint* means. Removing it is a rewrite of
+ * the router to delete a dozen lines of branch, at a moment when nobody has
+ * asked for it. The switch that would make it live is one chip on the brief.
+ *
+ * So: a stated absence rather than an unexplained one. If a shape chip is
+ * never coming, this is the note that says the deletion is safe.
+ */
+
+/**
  * The minimum a leg should be, and what happens when it is not.
  *
  * Shortest-total-distance is the classic objective and it is subtly the wrong

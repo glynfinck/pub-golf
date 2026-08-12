@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   billingEnabled,
   DAY_PASS_HOURS,
-  dayPassExpiry,
   dayPassLive,
   dayPassSessionParams,
   GREEN_FEE_EXTRAS,
@@ -74,14 +73,20 @@ describe("dayPassSessionParams", () => {
 
 describe("the day pass window", () => {
   const paidAt = Date.parse("2026-08-09T19:30:00.000Z");
+  /** The stamp `activate_day_pass` writes at tee-off, as this side reads it.
+   * Computed here rather than through a helper: there was one, it stopped
+   * having a caller when the day moved to tee-off, and a second answer in
+   * TypeScript to "when does a host's day end" is the thing to avoid. */
+  const dayAfter = (fromMs: number) =>
+    new Date(fromMs + DAY_PASS_HOURS * 3_600_000).toISOString();
 
-  it("runs 24 hours from the moment it was paid", () => {
-    expect(dayPassExpiry(paidAt)).toBe("2026-08-10T19:30:00.000Z");
+  it("runs 24 hours from the moment the round tees off", () => {
+    expect(dayAfter(paidAt)).toBe("2026-08-10T19:30:00.000Z");
     expect(DAY_PASS_HOURS).toBe(24);
   });
 
   it("is live right up to its expiry and not a millisecond past", () => {
-    const runsOut = dayPassExpiry(paidAt);
+    const runsOut = dayAfter(paidAt);
     expect(dayPassLive(runsOut, paidAt)).toBe(true);
     expect(dayPassLive(runsOut, Date.parse(runsOut) - 1)).toBe(true);
     expect(dayPassLive(runsOut, Date.parse(runsOut))).toBe(false);

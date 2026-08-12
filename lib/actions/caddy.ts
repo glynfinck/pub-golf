@@ -6,7 +6,6 @@ import type { PlannedCourse } from "@/lib/caddy/plan";
 import {
   askTheCaddy as askTheCaddyRun,
   closeCaddySession as closeCaddySessionRun,
-  planCourse as planCourseRun,
   rememberCaddyCourse as rememberCaddyCourseRun,
   reopenCaddyPatch as reopenCaddyPatchRun,
   type CaddyResult,
@@ -37,10 +36,6 @@ import {
  * anyone wanting the type imports it from `@/lib/caddy/run`, where it lives.
  */
 
-/** Plan a course from a brief: gather the patch, then ask once. */
-export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
-  return planCourseRun(rawBrief);
-}
 
 /** Roll a fresh card, or answer something the host said. */
 export async function askTheCaddy(input: {

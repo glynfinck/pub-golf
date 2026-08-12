@@ -8,7 +8,6 @@ import {
   tearOutNotice,
 } from "@/lib/caddy/credits";
 import {
-  CADDY_BUDGET_NOTE,
   CADDY_BUDGET_SHARE,
   MODEL_PRICES,
   NO_USAGE,
@@ -19,9 +18,7 @@ import {
   microPencePerToken,
   priceOf,
   readUsage,
-  sumUsage,
   type CaddyUsage,
-  withinBudget,
 } from "@/lib/caddy/budget";
 import { TARIFF } from "@/lib/tariff";
 
@@ -181,35 +178,31 @@ describe("the ceiling", () => {
 
   it("does bind on a tail that would otherwise outrun the fee", () => {
     // Thirty full plans is what "unlimited rolls" quietly means, and at Opus
-    // prices that is real money against a single fee.
+    // prices that is real money against a single fee. The comparison is the
+    // loop's own — `spentSoFar >= deps.breaker` in `askCaddyLooped` — rather
+    // than a `withinBudget` helper, which existed only to be tested.
     const plan = costMicroPence(
       { input: 500, output: 3_000, cacheWrite: 12_000, cacheRead: 0 },
       "claude-opus-5",
     );
-    expect(withinBudget(plan * 30, caddyBudgetMicroPence(400))).toBe(false);
-  });
-
-  it("spends up to the line and not past it", () => {
-    expect(withinBudget(0, 100)).toBe(true);
-    expect(withinBudget(99, 100)).toBe(true);
-    expect(withinBudget(100, 100)).toBe(false);
-    expect(withinBudget(101, 100)).toBe(false);
+    expect(plan * 30).toBeGreaterThanOrEqual(caddyBudgetMicroPence(400));
   });
 });
 
-describe("CADDY_BUDGET_NOTE", () => {
-  it("names no number", () => {
-    // Same discipline as the fair-use note: the covenant lets money speak at
-    // round creation and the results afterglow, and nowhere else.
-    expect(CADDY_BUDGET_NOTE).not.toMatch(/\d/);
-  });
 
-  it("says the table is still theirs", () => {
-    expect(CADDY_BUDGET_NOTE).toMatch(/free/i);
-  });
-});
-
+/**
+ * A tool loop is many calls and one ledger row, and `addUsage` is what makes
+ * those the same number.
+ *
+ * Folded the way `askCaddyLooped` folds it — `usage = addUsage(usage, ...)` on
+ * every turn — rather than through a `sumUsage` helper that took the whole
+ * list. There was one, it was a `reduce`, and nothing but these tests called
+ * it: a shape that lets the tests pass while the production fold is different.
+ */
 describe("summing a tool loop into one bill", () => {
+  const fold = (calls: CaddyUsage[]): CaddyUsage =>
+    calls.reduce(addUsage, { ...NO_USAGE });
+
   const call = (over: Partial<CaddyUsage> = {}): CaddyUsage => ({
     input: 100,
     output: 200,
@@ -228,7 +221,7 @@ describe("summing a tool loop into one bill", () => {
   });
 
   it("sums an empty loop to nothing rather than to undefined", () => {
-    expect(sumUsage([])).toEqual(NO_USAGE);
+    expect(fold([])).toEqual(NO_USAGE);
   });
 
   it("keeps the cache write the first call paid for", () => {
@@ -238,7 +231,7 @@ describe("summing a tool loop into one bill", () => {
     // plan as a one-turn one — undercharging, which is the direction that
     // silently breaks the budget.
     const loop = [call({ cacheWrite: 20_000, cacheRead: 0 }), call(), call()];
-    const total = sumUsage(loop);
+    const total = fold(loop);
     expect(total.cacheWrite).toBe(20_000);
     expect(costMicroPence(total, "claude-sonnet-5")).toBeGreaterThan(
       costMicroPence(call(), "claude-sonnet-5"),
@@ -249,14 +242,14 @@ describe("summing a tool loop into one bill", () => {
     // One plan is one thing the host asked for and stays one ledger row. What
     // must not happen is the row understating what the loop actually spent.
     const loop = Array.from({ length: 8 }, () => call());
-    const total = sumUsage(loop);
+    const total = fold(loop);
     expect(costMicroPence(total, "claude-sonnet-5")).toBe(
       8 * costMicroPence(call(), "claude-sonnet-5"),
     );
   });
 
   it("leaves a loop of one exactly where a single call already was", () => {
-    expect(sumUsage([call()])).toEqual(call());
+    expect(fold([call()])).toEqual(call());
   });
 });
 

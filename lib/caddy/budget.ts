@@ -217,27 +217,20 @@ export function caddyBudgetMicroPence(
  */
 
 /**
- * May another call be made? Checked *before* spending, with the cost of the
- * call about to be made unknown — so this is a "have you already had enough"
- * test, and `MAX_TOOL_TURNS` plus `max_tokens` bound the overshoot.
- */
-export function withinBudget(spentMicroPence: number, budgetMicroPence: number): boolean {
-  return spentMicroPence < budgetMicroPence;
-}
-
-/**
- * The line a host reads when the allowance is gone.
+ * Three things stood here and none of them were called: `withinBudget`, which
+ * compared two numbers; `sumUsage`, which folded `addUsage` over a list the
+ * loop already folds one call at a time; and `CADDY_BUDGET_NOTE`, the third
+ * copy of the full-shift sentence.
  *
- * Names no number, no token, no penny and no model — the same discipline the
- * fair-use note keeps, and for the same reason: the covenant says money speaks
- * at round creation and the results afterglow, nowhere else. A host who has
- * worn out the caddy is told the drafting table is still theirs, because it is,
- * and every edit on it is free forever.
+ * The note is the instructive one. The identical sentence existed in three
+ * places — here, in `fair-use.ts`, and as a literal in `run.ts` — and only the
+ * literal was ever rendered, so the two that were kept carefully in step were
+ * the two nobody could read. That is the exact failure `run.ts` documents one
+ * constant above it. The sentence now lives in `fair-use.ts`, which owns the
+ * ceiling that raises it, and `run.ts` imports it.
+ *
+ * `withinBudget` and `sumUsage` went out with the money budget in
+ * `20260904000000`. Their tests outlived them by a release, which is what
+ * keeps a dead function looking alive.
  */
-export const CADDY_BUDGET_NOTE =
-  "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
 
-/** Every call in one loop, as one bill. */
-export function sumUsage(all: CaddyUsage[]): CaddyUsage {
-  return all.reduce(addUsage, { ...NO_USAGE });
-}

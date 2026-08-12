@@ -11,6 +11,7 @@ import {
 } from "@/lib/caddy/client";
 import { caddyEnabled } from "@/lib/caddy/credentials";
 import { CADDY_CREDITS_SPENT } from "@/lib/caddy/credits";
+import { CADDY_FAIR_USE_NOTE } from "@/lib/caddy/fair-use";
 import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
 import { showCaddyDiagnostics } from "@/lib/caddy/readiness";
 import {
@@ -118,9 +119,13 @@ const THIN_PATCH =
  *
  * Raised by the Postgres guard, never decided here — the same arrangement
  * every other guarded write uses, because RLS is the only real enforcement.
+ *
+ * Imported rather than written, and the reason is the bug it caused: this same
+ * sentence was a literal here *and* a constant in two other modules, and only
+ * the literal rendered. Two copies were kept correct and neither was readable.
+ * A sentence lives with the thing that raises it.
  */
-const FULL_SHIFT =
-  "The caddy's done a full shift on this fee. The drafting table is all yours from here — every edit free, as always.";
+const FULL_SHIFT = CADDY_FAIR_USE_NOTE;
 
 /**
  * Which quota a follow-up turn draws on, decided **here** rather than taken
@@ -501,17 +506,19 @@ export async function reopenCaddyPatch(
 }
 
 /**
- * Plan a course: gather the patch, brief the caddy, keep the card.
+ * `planCourse` used to sit here — `openPlan` then `runTurn`, unstreamed — and
+ * was re-exported as a server action on top of that.
  *
- * The gather happens once. Its dossier is written onto the session and every
- * later turn — every roll, every ask — re-reads it rather than calling Google
- * again, which is why a re-roll costs one model call and no Places quota.
+ * Two copies of a function nothing called. The drafting table has fetched
+ * `/api/caddy/plan` since the plan started streaming, and a plan that does not
+ * narrate is a plan the host watches a spinner for twenty seconds. It was kept
+ * as a fallback, which is a reasonable-sounding thing to keep and is in
+ * practice a second path to a charge that nobody exercises — the one shape
+ * this module's own header says there must not be two of.
+ *
+ * `openPlan` and `runTurn` are both exported and both used by the route, so
+ * re-assembling it is three lines if a non-streaming caller ever appears.
  */
-export async function planCourse(rawBrief: unknown): Promise<CaddyResult> {
-  const opened = await openPlan(rawBrief);
-  if ("error" in opened) return { error: opened.error };
-  return runTurn({ ...opened, history: [], kind: "plan" });
-}
 
 /**
  * Everything before the model: who is asking, whether they have paid, where
