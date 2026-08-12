@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
+import type { Reach } from "@/lib/caddy/reach";
 import {
   RoutePreview,
   type LivePatch,
@@ -140,6 +141,9 @@ export function CourseBuilder({
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
+  /** How far the round reaches, resolved from the brief's two areas. Held
+   * here rather than in the group so the map and the form read one value. */
+  const [reach, setReach] = useState<Reach | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -456,6 +460,11 @@ export function CourseBuilder({
         stops={holes}
         live={patch}
         drawKey={drawKey}
+        ring={
+          reach
+            ? { lat: reach.centre.lat, lng: reach.centre.lng, km: reach.km, warn: reach.warn }
+            : null
+        }
         onOpen={
           MAPS_BROWSER_KEY
             ? () => {
@@ -487,6 +496,8 @@ export function CourseBuilder({
           onSession={setCaddySession}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
+          onReach={setReach}
+          reach={reach}
           onPicked={(ids) =>
             setPatch((current) =>
               current ? { ...current, picked: [...current.picked, ...ids] } : current,

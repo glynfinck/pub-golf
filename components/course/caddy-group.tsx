@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sparkle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -34,6 +34,8 @@ import { askTheCaddy, collectCaddyCard } from "@/lib/actions/caddy";
 import { startCaddyTopupCheckout } from "@/lib/actions/billing";
 import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
 import { decodeEvents, thinkingTail, type CaddyEvent } from "@/lib/caddy/stream";
+import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
+import { stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { GREEN_FEE_PRICE } from "@/lib/tariff";
 import { cn } from "@/lib/utils";
@@ -58,6 +60,8 @@ export function CaddyGroup({
   onPicked,
   allowance,
   onSession,
+  onReach,
+  reach,
   className,
 }: {
   /** A live green fee on this host. The form is identical either way — only
@@ -76,6 +80,12 @@ export function CaddyGroup({
   allowance?: { canPlan: boolean; left: number; courseId: string | null };
   /** The session behind the card, so the builder can close it on save. */
   onSession: (sessionId: string | null) => void;
+  /** How far the round reaches, for the ring on the drafting table's map.
+   * Null while there is nothing to draw. */
+  onReach?: (reach: Reach | null) => void;
+  /** The reach as the builder currently holds it, so the warning under the
+   * form and the ring on the map are read from one value. */
+  reach?: Reach | null;
   className?: string;
 }) {
   const { run, pending, busy } = useAction();
@@ -111,6 +121,53 @@ export function CaddyGroup({
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
   const stretchNote = stretchMeaning(stretch);
+
+  /**
+   * Where the caddy is about to look, resolved as the host types.
+   *
+   * The names are turned into coordinates by the same Places search the
+   * builder already uses, which means no geocoding key, no new route and no
+   * new failure mode — if search is degraded the ring simply does not appear
+   * and everything else works exactly as before.
+   *
+   * Debounced, because this fires on a keystroke and "Sho" is not a place.
+   * The cancelled flag matters more than the delay: a host typing quickly has
+   * several of these in flight, and without it the ring lands on whichever
+   * request happened to finish last rather than on what they actually typed.
+   */
+  useEffect(() => {
+    if (!where.trim()) {
+      onReach?.(null);
+      return;
+    }
+    let cancelled = false;
+    const centre = async (query: string) => {
+      if (!query.trim()) return null;
+      try {
+        const response = await fetch("/api/places/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const body = (await response.json()) as {
+          results?: { lat: number | null; lng: number | null }[];
+        };
+        return centreOf(body.results ?? []);
+      } catch {
+        // A ring is an aid, never a gate. A search that will not answer costs
+        // the host nothing but the drawing.
+        return null;
+      }
+    };
+    const timer = setTimeout(async () => {
+      const [from, to] = await Promise.all([centre(where), centre(whereTo)]);
+      if (!cancelled) onReach?.(reachOf(from, to, holes));
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [where, whereTo, holes, onReach]);
 
   /**
    * The first card, over a stream.
@@ -592,6 +649,13 @@ export function CaddyGroup({
         <p className="mt-1 text-[10px] text-muted-foreground">
           Leave it empty to stay in one patch.
         </p>
+        {/* The same fact the ring shows, in words. It appears only when there
+            is something worth saying — a warning on every plan is a warning
+            nobody reads — and it appears *before* the fee is spent, which is
+            the whole point of doing the arithmetic on the brief screen. */}
+        {reach && reach.km > 0 ? (
+          <StretchNote km={reach.km} holes={holes} />
+        ) : null}
       </div>
 
       <div>
@@ -716,4 +780,11 @@ export function CaddyGroup({
       </button>
     </div>
   );
+}
+
+/** The stretch warning, or nothing. Split out so the form stays a form. */
+function StretchNote({ km, holes }: { km: number; holes: number }) {
+  const note = stretchWarning(km, holes);
+  if (!note) return null;
+  return <p className="mt-2 text-[10px] text-hazard">{note}</p>;
 }
