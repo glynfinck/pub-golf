@@ -39,7 +39,7 @@ import {
 } from "@/lib/actions/caddy";
 import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
 import { GreenFeeSheet } from "@/components/round/green-fee-sheet";
-import { freshCourseNotice } from "@/lib/caddy/credits";
+import { CADDY_CREDITS_SPENT, freshCourseNotice } from "@/lib/caddy/credits";
 import {
   decodeEvents,
   thinkingTail,
@@ -662,7 +662,14 @@ export function CaddyGroup({
       >
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow text-fairway">Members</span>
-          {hasPass ? <CoveredBadge /> : null}
+          {/* What is left, not merely that something was bought. `Covered`
+              alone went on saying Covered after the last go had been spent —
+              which is the app telling somebody they have something they do
+              not, right up to the moment it refuses them. `CaddyUsage` exists
+              for exactly this and had only ever been wired into the brief. */}
+          {hasPass ? (
+            allowance ? <CaddyUsage left={allowance.left} /> : <CoveredBadge />
+          ) : null}
         </div>
         <div className="font-serif text-base leading-tight">
           Let the caddy plan it
@@ -700,10 +707,12 @@ export function CaddyGroup({
           <span className="eyebrow text-fairway">The caddy</span>
           <CaddyUsage left={0} />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Your courses are in the book — the caddy plans three to a green fee.
-          Change them as much as you like, whenever you like.
-        </p>
+        {/* This said "the caddy plans three to a green fee" — a number that
+            was `caddy_courses_per_fee()` before the ledger dropped it, sitting
+            two lines under a row of five pips. The sentence that owns the
+            allowance is written beside the allowance now, and there is only
+            one of it. */}
+        <p className="text-xs text-muted-foreground">{CADDY_CREDITS_SPENT}</p>
         {allowance.courseId ? (
           <Link
             href={`/courses/${allowance.courseId}`}
@@ -712,6 +721,18 @@ export function CaddyGroup({
             Open your course
           </Link>
         ) : null}
+        {/* The door that was missing. A host who spent their fee, closed the
+            tab and came back met this panel — which mounted the sheet and
+            never opened it, so the top-ups were reachable only by someone
+            whose allowance read as available and was then refused. The sheet
+            still only opens because they asked. */}
+        <button
+          type="button"
+          onClick={() => setRefusal({ text: CADDY_CREDITS_SPENT, offer: "more" })}
+          className="min-h-11 text-[11px] font-semibold text-muted-foreground hover:text-fairway"
+        >
+          Have the caddy plan more
+        </button>
         <p className="text-[10px] text-muted-foreground">
           Plotting one by hand below is free, as always.
         </p>

@@ -139,8 +139,9 @@ export function CourseBuilder({
    */
   filedCourseId?: string | null;
   /** When the green fee's day runs out, for the confirmation before a fresh
-   * card. The day is already running when a host reaches this screen — it
-   * started when they paid — so this is a fact to state, not a clock to start. */
+   * card. **Null is the ordinary case**: the day starts at tee-off, so a host
+   * planning on Wednesday for Saturday has a fee with no clock on it at all.
+   * `freshCourseNotice` says which of those two a host is looking at. */
   passExpiresAt?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */

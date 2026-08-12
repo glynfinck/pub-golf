@@ -290,9 +290,26 @@ describe("what a fee buys, counted", () => {
   });
 
   it("says how many are left in words, never as a bare digit", () => {
-    expect(coursesLeftNote(0)).toMatch(/no courses left/i);
-    expect(coursesLeftNote(1)).toMatch(/one course left/i);
-    expect(coursesLeftNote(3)).toMatch(/^3 courses left/i);
+    expect(coursesLeftNote(0)).toMatch(/no goes left/i);
+    expect(coursesLeftNote(1)).toMatch(/one more go/i);
+    expect(coursesLeftNote(3)).toMatch(/^3 more goes/i);
+  });
+
+  it("counts goes, never courses — a fee keeps exactly one course", () => {
+    // The conflation this app most needs its words to keep straight. A fee
+    // gives four more *attempts*, each writing over the last; saying "5
+    // courses left" promised five saved cards and delivered one.
+    for (const left of [0, 1, 3, 12]) {
+      expect(coursesLeftNote(left)).not.toMatch(/course/i);
+    }
+  });
+
+  it("never says the balance belongs to this fee", () => {
+    // It is summed across durable top-up grants as well, so "on this fee"
+    // told a host who bought a pack that their permanent credits die tonight.
+    for (const left of [0, 1, 3, 12]) {
+      expect(coursesLeftNote(left)).not.toMatch(/this fee/i);
+    }
   });
 });
 

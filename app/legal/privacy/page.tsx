@@ -137,13 +137,37 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
+      <Section heading="If you pay for something">
+        <p>
+          Payment is handled by <b>Stripe</b>, on Stripe&apos;s own page. Card
+          numbers, wallets and billing addresses never touch this app — we
+          never see them and never store them. Stripe is a processor acting
+          for this project, and their own notice governs what they hold.
+        </p>
+        <p>
+          What goes to Stripe from here is your account&apos;s id, so their
+          answer can be matched to the right person, and which thing you are
+          buying. Not your name, not your email, not anything about a round.
+        </p>
+        <p>
+          What comes back and is kept is the record of the purchase: which
+          thing, how much, in what currency, when, and Stripe&apos;s own
+          reference for it. That is the receipt — it is what proves you paid
+          if anything goes wrong, and it is kept as long as your account is,
+          because a purchase you cannot evidence is a purchase you cannot get
+          refunded.
+        </p>
+      </Section>
+
       <Section heading="If you report a bug">
         <p>
           The report goes to a <b>public</b> issue tracker, so the sheet says so
           before you send. What you write is printed there; what stays private
           is everything that would identify you or your round — your name, your
-          account, and above all a round&apos;s join code, which is stripped out
-          before anything leaves.
+          account, your browser and its languages, and above all a
+          round&apos;s join code, which is stripped out before anything leaves.
+          The issue says whether you were on a phone or a desktop, because
+          that is what a layout bug needs, and nothing narrower than that.
         </p>
         <p>
           A report filed from a course the caddy planned also records which

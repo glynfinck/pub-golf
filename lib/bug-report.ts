@@ -63,7 +63,21 @@ export interface BugContext {
   phase: string | null;
   /** "390×844". */
   viewport: string | null;
-  /** User agent, read server-side from the request headers. */
+  /**
+   * User agent and preferred languages, read server-side from the request
+   * headers.
+   *
+   * **Private, like `roundCode`.** Both are kept on the `bug_reports` row and
+   * neither is printed on the public issue. They used to be, as two rows in
+   * the table, and the pair is a fingerprint — a full user-agent string beside
+   * a full `accept-language` narrows a person a very long way, and the sheet
+   * that collects them promises what leaves is what you wrote.
+   *
+   * What the issue gets instead is the shape of the thing: `Phone` or
+   * `Desktop`, which is the only part of a user agent anybody triaging a
+   * layout bug reads. The full strings are one lookup away on the row, for
+   * whoever needs them.
+   */
   device: string | null;
   locale: string | null;
 }
@@ -255,6 +269,23 @@ function cell(value: string, max = 180): string {
  * redaction — a maintainer needs their words, not a paraphrase. Everything
  * else is a table, because a bug report is read at a glance six weeks later.
  */
+/**
+ * A user agent, reduced to the one bit a triager uses.
+ *
+ * `Phone`, `Tablet` or `Desktop` — enough to know which layout the reporter
+ * was looking at, and not enough to pick them out of a crowd. Deliberately
+ * crude: this is not device detection, it is the difference between the
+ * narrow column and the wide one, and a wrong guess costs a triager one
+ * glance at the viewport row directly above it.
+ */
+export function deviceShape(userAgent: string | null): string | null {
+  if (!userAgent) return null;
+  const ua = userAgent.toLowerCase();
+  if (/\bipad\b|\btablet\b|android(?!.*\bmobile\b)/.test(ua)) return "Tablet";
+  if (/\bmobi|\biphone\b|\bipod\b|\bandroid\b/.test(ua)) return "Phone";
+  return "Desktop";
+}
+
 export function issueBody(draft: IssueDraft): string {
   const { context } = draft;
   const said = redactRoundCodes(neutralise(draft.body), context.roundCode);
@@ -280,8 +311,8 @@ export function issueBody(draft: IssueDraft): string {
     rows.push(["Round", "on file — see the report id below"]);
   }
   rows.push(["Viewport", context.viewport ? cell(context.viewport) : "—"]);
-  rows.push(["Device", context.device ? cell(context.device) : "—"]);
-  rows.push(["Locale", context.locale ? cell(context.locale) : "—"]);
+  // The shape, not the string. See `BugContext.device` for why.
+  rows.push(["Device", deviceShape(context.device) ?? "—"]);
   rows.push(["Filed", cell(draft.filedAt)]);
   if (draft.stage) rows.push(["Deployment", cell(draft.stage)]);
 

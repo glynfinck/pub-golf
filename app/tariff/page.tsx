@@ -77,9 +77,10 @@ export default function TariffPage() {
       <p className="text-xs text-muted-foreground">
         The green fee is a day pass, the way a real course means it: every
         round you host for {DAY_PASS_HOURS} hours is covered, one payment for
-        the whole table, with the time remaining always on show. Covered
-        rounds stay covered for good — the pass runs out, the rounds it
-        granted never do. What it buys today is{" "}
+        the whole table, with the time remaining always on show. The day
+        starts when you tee a round off rather than when you pay, so buying on
+        Wednesday for Saturday costs you nothing. Covered rounds stay covered
+        for good — the pass runs out, the rounds it granted never do. What it buys today is{" "}
         {GREEN_FEE_EXTRAS.map((extra) => extra.title.toLowerCase()).join(", ")}
         ; anything added later joins the same fee.
         {billingEnabled(process.env.STRIPE_SECRET_KEY)

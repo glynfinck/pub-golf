@@ -199,8 +199,9 @@ export function ReportBugSheet({
                   player who types a phone number into it cannot take it back. */}
               <p className="text-[11px] text-muted-foreground">
                 This becomes a public issue on the house&apos;s tracker. Your
-                name and your round&apos;s code stay here — everything you type
-                does not, so leave anything private out of it.
+                name, your round&apos;s code and anything that identifies your
+                phone stay here — everything you type does not, so leave
+                anything private out of it.
               </p>
 
               <Button

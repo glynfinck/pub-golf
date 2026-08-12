@@ -74,11 +74,26 @@ export const CADDY_COURSES_PER_FEE =
 export const CADDY_CREDITS_SPENT =
   "This green fee has planned all its courses. Every one of them is yours to keep and change, and plotting one by hand is free as always.";
 
-/** How the remaining courses read on screen. Plain, and never a bare digit —
- * "2" beside a button is a badge nobody can parse. */
+/**
+ * How the remaining cards read on screen.
+ *
+ * Plain, and never a bare digit — "2" beside a button is a badge nobody can
+ * parse.
+ *
+ * **Goes, not courses**, and the distinction is the one thing this app most
+ * needs its words to keep straight. A fee keeps *one* course; what it gives
+ * four more of is attempts at it, each of which writes over the last. Saying
+ * "5 courses left on this fee" promised five saved cards and delivered one,
+ * which is the exact conflation the one-course rule exists to prevent —
+ * `tearOutNotice`, written later, already had the right register.
+ *
+ * "On this fee" is gone for a second reason: the balance is summed across
+ * durable top-up grants too, so a host who bought a pack was being told their
+ * permanent credits belonged to a day that is about to end.
+ */
 export function coursesLeftNote(left: number): string {
-  if (left <= 0) return "No courses left on this fee";
-  return left === 1 ? "One course left on this fee" : `${left} courses left on this fee`;
+  if (left <= 0) return "No goes left at it";
+  return left === 1 ? "One more go at it" : `${left} more goes at it`;
 }
 
 /**
