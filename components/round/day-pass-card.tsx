@@ -30,11 +30,13 @@ export function DayPassCard({ pass }: { pass: DayPass }) {
           "As many courses as you like" was written before a fee bought one,
           and a pass card promising more than the pipeline gives is worse than
           no card at all — it is the app telling you something it will then
-          refuse. */}
+          refuse. "It will plan another" had the same flaw one size down:
+          with the goes spent, tearing out leaves nothing to rebuild with,
+          so the promise now carries its own condition. */}
       <p className="mt-1.5 text-xs text-muted-foreground">
         Your course is the caddy&apos;s to plan, and yours to keep — change it
-        whenever, or tear it out and it will plan another. A new day takes a
-        new fee.
+        whenever, or tear it out and plan another while there are goes left.
+        A new day takes a new fee.
       </p>
       <Link
         href="/courses/new"

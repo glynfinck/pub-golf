@@ -33,9 +33,9 @@ export default function SmallPrintPage() {
           </p>
           <p className="text-muted-foreground">
             Ask within 30 days of a payment and it comes back in full to the
-            card that paid — green fees and honesty-box tips alike. Rained off
-            before the first tee? Same answer, faster. Refunds usually land in
-            5–10 working days, depending on your bank.
+            card that paid — green fees, caddy top-ups and honesty-box tips
+            alike. Rained off before the first tee? Same answer, faster.
+            Refunds usually land in 5–10 working days, depending on your bank.
           </p>
         </Card>
       </section>
@@ -44,8 +44,10 @@ export default function SmallPrintPage() {
         <h3 className="eyebrow mb-2">Delivery</h3>
         <Card className="gap-0 px-4 text-sm">
           <p className="text-muted-foreground">
-            Everything sold here is digital and unlocks on your round the
-            moment the payment clears. Nothing ships, so nothing is late.
+            Everything sold here is digital and lands on your account the
+            moment the payment clears — a green fee&apos;s day then starts
+            when you tee a round off, not at the till, and caddy goes keep
+            until you use them. Nothing ships, so nothing is late.
           </p>
         </Card>
       </section>

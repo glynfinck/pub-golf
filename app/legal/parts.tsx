@@ -6,7 +6,7 @@
  */
 
 /** Bumped by hand when either document actually changes. */
-export const LEGAL_UPDATED = "12 August 2026";
+export const LEGAL_UPDATED = "13 August 2026";
 
 /** Where a reader takes a question about either document. */
 export const CONTACT_EMAIL = "glynfinck@gmail.com";
