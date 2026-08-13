@@ -20,6 +20,37 @@ export interface DayPass {
  * Cached per request: the Clubhouse asks once for the card and once for the
  * league's door.
  */
+/**
+ * Whether the viewer has ever bought a green fee — the till's own condition
+ * (`topupRefusal`), read for the screens that decide whether the top-ups
+ * appear at all.
+ *
+ * The rule the till enforces and the shelf obeys is the same rule the eye
+ * should meet: a top-up that cannot be sold to this viewer is not shown to
+ * this viewer. Deliberately not `getDayPass`: that asks whether a pass is
+ * *running*, and this asks whether one was ever bought — any fee counts
+ * however long its day has been over, because the goes a top-up sells are
+ * durable. A refunded fee's row is deleted with its grants, so it stops
+ * answering here by the same cascade. Signed-out and anonymous viewers are
+ * simply not members, and read false.
+ */
+export const everBoughtGreenFee = cache(async (): Promise<boolean> => {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || user.is_anonymous) return false;
+
+  const { data } = await supabase
+    .from("entitlements")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("kind", "green_fee")
+    .limit(1)
+    .maybeSingle();
+  return data !== null;
+});
+
 export const getDayPass = cache(async (): Promise<DayPass | null> => {
   const supabase = await createClient();
   const {

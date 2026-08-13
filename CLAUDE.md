@@ -255,7 +255,12 @@ so `topupRefusal` turns a fee-less buyer away at the till
 (`startCaddyTopupCheckout`). Any fee counts however long expired — durable
 goes are the product, and the day-ran-out refusal offers more caddy — and the
 gate is the till alone, because the webhook honours whatever was actually
-sold; nothing on the spend side re-checks it. A plan costs about
+sold; nothing on the spend side re-checks it. A fee-less viewer never *sees*
+a top-up either: `/tariff` prints the rungs and their hazard condition only
+for a buyer the till would let through (`everBoughtGreenFee` in
+`lib/data/billing.ts`), and the more-caddy sheet only ever opens off
+fee-holding refusals — the board shows each viewer what the house can sell
+*them*. A plan costs about
 21p to serve, a roll 6p and a tweak 5p, so the worst a fee can cost — every
 credit spent — is about £4 against £12 taken; `lib/caddy/budget.ts` carries
 that arithmetic and `tests/unit/caddy-credits.test.ts` holds the rule that no

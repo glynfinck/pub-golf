@@ -11,6 +11,7 @@ import {
 } from "@/lib/billing";
 import { SUPPORT_EMAIL } from "@/lib/config";
 import { CADDY_TOPUP_OFFERS, WHAT_A_GO_NEEDS } from "@/lib/caddy/credits";
+import { everBoughtGreenFee } from "@/lib/data/billing";
 import { GREEN_FEE_PRICE, TARIFF } from "@/lib/tariff";
 
 export const metadata = {
@@ -38,7 +39,20 @@ const ABROAD = [
   `A$${TARIFF.greenFee.amounts.aud / 100}`,
 ];
 
-export default function TariffPage() {
+export default async function TariffPage() {
+  /**
+   * Whether the top-ups appear at all. The till refuses a fee-less buyer
+   * (`topupRefusal`), and a board quoting a price the reader cannot pay is
+   * the exact confusion that refusal exists to prevent — the £5 line under
+   * the £12 line, read as a cheap way in by the one audience it will never
+   * sell to. So the board shows each viewer what the house can sell *them*:
+   * a member reads the full tariff, top-ups and their condition included;
+   * everyone else reads the game, the fee and the tip jar, which is the
+   * whole of what they can buy. A price list that omits what it will not
+   * sell you is still an honest one — the other way round is not.
+   */
+  const member = await everBoughtGreenFee();
+
   return (
     <Screen>
       <Masthead back={{ href: "/", label: "Clubhouse" }} />
@@ -58,12 +72,10 @@ export default function TariffPage() {
           label="Green fee — a day of extras"
           value={GREEN_FEE_PRICE}
         />
-        {/* The top-ups are on the board because a price list that omits what
-            the house sells is not one. They are never *offered* here — the
-            covenant keeps an offer to the moment a host is refused something
-            (`tests/unit/covenant-money.test.ts`) — but disclosure and
-            marketing are different acts, and a processor reading this page
-            should find every price the house can charge.
+        {/* Members only — see the `member` note above. Never *offered* even
+            here: the covenant keeps an offer to the moment a host is refused
+            something (`tests/unit/covenant-money.test.ts`); this is the sign
+            on the members' wall.
 
             Driven off the offers, so a retired rung leaves this board with it.
             That is the honest direction: `caddy_topup_course` cannot be bought
@@ -75,13 +87,15 @@ export default function TariffPage() {
             means a night of pub golf, four times over. The £12 three-pack sat
             directly under the £12 green fee calling itself three rounds, which
             made the fee look like the worse buy at identical money. */}
-        {CADDY_TOPUP_OFFERS.map((offer) => (
-          <DotLeaderRow
-            key={offer.lookupKey}
-            label={`More caddy — ${offer.goes}`}
-            value={offer.price}
-          />
-        ))}
+        {member
+          ? CADDY_TOPUP_OFFERS.map((offer) => (
+              <DotLeaderRow
+                key={offer.lookupKey}
+                label={`More caddy — ${offer.goes}`}
+                value={offer.price}
+              />
+            ))
+          : null}
         <DotLeaderRow label="Honesty box — a tip, if you like" value="from £3" />
       </Card>
 
@@ -100,19 +114,20 @@ export default function TariffPage() {
       </p>
 
       {/* The top-ups' one condition, said where their prices are and in the
-          warning tone. A price list that quotes a rung without saying it
-          rides on the fee invites exactly the reading the till now refuses —
-          the £5 line as a cheap way in rather than more goes on a
-          membership. `topupRefusal` is the enforcement; this is the warning,
-          and it is the same sentence the refusal sheet shows
+          warning tone — so it renders exactly when the prices do, members
+          only. `topupRefusal` is the enforcement; this is the warning, and
+          it is the same sentence the refusal sheet shows
           (`WHAT_A_GO_NEEDS`), because a condition worded twice is two
           conditions the moment one of them is edited. */}
-      <p className="text-xs font-semibold text-hazard">{WHAT_A_GO_NEEDS}</p>
-      <p className="text-xs text-muted-foreground">
-        The goes a top-up adds are yours to keep — they never run out with
-        the day. On an account with no fee behind it, the till offers the fee
-        first.
-      </p>
+      {member ? (
+        <>
+          <p className="text-xs font-semibold text-hazard">{WHAT_A_GO_NEEDS}</p>
+          <p className="text-xs text-muted-foreground">
+            The goes a top-up adds are yours to keep — they never run out
+            with the day.
+          </p>
+        </>
+      ) : null}
 
       <section>
         <h3 className="eyebrow mb-2">House rules on money</h3>
