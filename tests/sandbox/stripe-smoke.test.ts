@@ -8,7 +8,7 @@ import {
   CADDY_TOPUPS,
   dayPassSessionParams,
 } from "@/lib/billing";
-import { CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
+import { CADDY_COURSES_PER_FEE } from "@/lib/caddy/credits";
 import { TARIFF } from "@/lib/tariff";
 
 /**
@@ -114,7 +114,9 @@ describe.skipIf(!key)("stripe sandbox", () => {
   });
 
   /**
-   * The top-ups: two rungs of more caddy, and the pricing rule that binds them.
+   * The top-ups, and the pricing rule that binds them. Every rung the ledger
+   * honours, including `caddy_topup_course` — retired from the shelf, still
+   * redeemable, and so still required to read back exactly as the board says.
    *
    * The seam these cover is not "does Stripe have a price" — it is that four
    * numbers now have to agree across three places (lib/billing.ts,
@@ -161,22 +163,28 @@ describe.skipIf(!key)("stripe sandbox", () => {
     }
   });
 
-  it("no top-up sells a round cheaper than the green fee does", async () => {
+  it("no top-up sells a go cheaper than the green fee does", async () => {
     // The load-bearing one, and the reason it lives against real Stripe rather
     // than against the constants: the rule is about what a host can actually
     // buy. The bundle has to be the best rate anyone can get, or it is the
     // option to avoid.
+    //
+    // Per whole card the fee produces — the course plus its re-designs —
+    // matching `tests/unit/caddy-credits.test.ts`. The two used different
+    // divisors for one rule until the rename pass: £12/4 here against £12/5
+    // there, so the guard on the live account was checking a laxer rule than
+    // the guard on the constants.
     const fee = await priceByLookup(TARIFF.greenFee.lookupKey);
-    const feePerRound = (fee.unit_amount ?? 0) / CADDY_GRANT_SIZE.redesign;
-    expect(feePerRound).toBeGreaterThan(0);
+    const feePerGo = (fee.unit_amount ?? 0) / CADDY_COURSES_PER_FEE;
+    expect(feePerGo).toBeGreaterThan(0);
 
     for (const lookupKey of CADDY_TOPUP_LOOKUP_KEYS) {
       const price = await priceByLookup(lookupKey);
-      const perRound = (price.unit_amount ?? 0) / CADDY_TOPUPS[lookupKey].redesign;
+      const perGo = (price.unit_amount ?? 0) / CADDY_TOPUPS[lookupKey].redesign;
       expect(
-        perRound,
-        `${lookupKey} sells a round at ${perRound}p, under the fee's ${feePerRound}p`,
-      ).toBeGreaterThanOrEqual(feePerRound);
+        perGo,
+        `${lookupKey} sells a go at ${perGo}p, under the fee's ${feePerGo}p`,
+      ).toBeGreaterThanOrEqual(feePerGo);
     }
   });
 

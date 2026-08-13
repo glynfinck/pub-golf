@@ -1,28 +1,58 @@
 import { describe, expect, it } from "vitest";
 
-import { CADDY_TOPUP_LOOKUP_KEYS, CADDY_TOPUPS } from "@/lib/billing";
+import {
+  CADDY_TOPUP_LOOKUP_KEYS,
+  CADDY_TOPUPS,
+  CADDY_TOPUPS_ON_SALE,
+} from "@/lib/billing";
 import {
   CADDY_COURSES_PER_FEE,
   CADDY_GRANT_SIZE,
   CADDY_QUOTAS,
   CADDY_TOPUP_OFFERS,
+  coursesLeftNote,
 } from "@/lib/caddy/credits";
 import { sticker, TARIFF } from "@/lib/tariff";
 
 describe("the top-up offers and the tariff agree", () => {
-  it("offers exactly the rungs the code knows how to grant", () => {
+  it("offers exactly the rungs that are on sale", () => {
     // The seam that broke repeatedly while this was built: a rung existing in
     // one list and not another. A top-up has to exist in four places — the
     // lookup keys, the grant sizes, the tariff, and the button — and this
     // holds three of them together. The fourth is Postgres, which the db tier
     // checks against `caddy_topup_size`.
     expect(CADDY_TOPUP_OFFERS.map((offer) => offer.lookupKey)).toEqual([
-      ...CADDY_TOPUP_LOOKUP_KEYS,
+      ...CADDY_TOPUPS_ON_SALE,
     ]);
     for (const offer of CADDY_TOPUP_OFFERS) {
       expect(CADDY_TOPUPS[offer.lookupKey].redesign).toBeGreaterThan(0);
       expect(CADDY_TOPUPS[offer.lookupKey].tweak).toBeGreaterThan(0);
     }
+  });
+
+  it("only ever sells a rung the ledger knows how to grant", () => {
+    // The direction that matters. The shelf may be a subset of what the ledger
+    // honours — that is what retiring a rung means — but never a superset: a
+    // key on sale with no entry in `CADDY_TOPUPS` and no arm in
+    // `caddy_topup_size()` is a purchase that takes money and grants nothing,
+    // which is the exact bug `caddy_topup_course` shipped with once already.
+    for (const lookupKey of CADDY_TOPUPS_ON_SALE) {
+      expect(CADDY_TOPUP_LOOKUP_KEYS).toContain(lookupKey);
+    }
+  });
+
+  it("keeps honouring the rung it retired", () => {
+    // A purchase is a promise. `caddy_topup_course` came off the shelf because
+    // it sold a different *kind* of thing from the other two — a course to
+    // keep rather than another go at the one in the book — on a row of three
+    // buttons that consequently could not be read straight down. None of that
+    // is a reason to strand somebody who bought one: the key stays in the
+    // honoured list, the grant sizes stay frozen, `caddy_topup_size()` still
+    // answers for it, and the webhook still fulfils an in-flight checkout.
+    expect(CADDY_TOPUP_LOOKUP_KEYS).toContain("caddy_topup_course");
+    expect(CADDY_TOPUPS.caddy_topup_course.course).toBe(1);
+    expect(CADDY_TOPUPS.caddy_topup_course.redesign).toBeGreaterThan(0);
+    expect(CADDY_TOPUPS_ON_SALE).not.toContain("caddy_topup_course");
   });
 
   it("prints the price the board actually charges", () => {
@@ -37,31 +67,61 @@ describe("the top-up offers and the tariff agree", () => {
     );
   });
 
-  it("never sells a round cheaper than the green fee does", () => {
+  it("never sells a go cheaper than the green fee does", () => {
     // The pricing rule, held where a typo would otherwise land it on a live
     // button. The bundle has to be the best rate anyone can get, or it is the
     // option to avoid.
-    const feePerRound = TARIFF.greenFee.amounts.gbp / 4;
+    //
+    // Divided by `CADDY_COURSES_PER_FEE` rather than by the four re-designs.
+    // This test and "keeps the green fee the best rate on the board" below
+    // disagreed about what a fee's per-card rate is — £12/4 = £3 here against
+    // £12/5 = £2.40 there — so the two guards on one rule were checking two
+    // different rules. Five is the honest figure: it is what a fee actually
+    // produces, and the number every surface quotes.
+    const feePerGo = TARIFF.greenFee.amounts.gbp / CADDY_COURSES_PER_FEE;
     const rates = [
       TARIFF.caddyTopupOne.amounts.gbp / CADDY_TOPUPS.caddy_topup_1.redesign,
       TARIFF.caddyTopupThree.amounts.gbp / CADDY_TOPUPS.caddy_topup_3.redesign,
     ];
-    for (const rate of rates) expect(rate).toBeGreaterThanOrEqual(feePerRound);
+    for (const rate of rates) expect(rate).toBeGreaterThanOrEqual(feePerGo);
   });
 
   it("describes what is bought, and never how much is left", () => {
     // The covenant's line about no countdown clocks, held at the point of
-    // sale: these say "1 round" because that is what a host is buying, not
+    // sale: these say "one more go" because that is what a host is buying, not
     // because something is running out.
     for (const offer of CADDY_TOPUP_OFFERS) {
-      expect(offer.rounds).toMatch(/round/);
-      expect(offer.rounds).not.toMatch(/left|remaining|only/i);
+      expect(offer.goes).toMatch(/\bgoe?s?\b/);
+      expect(offer.goes).not.toMatch(/left|remaining|only/i);
+    }
+  });
+
+  it("never calls a caddy credit a round", () => {
+    // The rename, held so it cannot drift back. `round` is this app's most
+    // spoken-for noun — a night of pub golf, a table, a join code — and
+    // `app/league/page.tsx` renders "3 rounds" meaning three nights played
+    // while this shelf rendered "3 rounds" meaning three attempts at one
+    // course. The two are eight taps apart.
+    //
+    // Worst on `/tariff`, where "More caddy — 3 rounds · £12" sat one line
+    // under the £12 green fee: the word made the cheaper-per-card product look
+    // like the dearer one, which is the opposite of what the ladder is priced
+    // to do.
+    for (const offer of CADDY_TOPUP_OFFERS) {
+      expect(offer.goes).not.toMatch(/round/i);
+    }
+    // And on the receipt, which has to stand alone with no caddy near it.
+    // "Another round · £5.00" on a card statement from a pub golf app named
+    // the one thing the buyer had not bought.
+    for (const sku of [TARIFF.caddyTopupOne, TARIFF.caddyTopupThree]) {
+      expect(sku.productName).not.toMatch(/round/i);
+      expect(sku.productName).toMatch(/caddy/i);
     }
   });
 });
 
 describe("the button counts what the purchase grants", () => {
-  it("reads its round count off CADDY_TOPUPS rather than a literal", () => {
+  it("reads its count off CADDY_TOPUPS rather than a literal", () => {
     // Both numbers were hand-written when this shipped, which is the shape of
     // every copy bug on this branch: a number in two places is right until one
     // of them moves. Changing the grant must move the label with it.
@@ -69,18 +129,33 @@ describe("the button counts what the purchase grants", () => {
       const grant = CADDY_TOPUPS[offer.lookupKey];
       // Both rungs of the card ladder, because `guard_caddy_spend` spends them
       // in order and a host cannot tell which one paid for the card in front
-      // of them. Counting only the re-designs would price "another course" as
-      // one card when it buys two.
+      // of them.
       const cards = (grant.course ?? 0) + grant.redesign;
-      expect(offer.rounds).toContain(String(cards));
+      // One is spelled out, anything above it is a digit — the wording
+      // `coursesLeftNote` already uses on the badge directly above this shelf.
+      expect(offer.goes).toContain(cards === 1 ? "one" : String(cards));
     }
   });
 
-  it("says round, not rounds, for a single one", () => {
+  it("says go, not goes, for a single one", () => {
     const single = CADDY_TOPUP_OFFERS.find(
       (offer) => CADDY_TOPUPS[offer.lookupKey].redesign === 1,
     );
-    expect(single?.rounds).toBe("1 round");
+    expect(single?.goes).toBe("one more go");
+  });
+
+  it("words a go the way the badge above it words one", () => {
+    // The bug this rename fixed was not only the word `round` — it was that
+    // the shop and the badge six inches above it used two different nouns for
+    // one quantity. `CaddyUsage` reads "3 more goes at it" off
+    // `coursesLeftNote`; the button reads "3 more goes". Same noun, same
+    // spelling rule, one concept.
+    const three = CADDY_TOPUP_OFFERS.find(
+      (offer) => CADDY_TOPUPS[offer.lookupKey].redesign === 3,
+    );
+    expect(three?.goes).toBe("3 more goes");
+    expect(coursesLeftNote(3)).toContain("3 more goes");
+    expect(coursesLeftNote(1).toLowerCase()).toContain("one more go");
   });
 });
 
@@ -107,30 +182,28 @@ describe("the quotas a fee is made of", () => {
     expect(CADDY_COURSES_PER_FEE).toBe(5);
   });
 
-  it("sells exactly one rung that buys a course to keep", () => {
-    // The two questions the ladder answers, kept distinct. `caddy_topup_1` and
-    // `caddy_topup_3` sell more *goes at the course in the book*; only
-    // `caddy_topup_course` leaves a host with a second card. A course credit
-    // wandering onto one of the others would turn "another round" into
-    // "another course" without the price moving.
-    const keepers = CADDY_TOPUP_OFFERS.filter((offer) => offer.keepsACourse);
-    expect(keepers).toHaveLength(1);
-    expect(keepers[0].lookupKey).toBe("caddy_topup_course");
-    for (const offer of CADDY_TOPUP_OFFERS) {
-      expect(offer.keepsACourse, `${offer.lookupKey}`).toBe(
-        (CADDY_TOPUPS[offer.lookupKey].course ?? 0) > 0,
-      );
+  it("puts nothing on the shelf that buys a course to keep", () => {
+    // The shelf sells one kind of thing now: more goes at the course in the
+    // book. That is what lets two buttons be read straight down against their
+    // prices — the row was three, ran £5, £12, £9, and the odd one out bought
+    // a second course to *keep*, a difference neither the price nor the count
+    // could show. A course credit wandering onto a rung that is still on sale
+    // would put that unreadable choice back without the price moving.
+    for (const lookupKey of CADDY_TOPUPS_ON_SALE) {
+      expect(CADDY_TOPUPS[lookupKey].course ?? 0, lookupKey).toBe(0);
     }
   });
 
   it("gives a course rung a revision to go with it", () => {
-    // Load-bearing rather than generous. `liveFee` resolves which purchase a
-    // session works under by walking the same ladder the spend does, so a rung
-    // granting a course and nothing else would leave a host one card in with
-    // no way to revise it.
-    for (const offer of CADDY_TOPUP_OFFERS) {
-      if (!offer.keepsACourse) continue;
-      expect(CADDY_TOPUPS[offer.lookupKey].redesign).toBeGreaterThan(0);
+    // Load-bearing rather than generous, and checked across every rung the
+    // ledger honours rather than only those on sale — `caddy_topup_course` is
+    // retired but still redeemable, so the rule has to keep holding for it.
+    // `liveFee` resolves which purchase a session works under by walking the
+    // same ladder the spend does, so a rung granting a course and nothing else
+    // would leave a host one card in with no way to revise it.
+    for (const lookupKey of CADDY_TOPUP_LOOKUP_KEYS) {
+      if ((CADDY_TOPUPS[lookupKey].course ?? 0) === 0) continue;
+      expect(CADDY_TOPUPS[lookupKey].redesign, lookupKey).toBeGreaterThan(0);
     }
   });
 
@@ -155,14 +228,15 @@ describe("the quotas a fee is made of", () => {
   });
 
   it("gives the fee more tweaks per card than any top-up", () => {
-    const feeCards = CADDY_GRANT_SIZE.course + CADDY_GRANT_SIZE.redesign;
-    const feeTweaks = CADDY_GRANT_SIZE.tweak / feeCards;
-    for (const offer of CADDY_TOPUP_OFFERS) {
-      const grant = CADDY_TOPUPS[offer.lookupKey];
+    // Across every rung the ledger honours, not only those on sale: a retired
+    // rung is still redeemable, so it still has to be the worse rate.
+    const feeTweaks = CADDY_GRANT_SIZE.tweak / CADDY_COURSES_PER_FEE;
+    for (const lookupKey of CADDY_TOPUP_LOOKUP_KEYS) {
+      const grant = CADDY_TOPUPS[lookupKey];
       const cards = (grant.course ?? 0) + grant.redesign;
       expect(
         grant.tweak / cards,
-        `${offer.lookupKey} is more generous than the fee`,
+        `${lookupKey} is more generous than the fee`,
       ).toBeLessThanOrEqual(feeTweaks);
     }
   });

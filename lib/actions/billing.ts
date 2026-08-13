@@ -4,7 +4,7 @@ import Stripe from "stripe";
 
 import {
   billingEnabled,
-  CADDY_TOPUP_LOOKUP_KEYS,
+  CADDY_TOPUPS_ON_SALE,
   dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
   secondFeeRefusal,
@@ -131,7 +131,13 @@ export async function startCaddyTopupCheckout(
   if (!billingEnabled(secretKey)) {
     return { error: "The till isn't plugged in yet." };
   }
-  if (!(CADDY_TOPUP_LOOKUP_KEYS as readonly string[]).includes(lookupKey)) {
+  // Against what is *on sale*, not against every key the ledger honours. The
+  // two lists differ the moment a rung retires, and this is the side that has
+  // to be strict: `caddy_topup_course` still has a live price object in Stripe
+  // (the sandbox suite asserts every honoured key does, so a grantable rung can
+  // never 404 at the till), so checking the honoured list would let a crafted
+  // request buy something the house has taken off the board.
+  if (!(CADDY_TOPUPS_ON_SALE as readonly string[]).includes(lookupKey)) {
     return { error: "That isn't on the tariff." };
   }
 

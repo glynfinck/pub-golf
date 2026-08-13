@@ -1,4 +1,4 @@
-import { CADDY_TOPUPS } from "@/lib/billing";
+import { CADDY_TOPUPS, CADDY_TOPUPS_ON_SALE } from "@/lib/billing";
 import { sticker, TARIFF } from "@/lib/tariff";
 
 /**
@@ -238,48 +238,89 @@ export function tearOutNotice(input: {
 }
 
 /**
+ * What one go buys, said where it is sold.
+ *
+ * The shelf went out without this, and the missing sentence is most of why it
+ * read as confusing. A unit nobody has defined has to be guessed from its own
+ * name, so the name was carrying weight no single word can: a host had to
+ * infer both that a go produces a whole fresh card *and* that the new card
+ * replaces the one they have. The second half is the one that stings if you
+ * learn it afterwards, which is the same argument `freshCourseNotice` already
+ * makes at the other door — this is that warning arriving before the money
+ * rather than after it.
+ *
+ * Two short facts, in the order a buyer needs them. No count and no clock: the
+ * covenant's line about countdown timers is about manufactured urgency, and a
+ * definition is neither.
+ */
+export const WHAT_A_GO_BUYS =
+  "A go is one fresh plan of your course. You keep the newest one.";
+
+/** The board, reachable by lookup key. Built from the tariff entries' own
+ * keys rather than typed out, so it cannot mis-map a rung onto another rung's
+ * price — the failure this file keeps having is a number in two places. */
+const TARIFF_BY_KEY = new Map(
+  [TARIFF.caddyTopupOne, TARIFF.caddyTopupThree, TARIFF.caddyTopupCourse].map(
+    (sku) => [sku.lookupKey, sku] as const,
+  ),
+);
+
+/**
  * What the refusal sheet offers, and the only place more caddy is *offered*.
  *
- * Three rungs, and the third is a different kind of thing rather than a third
- * size: `caddy_topup_1` and `caddy_topup_3` buy more goes at the course in the
- * book, and `caddy_topup_course` buys a second course to keep. That is why the
- * list stops at three — a fourth would be another *size*, which is where one
- * honest tariff turns into a pricing page.
+ * Two rungs of the same kind of thing — one go, or three. Both buy more goes
+ * at the course in the book, which is what lets the shelf sort by price and be
+ * read straight down. It stops at two because a third would be another *size*,
+ * which is where one honest tariff turns into a pricing page.
+ *
+ * Driven off `CADDY_TOPUPS_ON_SALE` rather than the full key list, and that is
+ * the whole of how a rung retires: the ledger honours every key it ever sold
+ * (`CADDY_TOPUP_LOOKUP_KEYS`), the shelf shows the ones still for sale, and
+ * `caddy_topup_course` is now only the former. Mapping the full list here is
+ * what would put it back on sale.
  *
  * Prices are derived from `TARIFF` rather than written here, so the board and
  * the button cannot disagree. `tests/unit/caddy-credits.test.ts` holds the
  * arithmetic behind them and the rule that no rung may sell a card below what
- * the fee implies. `/tariff` lists all three as well, which is disclosure
- * rather than offering — see `tests/unit/covenant-money.test.ts`.
+ * the fee implies. `/tariff` lists both as well, which is disclosure rather
+ * than offering — see `tests/unit/covenant-money.test.ts`.
  *
- * The rounds are described, never counted down. A host reads "3 rounds"
+ * The goes are described, never counted down. A host reads "3 more goes"
  * because that is what they are buying, not because anything is running out.
+ *
+ * **Goes, not rounds**, and this is the second time that distinction has had
+ * to be made — `coursesLeftNote` made it for the badge, and this shelf, written
+ * later, did not inherit it. A `round` in this app is a night of pub golf: a
+ * table, a join code, the thing the league counts a player's in. So the same
+ * two words rendered "3 rounds" on the league table meaning three nights
+ * played and "3 rounds" on this button meaning three attempts at one course.
+ * The damage was not only ambiguity — the £12 three-pack sat one line under
+ * the £12 green fee on `/tariff`, so the word made the fee look like the worse
+ * buy at identical money, which is the exact opposite of what the ladder is
+ * priced to do. The badge above this shelf already said "3 more goes at it".
+ * Now the shelf agrees with it.
  */
-export const CADDY_TOPUP_OFFERS = [
-  TARIFF.caddyTopupOne,
-  TARIFF.caddyTopupThree,
-  TARIFF.caddyTopupCourse,
-].map((sku) => {
-  const grant = CADDY_TOPUPS[sku.lookupKey];
+export const CADDY_TOPUP_OFFERS = CADDY_TOPUPS_ON_SALE.map((lookupKey) => {
+  const sku = TARIFF_BY_KEY.get(lookupKey);
+  if (!sku) throw new Error(`${lookupKey} is on sale with no price on the board`);
+  const grant = CADDY_TOPUPS[lookupKey];
   // Every whole card the rung buys, both rungs of the ladder together, because
   // `guard_caddy_spend` spends them in order and a host cannot tell which one
   // paid for the card in front of them.
   const cards = (grant.course ?? 0) + grant.redesign;
   return {
-    lookupKey: sku.lookupKey,
+    lookupKey,
     price: sticker(sku.amounts.gbp),
     // Counted from what the purchase actually grants rather than typed here.
-    // Both numbers were written by hand a moment ago, which is precisely how
-    // the refusal came to promise one course from a fee that grants four: a
-    // number in two places stays right only until one of them moves.
-    rounds: cards === 1 ? "1 round" : `${cards} rounds`,
-    /**
-     * Whether this rung buys a course to *keep*, rather than another go at the
-     * one in the book. The difference a host is actually choosing between, and
-     * invisible from the price and the round count alone — two rungs cost £8
-     * and £12 for two and three cards, and only one of them leaves you with a
-     * second course.
-     */
-    keepsACourse: (grant.course ?? 0) > 0,
+    // Both numbers were written by hand once, which is precisely how the
+    // refusal came to promise one course from a fee that grants four: a number
+    // in two places stays right only until one of them moves.
+    //
+    // Worded exactly as `coursesLeftNote` words the badge — spelled out for
+    // one, a digit above that — because they are the same quantity in the same
+    // sentence six inches apart, and a host reading "one more go" under a badge
+    // reading "One more go at it" should not have to wonder whether two
+    // different things are being counted.
+    goes: cards === 1 ? "one more go" : `${cards} more goes`,
   };
 });

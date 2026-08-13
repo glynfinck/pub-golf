@@ -248,12 +248,38 @@ true; the card it produced is never swept.
 
 The green fee's day **starts at tee-off, not at purchase** (`activate_day_pass`,
 `entitlements.activated_at`) — a null `expires_at` means dormant, not expired,
-and every point-of-sale sentence has to say so. Three top-up SKUs sit above it
-and never expire, because cost is incurred at redemption. A plan costs about
+and every point-of-sale sentence has to say so. Top-up SKUs sit above it and
+never expire, because cost is incurred at redemption. A plan costs about
 21p to serve, a roll 6p and a tweak 5p, so the worst a fee can cost — every
 credit spent — is about £4 against £12 taken; `lib/caddy/budget.ts` carries
 that arithmetic and `tests/unit/caddy-credits.test.ts` holds the rule that no
 top-up may ever sell a card cheaper than the fee does.
+
+Two lists, and the gap between them is how a rung retires.
+`CADDY_TOPUP_LOOKUP_KEYS` is every rung the ledger **honours** and only ever
+grows — a purchase is a promise, so the webhook, `CADDY_TOPUPS` and
+`caddy_topup_size()` keep answering for a key for ever. `CADDY_TOPUPS_ON_SALE`
+is what the shelf **sells**, and it is what `CADDY_TOPUP_OFFERS`,
+`startCaddyTopupCheckout` and `/tariff` all read. `caddy_topup_course` is
+retired: it sold a second course to *keep* while the other two sell more goes
+at the course in the book, so the row of three ran £5, £12, £9 — a ladder that
+does not sort, with a rung that could not be told from its neighbours without
+already knowing the one-course-per-fee rule. Its Stripe price stays **active**
+on purpose; `tests/sandbox` asserts every honoured key is on sale so a
+grantable rung can never 404 at the till, and the checkout action is what
+refuses a new one.
+
+What a caddy credit is called is **a go**, never a round. `round` is this
+app's most spoken-for noun — a table, a join code, the thing the league counts
+— and `coursesLeftNote` settled the word for the badge long before the shelf
+was written, then the shelf shipped saying "3 rounds" next to a league table
+saying "3 rounds" about something else entirely. On `/tariff` the £12
+three-pack sat one line under the £12 green fee, so the word made the
+cheaper-per-card product read as the dearer one. Stripe product names are the
+exception that proves the rule: a receipt line stands alone with no caddy near
+it, so it says "Caddy — three course plans" while the button says "3 more
+goes". `WHAT_A_GO_BUYS` defines the unit at the point of sale, because a unit
+nobody has defined has to be guessed from its own name.
 
 Two hosted environments, both deployed by the platforms rather than from this
 repo — Vercel's git integration builds the app, Supabase's GitHub integration
