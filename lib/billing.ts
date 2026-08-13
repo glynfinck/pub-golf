@@ -201,6 +201,43 @@ export const GREEN_FEE_EXTRAS = [
 ] as const;
 
 /**
+ * Where Stripe should send the buyer back to: the origin they are actually on.
+ *
+ * Both checkout actions used to build their return URLs from `SITE_URL`, which
+ * is `NEXT_PUBLIC_SITE_URL` or a hardcoded `https://pub-golf.glyn.dev`. On
+ * production those agree and nothing was ever wrong. Anywhere else they do
+ * not: paying on preview handed you back to the **live site**, on a different
+ * Supabase project, with no entitlement to show for it — the purchase
+ * succeeded, the webhook fulfilled it on preview, and the buyer was looking at
+ * production wondering where it went. That makes end-to-end testing a paid
+ * flow off production impossible to read, which is exactly what it is for.
+ *
+ * Vercel gives every deployment its own hostname, so the only origin that is
+ * always right is the request's own. `dayPassSessionParams` already took an
+ * `origin` — it was being handed a constant.
+ *
+ * Pure, and taking `Headers`, per `ipBiasFrom` in `lib/pub-search.ts`: the
+ * request-scoped read stays in the action and the decision stays testable.
+ *
+ * The header is not a trust boundary here and does not need to be. The return
+ * URL carries no token and grants nothing — fulfilment is the webhook's, off
+ * the signed event — so a spoofed host redirects the spoofer to their own page
+ * and buys them exactly what they paid for.
+ */
+export function checkoutOrigin(headers: Headers, fallback: string): string {
+  // Vercel sets x-forwarded-host to the hostname the browser asked for;
+  // `host` is the internal one. Comma-joined when proxies stack, and the
+  // first entry is the client's.
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "")
+    .split(",")[0]
+    .trim();
+  if (!host) return fallback;
+  const proto =
+    (headers.get("x-forwarded-proto") ?? "").split(",")[0].trim() || "https";
+  return `${proto}://${host}`;
+}
+
+/**
  * Checkout Session params for one day pass. Pure so the shape is testable:
  * the webhook trusts nothing but what it reads back out of this metadata, so
  * the metadata is the fulfilment contract.

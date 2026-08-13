@@ -574,6 +574,63 @@ The Vercel Authentication gate still applies: preview URLs are reachable
 only by someone signed into the team, same as the staging domain. Sign-in
 works *for you* on a PR preview; it still isn't a link you can hand round.
 
+### Stripe on staging
+
+Staging runs against a **Stripe sandbox**, never the live account. Four moving
+parts, and the third is the one nothing warns you about.
+
+**1. Seed the sandbox.** Idempotent, so run it blind:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-seed.mjs
+```
+
+It reconciles amounts, tax codes and product names against `lib/tariff.ts`.
+Amounts are immutable in Stripe, so a repriced rung mints a new price under the
+same lookup key; names and tax codes are patched in place.
+
+**2. Vercel Preview environment variables.** All three, or the webhook answers
+`503` and Stripe queues retries:
+
+| Variable | Value |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | the sandbox `sk_test_…` |
+| `STRIPE_WEBHOOK_SECRET` | the signing secret of the endpoint in step 3 — per-endpoint, so staging's is not production's |
+| `SUPABASE_SERVICE_ROLE_KEY` | the **branch project's**, not production's |
+
+**3. The webhook endpoint, with a bypass secret in the URL.** Vercel
+Authentication is on for everything except the production custom domain, so
+Stripe's POST to any staging URL is answered by Vercel's login page and never
+reaches the route. Stripe cannot send custom headers, so the bypass rides in
+the query string — [Vercel documents this exact case][bypass]. Generate the
+secret under Settings → Deployment Protection → **Protection Bypass for
+Automation**, then register in the sandbox's Developers → Webhooks:
+
+```
+https://pub-golf-preview.glyn.dev/api/billing/webhook?x-vercel-protection-bypass=<secret>
+```
+
+Send exactly two events — the pair `app/api/billing/webhook/route.ts` acts on:
+`checkout.session.completed` and `checkout.session.async_payment_succeeded`.
+
+The signature to recognise if this is wrong: Stripe's dashboard shows the
+delivery failing with an HTML body, not JSON. That is the login page.
+
+[bypass]: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
+
+**4. Nothing, for the return URL.** Checkout comes back to whichever
+deployment the buyer was on, read off the request by `checkoutOrigin` in
+`lib/billing.ts`. It used to be built from `SITE_URL`, which is production's —
+so paying on staging handed you back to the live site, on a different database,
+with nothing to show for it.
+
+Then pay with `4242 4242 4242 4242`, any future expiry, any CVC. The proof it
+worked is a row in the branch project's `entitlements`, not the success page:
+fulfilment is the webhook's.
+
+`npm run test:stripe` runs the sandbox smoke tier against whatever
+`STRIPE_SECRET_KEY` holds, and refuses a live key.
+
 ### Verifying staging is not talking to production
 
 Worth doing once, after any change to the env vars. `NEXT_PUBLIC_*` is inlined

@@ -184,9 +184,29 @@ for (const spec of PRICES) {
 
   if (existing && onBoard(existing, spec)) {
     const product = await stripe.products.retrieve(productOf(existing));
-    if (!product.tax_code) {
-      await stripe.products.update(product.id, { tax_code: TAX_CODE });
-      console.log(`stripe-seed: ${spec.lookup_key} — patched missing tax code.`);
+    /**
+     * What an already-seeded account may still be wrong about.
+     *
+     * `onBoard` compares amounts, so a price that matches short-circuits to
+     * "already seeded" — which is right for the number and was wrong for
+     * everything else on the product. The rename from "Another round" to
+     * "Caddy — one course plan" would have reached a fresh sandbox and no
+     * existing account, so the receipt this repo just spent a commit getting
+     * right would have stayed wrong everywhere it had already been seeded.
+     *
+     * Both of these are mutable on a Stripe product, which is what makes them
+     * repairable in place. An amount is not — moving the board mints a new
+     * price below, and that asymmetry is the reason this branch exists at all.
+     */
+    const patch = {};
+    if (!product.tax_code) patch.tax_code = TAX_CODE;
+    if (product.name !== spec.product.name) patch.name = spec.product.name;
+    const patched = Object.keys(patch);
+    if (patched.length) {
+      await stripe.products.update(product.id, patch);
+      console.log(
+        `stripe-seed: ${spec.lookup_key} — patched ${patched.join(", ")}.`,
+      );
     } else {
       console.log(`stripe-seed: ${spec.lookup_key} — already seeded.`);
     }

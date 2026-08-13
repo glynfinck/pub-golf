@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   billingEnabled,
+  checkoutOrigin,
   DAY_PASS_HOURS,
   dayPassLive,
   dayPassSessionParams,
@@ -167,6 +168,94 @@ describe("why a second green fee is refused", () => {
           /£|\$|\d+\.\d\d/,
         );
       }
+    }
+  });
+});
+
+/**
+ * Where a paid checkout comes back to.
+ *
+ * This existed as a constant and was only ever right on production. Every
+ * other deployment — preview, and every throwaway branch URL under it — sent
+ * the buyer home to the live site after paying, on a different Supabase
+ * project, with nothing to show for the money. The purchase worked and the
+ * webhook fulfilled it; the buyer was just looking at the wrong app.
+ */
+describe("checkoutOrigin", () => {
+  const FALLBACK = "https://pub-golf.glyn.dev";
+
+  function headersOf(entries: Record<string, string>): Headers {
+    return new Headers(entries);
+  }
+
+  it("comes back to the deployment the buyer is on", () => {
+    expect(
+      checkoutOrigin(
+        headersOf({
+          "x-forwarded-host": "pub-golf-preview.glyn.dev",
+          "x-forwarded-proto": "https",
+        }),
+        FALLBACK,
+      ),
+    ).toBe("https://pub-golf-preview.glyn.dev");
+  });
+
+  it("handles a throwaway branch preview, which is the case that hurt", () => {
+    // A per-branch Vercel URL cannot be known at build time, so no env var
+    // could ever have covered this one.
+    expect(
+      checkoutOrigin(
+        headersOf({
+          "x-forwarded-host":
+            "pub-golf-git-claude-course-builder-p-fbaf84-glynfincks-projects.vercel.app",
+          "x-forwarded-proto": "https",
+        }),
+        FALLBACK,
+      ),
+    ).toBe(
+      "https://pub-golf-git-claude-course-builder-p-fbaf84-glynfincks-projects.vercel.app",
+    );
+  });
+
+  it("falls back to host when the forwarded one is absent", () => {
+    expect(checkoutOrigin(headersOf({ host: "localhost:3105" }), FALLBACK)).toBe(
+      "https://localhost:3105",
+    );
+  });
+
+  it("keeps http when that is what the proxy says — local dev", () => {
+    expect(
+      checkoutOrigin(
+        headersOf({ host: "localhost:3105", "x-forwarded-proto": "http" }),
+        FALLBACK,
+      ),
+    ).toBe("http://localhost:3105");
+  });
+
+  it("takes the client's entry when proxies stack", () => {
+    // Comma-joined headers are the shape a second proxy leaves behind, and
+    // the leftmost entry is the one the browser asked for.
+    expect(
+      checkoutOrigin(
+        headersOf({
+          "x-forwarded-host": "pub-golf-preview.glyn.dev, internal.vercel",
+          "x-forwarded-proto": "https, http",
+        }),
+        FALLBACK,
+      ),
+    ).toBe("https://pub-golf-preview.glyn.dev");
+  });
+
+  it("falls back when there is no request to read — the old behaviour", () => {
+    expect(checkoutOrigin(headersOf({}), FALLBACK)).toBe(FALLBACK);
+  });
+
+  it("never returns a bare or trailing-slash origin", () => {
+    // Both call sites append `/new?fee=paid` and `/courses/new` directly.
+    for (const host of ["pub-golf-preview.glyn.dev", "localhost:3105"]) {
+      const origin = checkoutOrigin(headersOf({ host }), FALLBACK);
+      expect(origin).not.toMatch(/\/$/);
+      expect(origin).toMatch(/^https?:\/\/.+/);
     }
   });
 });
