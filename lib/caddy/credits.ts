@@ -77,6 +77,36 @@ export const CADDY_CREDITS_SPENT =
   "This green fee has planned all its courses. Every one of them is yours to keep and change, and plotting one by hand is free as always.";
 
 /**
+ * Has this host's fee planned everything it bought?
+ *
+ * **Two facts, never one — a fee, and nothing left on it.** The panel that
+ * renders `CADDY_CREDITS_SPENT` was keyed on the allowance alone
+ * (`!canPlan`), and an empty allowance is what a spent fee and a fee that was
+ * never bought both look like: no grants, no balance, zero. So a host with
+ * nothing on their account opened the drafting table, asked for a course, and
+ * met a panel telling them "this green fee has planned all its courses" over
+ * a button offering more goes at a course they had never had — which opened
+ * the top-up shelf, the one thing the ladder says they cannot start with.
+ *
+ * The till refused the sale either way (`topupRefusal`), so no one could
+ * actually buy past the green fee. Being shown a shelf you cannot buy from,
+ * under a sentence about a fee you have never held, is its own broken
+ * promise: it is the £5 rung reading as the cheap way in, which is the exact
+ * misreading the fee-first rule exists to prevent.
+ *
+ * A host with no fee belongs on the brief instead, where asking for a course
+ * is refused with the green fee — the only thing the house can sell them.
+ */
+export function feeIsSpent(input: {
+  /** A green fee on this host. The fact the old condition was missing. */
+  hasPass: boolean;
+  /** Whether the allowance still holds a whole card. */
+  canPlan: boolean;
+}): boolean {
+  return input.hasPass && !input.canPlan;
+}
+
+/**
  * How the remaining cards read on screen.
  *
  * Plain, and never a bare digit — "2" beside a button is a badge nobody can
