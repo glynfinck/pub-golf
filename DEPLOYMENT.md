@@ -169,6 +169,34 @@ Where the credentials go, per environment:
 - **Local dev** — `.env.local`, same two names (`supabase start` reads them
   through `config.toml`). Local also needs `skip_nonce_check`, already set.
 
+##### When the branch secret goes missing
+
+Preview sign-in fails with Google's:
+
+```
+Access blocked: Authorization Error — Error 401: invalid_client
+"The OAuth client was not found."
+```
+
+Configure does not fail when `env(...)` cannot resolve. It writes the **literal
+string** `env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)` into the branch
+project's Google provider and the deploy goes green, so nothing anywhere says
+the credential is missing until somebody tries to sign in. Confirm it in the
+branch project's Auth → Providers → Google: a client id reading `env(...)` is a
+missing secret, not a wrong one.
+
+Read the error precisely — `invalid_client` is Google rejecting the *client
+id*. A redirect problem is a different error (`400 redirect_uri_mismatch`), and
+neither is the app's doing: gotrue builds the Google URL, so no app code or
+Vercel env var is involved.
+
+Branch secrets do not survive the branch project being reset or recreated,
+which is how this usually arrives long after anyone last touched auth. Re-set
+them with the command above, then push to `preview` so Configure re-runs — it
+only applies on a commit to a tracked git branch, so a throwaway branch preview
+will not pick it up on its own. Setting the value by hand in the dashboard
+works until that next push overwrites it again.
+
 #### Consent screen branding
 
 Google renders the sign-in consent screen from the Cloud project's

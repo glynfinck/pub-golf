@@ -142,9 +142,26 @@ enable_signup = false
 #     SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
 #
 # They reuse the names local dev already uses, so there is one pair to know.
-# If either fails to resolve, Configure writes an empty credential and Google
-# sign-in breaks on preview with no error anywhere — check the branch's
-# deploy log first.
+#
+# If either fails to resolve, Configure does not fail — it writes the
+# **literal string** `env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)` through to
+# the branch project's Google provider, and the branch deploy goes green. The
+# signature, once somebody tries to sign in on preview:
+#
+#   Access blocked: Authorization Error — Error 401: invalid_client
+#   "The OAuth client was not found."
+#
+# That is Google being handed a client id that is not a client id. It is not a
+# redirect problem (those come back as 400 `redirect_uri_mismatch`) and it is
+# nothing to do with the app, which never sees the credential — gotrue builds
+# the Google URL. Check the branch project's Auth → Providers → Google: if the
+# client id reads `env(...)`, the branch secret is missing, not wrong.
+#
+# Branch secrets do not survive the branch project being reset or recreated,
+# which is the usual way this arrives long after anyone last touched auth.
+# Setting the value by hand in the dashboard unblocks it until the next push
+# to `preview`, when Configure overwrites it with the placeholder again — the
+# secret is the only durable fix.
 #
 # skip_nonce_check is deliberately absent: it is a local-dev workaround for
 # the 127.0.0.1 callback and has no business on a hosted project.
