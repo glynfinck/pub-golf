@@ -163,14 +163,78 @@ upgrade in this document (§5.2, opening hours). Optional and default-honest:
 unset means "tonight, evening", which is what the product already implicitly
 assumes.
 
+### 3.8 — Draw the walk: the stroke
+
+Everything above narrows the area by *naming* it; the host with a specific
+walk already in mind — along the river, round the park, the L through the
+market — has no way to say it, because the corridor is a straight line
+between two names. So the map's last escalation is a pen: **draw the walk,
+and the circles come out from the line.**
+
+**One primitive underneath everything.** The drawn stroke is a buffered
+polyline — and so is everything else on this map. The ring is a buffered
+*point*; the A→B capsule is a buffered *segment*; the stroke is the general
+case, and typing simply draws the degenerate ones. Via points retire before
+they ship: a via is a bend in the stroke. One geometry type (centreline +
+width) replaces ring, capsule and waypoint plumbing alike.
+
+**A line, not a paint.** The tempting version is a wide pen — an adjustable
+round tip painting a swath. Draw a thin line instead and buffer it, for
+three reasons. The width stays adjustable *after* the stroke: it is the
+same handle the ring already grew (§3.2), one control meaning one thing
+everywhere — how far off the line is still your night — and tuning it live
+while candidate pins light and drop is the moment the feature sells itself.
+A painted swath is a picture, where a line is data: it can be simplified,
+measured and projected onto, and the router needs all three. And pens need
+mechanics — erasers, blobs where a finger pauses; a stroke's edit is
+*redraw*, two seconds, so vertex-editing UI never needs to exist.
+
+**The geometry, all of it standard and pure** (unit-tier, like the rest of
+`lib/caddy/`):
+
+1. Capture the pointer stroke; simplify with Ramer–Douglas–Peucker at a
+   tolerance tied to the width (ε ≈ width/3) — finger wobble is noise, not
+   intent, and five to fifteen vertices come out the other side.
+2. Sample gather circles by arc length down the simplified line —
+   `corridorSamples` generalised from lerp-on-a-segment to
+   walk-along-a-polyline, feeding the same overlapping Nearby circles
+   `gatherPubs` already runs.
+3. Membership for the live pins is point-to-polyline distance ≤ width —
+   trivial client-side, so the preview answers while the host is still
+   drawing.
+4. **The cost cap is the one real constraint**: each circle is a Nearby
+   search, and a long stroke at a narrow width wants many. Budget ~12; past
+   it, widen the sampling spacing rather than refuse, and let
+   `stretchWarning` fire on the *drawn* length — which is more honest than
+   any straight-line distance, because the host has already drawn around
+   the river.
+
+**The stroke is the axis.** This is what makes it more than a search tool.
+`principalAxis` today *guesses* the direction of travel — the candidate
+cloud's eigenvector, or the from→to line. A drawn stroke is the axis stated
+by the host: the forward DP's projection becomes nearest-point arc-length
+along the polyline, and nothing else about the DP changes — monotone walks
+along a *curve* now, doubling back still unrepresentable. Direction comes
+free (the stroke was drawn from A to B, so "marched the right corridor the
+wrong way" cannot happen), and the arc length is the honest `reachKm` and
+`targetKm`.
+
+**Draw mode is a mode.** Drawing on a pannable map dies of gesture
+ambiguity, so it never shares one: a "Draw the walk" button holds the map
+still — one finger draws, two fingers still pan — with Done and Redraw and
+nothing subtler. This is where every draw-on-map feature lives or dies, and
+the ones that survived (Rightmove's search, Footpath's routes) all made it
+a mode.
+
 ### What deliberately doesn't change
 
 - **Text stays primary.** The map confirms and adjusts; it never becomes a
   prerequisite. A host who types "Shoreditch", ignores the map entirely and
   taps *Plan* gets today's flow exactly.
-- **No polygon drawing.** Freehand area tools are desktop GIS furniture; on
-  a phone they produce sad blobs. Ring + capsule + pins cover every real
-  brief expressible on a scorecard.
+- **No polygon lassos.** A boundary tool asks the host to describe a
+  region's *edge*, which is desktop GIS furniture and produces sad blobs on
+  a phone. The stroke (§3.8) asks for the walk itself — a line with a
+  width — which is the question a crawl actually poses.
 - **Google basemap only** — Places pins on a Google map is a terms
   requirement the builder already honours; the interactive patch inherits the
   same map ID, cream/Midnight slots, and `colorScheme` selection.
@@ -218,6 +282,9 @@ the browser and draws itself:
 - **Going back is free.** Adjust the ring, the spacing, the hole count —
   re-routing is arithmetic. The host can circle brief ↔ menu as long as they
   like; no turn row exists until a card lands.
+
+Where this lives on screen is the gallery's business (§7): the menu is the
+middle act of the same fullscreen map the plan opens onto.
 
 ### Run the router in the browser
 
@@ -458,35 +525,92 @@ actually receives, and the gap between them prices each rung of the ladder.
 
 ---
 
-## 7. UI/UX summary — the three screens
+## 7. The gallery — watching the caddy work
+
+The gallery is golf's word for the crowd that follows a shot, and it is
+what the plan's twenty seconds become. Today they are spent on a static
+panel — a putt animation, a clamped line of thinking — while the most
+interesting thing the product ever does happens invisibly behind it, even
+though the stream already carries the show (`patch`, `picked`, `thinking`,
+`doing`) and the preview already draws pins with it, small, inline, above a
+form.
+
+**Tapping *Plan the round* opens the map fullscreen, and the plan performs
+on it.**
+
+- **The widening.** The inline preview is the shared element: measure its
+  rect, transform it out to the viewport, swap the live map in — a FLIP
+  animation, so the map itself never remounts and the tiles never flash
+  (the same no-remount rule `Reframe` already keeps). Under
+  `prefers-reduced-motion` it is a cut. Leaving reverses it.
+- **The acts.** The gather draws itself: the ring — or the capsule, or the
+  stroke's swath — traced on the map, circles landing as Places answers,
+  pins popping in, the count arriving on the chip. Then the menu (§4) as
+  the middle act, character chips along the bottom of the same fullscreen
+  map. Then the dressing: picked pins light and the dotted line grows in
+  the caddy's own order, exactly as the inline preview does today, with
+  room to breathe.
+- **The ticker.** One small line at the bottom names the stage in the house
+  voice, the caddy's own thinking italic beneath it, both clamped to a
+  line: *"Walking the patch — 27 pubs found." "Measuring 23 walks, keeping
+  five." "Dressing hole 4 — something short after three pints."* The
+  arithmetic stages narrate from the client (the router runs there, §4);
+  the dressing reads the stream's existing events. The copy rule holds on
+  this screen like every other: the caddy is thinking — never a model,
+  never "generated".
+- **Leaving never cancels.** An X and a swipe-down, and the plan carries on
+  without an audience: the stream was always decoration, the card is
+  written before it is streamed, and `collectCaddyCard` already rescues a
+  broken connection. The gallery inherits that posture whole — it is
+  optional viewing of work that does not need watching, and closing it
+  lands the host back on the builder, where the card arrives as it always
+  has.
+- **The list collapses.** In every fullscreen map — the gallery and the
+  builder's existing atlas sheet alike — the pub list stops sharing the
+  screen and becomes a bottom drawer: a peek pill ("27 pubs — pull up"), a
+  grabber, half and full heights. The map is the star; the list is on
+  call.
+
+Worth building not because it looks alive — though it does — but because it
+converts the wait into evidence. A host who watched the circles land and
+the walks being measured has *seen where the card came from*; trust in the
+card is built during the twenty seconds instead of requested after them.
+And it extends the survivability the picked-pins line already bought: a
+host who has watched nine stops land has seen their course, whatever
+happens to the connection.
+
+---
+
+## 8. UI/UX summary — the three screens
 
 **Screen 1: The brief (evolved, not replaced).** Where / finishing-somewhere-
 else / holes / vibe / spacing / particulars / note / **when** — same single
 card, same chips-with-meanings voice. The map beneath is now the instrument:
 resolved-area chip with live pub count, draggable ring, capsule for A→B,
-long-press tees, geolocation start, tap-to-exclude, thin-patch counter-offers
-before the button. The button still says *Plan the round*.
+**draw-the-walk mode for the night with a shape in mind (§3.8)**, long-press
+tees, geolocation start, tap-to-exclude, thin-patch counter-offers before
+the button. The button still says *Plan the round*.
 
-**Screen 2: The menu (new).** The map draws walks; chips flip characters;
-a stats line speaks in minutes and kinds; spacing and holes re-route live and
-free. *Dress this walk* / *Caddy's choice*. Adjusting the brief is one tap
-back and costs nothing.
+**Screen 2: The gallery (new).** The button opens the map fullscreen and
+the plan performs: the gather draws itself, the menu flips walks as its
+middle act — spacing and holes re-routing live and free, *Dress this walk*
+/ *Caddy's choice* — then the dressing lights the picks. Ticker below, list
+in a drawer, X to leave without stopping anything.
 
-**Screen 3: The wait and the card (evolved).** Same streamed narration and
-live pins; shorter, because choosing is done. The card lands in the builder
-as today — a draft on the same table, every edit the same — now carrying
-**verified walk minutes per leg** and, where hours were known, quiet
-confidence ("open till 1am") instead of silence. Per-hole **swap** stays free
-and instant (it reads the neighbours table; no model turn), while *tell the
-caddy* remains the paid conversation it is.
+**Screen 3: The card (evolved).** Lands in the builder as today — a draft
+on the same table, every edit the same — now carrying **verified walk
+minutes per leg** and, where hours were known, quiet confidence ("open till
+1am") instead of silence. Per-hole **swap** stays free and instant (it
+reads the neighbours table; no model turn), while *tell the caddy* remains
+the paid conversation it is.
 
 Copy stays inside the covenant: minutes, pubs, kinds, and walks — never
-scores, engines, or models. Money answers refusals only; nothing on the new
-menu screen prices anything.
+scores, engines, or models. Money answers refusals only; nothing on the
+gallery prices anything.
 
 ---
 
-## 8. Sequencing
+## 9. Sequencing
 
 Ordered by clean-card-rate-per-effort, each phase shippable alone, all
 migrations additive:
@@ -494,13 +618,13 @@ migrations additive:
 | Phase | Ships | Why first |
 |-------|-------|-----------|
 | **1 — Measure & pre-flight** | Card Contract module + per-turn score; resolved-area echo chip; lean-search candidate pins + client-side thin-patch counter-offer; first-hole hazard enforcement | Can't hit 99% blind. The echo chip and pre-flight kill the cheapest, commonest failures for a week's work. No schema risk beyond one additive column. |
-| **2 — The menu** | Route menu UI; client-side router; live spacing/holes dials; chosen-route pinning through the model prompt; patchbook fixtures | The product's centre of gravity moves to the cheap loop. Model variance drops because choosing leaves the prompt. |
+| **2 — The menu & the gallery** | Route menu UI; client-side router; live spacing/holes dials; chosen-route pinning through the model prompt; the fullscreen gallery (FLIP widening, staged ticker, leave-without-cancelling); the list-to-drawer collapse, builder's atlas included; patchbook fixtures | The product's centre of gravity moves to the cheap loop, and the wait becomes evidence. Model variance drops because choosing leaves the prompt. |
 | **3 — Time & streets** | "When" on the brief; opening hours in the gather + dossier; time-window DP pruning; last-orders margin; verified legs on the final card; swap-a-dead-stop repair rung | The two big real-world contract clauses (C7, C9). Heaviest lift; phase 1's telemetry will have already priced exactly how much it's worth. |
-| **4 — Shape & polish** | Capsule dragging; via points (piecewise corridor + DP over segments); tap-to-exclude; ε-Pareto menu; patch-shape diagnosis; barrier polylines for launch cities | Each valuable, none load-bearing; ordered by what the telemetry says hosts actually hit. |
+| **4 — The stroke & polish** | Draw the walk (§3.8: line + width, arc-length gather, stroke-as-axis through the DP, draw mode); tap-to-exclude; ε-Pareto menu; patch-shape diagnosis; barrier polylines for launch cities | The stroke absorbs capsule-dragging and via points into one primitive. Each valuable, none load-bearing; ordered by what the telemetry says hosts actually hit. |
 
 ---
 
-## 9. Decisions taken (and the arguments)
+## 10. Decisions taken (and the arguments)
 
 - **Menu inside the paid flow**, not a free preview — it *is* the feature.
   The free spin-off ("order my own picks") is real but is the builder's
@@ -510,9 +634,14 @@ migrations additive:
   *planned in twenty seconds*.
 - **Client-side routing trusts nothing.** The server re-validates chosen
   route ids against its own gather; tampering degrades to caddy's choice.
-- **No polygon tools, no annealing, no full distance matrices.** Restraint:
-  ring + capsule covers real briefs; DP + 2-opt is right-sized at N=40;
-  street-verify 17 legs, never 1,600 pairs.
+- **No polygon lassos, no annealing, no full distance matrices.** Restraint:
+  the stroke asks for the walk, never a region's edge; DP + 2-opt is
+  right-sized at N=40; street-verify 17 legs, never 1,600 pairs.
+- **The stroke is a line, not a paint.** Width is the ring's own handle,
+  tuned after the stroke; redraw is the edit, so vertex editing never
+  ships.
+- **The gallery is optional viewing.** Leaving never cancels — the card is
+  written before it is streamed, and it lands regardless.
 - **Unknowns never punish.** Missing hours/facts are null, not false —
   a thin-data patch must not read as a bad-pub patch. Flag, don't drop.
 - **Every new rule lands in the lowest layer that can hold it** — the house
