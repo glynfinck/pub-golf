@@ -162,9 +162,23 @@ Where the credentials go, per environment:
 
   ```bash
   supabase secrets set --project-ref xssmjzinaghxjncoezez \
-    SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=... \
-    SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
+    AUTH_GOOGLE_CLIENT_ID=... \
+    AUTH_GOOGLE_SECRET=...
   ```
+
+  **The names may not start with `SUPABASE_`.** That prefix is reserved on the
+  secrets API, and the CLI does not refuse such a name — it *skips* it:
+
+  ```
+  Env name cannot start with SUPABASE_, skipping: SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID
+  Env name cannot start with SUPABASE_, skipping: SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET
+  No arguments found. Use --env-file to read from a .env file.
+  ```
+
+  So a command naming gotrue's own variables stores nothing at all, and the
+  only symptom arrives later, at sign-in, as `401 invalid_client`. This is why
+  `config.toml` reads `env(AUTH_GOOGLE_CLIENT_ID)` rather than the gotrue
+  spelling it obviously wants to.
 
 - **Local dev** — `.env.local`, same two names (`supabase start` reads them
   through `config.toml`). Local also needs `skip_nonce_check`, already set.
@@ -179,11 +193,16 @@ Access blocked: Authorization Error — Error 401: invalid_client
 ```
 
 Configure does not fail when `env(...)` cannot resolve. It writes the **literal
-string** `env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)` into the branch
-project's Google provider and the deploy goes green, so nothing anywhere says
-the credential is missing until somebody tries to sign in. Confirm it in the
-branch project's Auth → Providers → Google: a client id reading `env(...)` is a
-missing secret, not a wrong one.
+string** `env(AUTH_GOOGLE_CLIENT_ID)` into the branch project's Google provider
+and the deploy goes green, so nothing anywhere says the credential is missing
+until somebody tries to sign in. Confirm it in the branch project's Auth →
+Providers → Google: a client id reading `env(...)` is a missing secret, not a
+wrong one.
+
+Two failures compound here, which is why this was hard to see. The secret was
+never stored (the `SUPABASE_` prefix is skipped, silently — see above), and the
+unresolved placeholder is then written through rather than rejected. Each step
+reports success.
 
 Read the error precisely — `invalid_client` is Google rejecting the *client
 id*. A redirect problem is a different error (`400 redirect_uri_mismatch`), and

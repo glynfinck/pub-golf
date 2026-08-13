@@ -69,10 +69,25 @@ enable_confirmations = false
 # Google sign-in. Local dev needs a Google Cloud OAuth client with
 # http://127.0.0.1:54331/auth/v1/callback as an authorized redirect URI;
 # skip_nonce_check is required for the local flow.
+#
+# These were `SUPABASE_AUTH_EXTERNAL_GOOGLE_*` — gotrue's own variable names,
+# which read as the obvious choice and are the one thing they cannot be.
+# `SUPABASE_` is a reserved prefix on the secrets API, so
+# `supabase secrets set SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=...` does not
+# fail: it prints "Env name cannot start with SUPABASE_, skipping" and then
+# "No arguments found", having set nothing. Preview therefore had no secret to
+# resolve, Configure wrote the literal `env(...)` string into the branch
+# project, and Google answered the sign-in with `401 invalid_client`.
+#
+# `AUTH_` rather than a bare `GOOGLE_` because this repo holds three other
+# Google credentials — a browser Maps key, a server Places key and a site
+# verification token — and `GOOGLE_CLIENT_ID` sitting among them says nothing
+# about which door it opens. Supabase's own branching docs use `env(...)` names
+# of exactly this shape for a branch's OAuth provider.
 [auth.external.google]
 enabled = true
-client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
-secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+client_id = "env(AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(AUTH_GOOGLE_SECRET)"
 skip_nonce_check = true
 
 [realtime]
@@ -138,15 +153,19 @@ enable_signup = false
 # Both values are *branch* secrets, not GitHub ones. Set once with:
 #
 #   supabase secrets set --project-ref xssmjzinaghxjncoezez \
-#     SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=... \
-#     SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET=...
+#     AUTH_GOOGLE_CLIENT_ID=... \
+#     AUTH_GOOGLE_SECRET=...
 #
 # They reuse the names local dev already uses, so there is one pair to know.
+# The names may not carry gotrue's own `SUPABASE_AUTH_EXTERNAL_GOOGLE_*`
+# spelling: `SUPABASE_` is reserved on the secrets API, and the CLI *skips*
+# such a name rather than refusing it, so the command reports success having
+# stored nothing. See the note on [auth.external.google] above.
 #
-# If either fails to resolve, Configure does not fail — it writes the
-# **literal string** `env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)` through to
-# the branch project's Google provider, and the branch deploy goes green. The
-# signature, once somebody tries to sign in on preview:
+# If either fails to resolve, Configure does not fail either — it writes the
+# **literal string** `env(AUTH_GOOGLE_CLIENT_ID)` through to the branch
+# project's Google provider, and the branch deploy goes green. The signature,
+# once somebody tries to sign in on preview:
 #
 #   Access blocked: Authorization Error — Error 401: invalid_client
 #   "The OAuth client was not found."
@@ -167,5 +186,5 @@ enable_signup = false
 # the 127.0.0.1 callback and has no business on a hosted project.
 [remotes.preview.auth.external.google]
 enabled = true
-client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
-secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+client_id = "env(AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(AUTH_GOOGLE_SECRET)"
