@@ -12,7 +12,11 @@ import {
 } from "@/components/ui/sheet";
 import { useAction } from "@/hooks/use-action";
 import { startCaddyTopupCheckout } from "@/lib/actions/billing";
-import { CADDY_TOPUP_OFFERS, WHAT_A_GO_BUYS } from "@/lib/caddy/credits";
+import {
+  CADDY_TOPUP_OFFERS,
+  WHAT_A_GO_BUYS,
+  WHAT_A_GO_NEEDS,
+} from "@/lib/caddy/credits";
 import { cn } from "@/lib/utils";
 
 /**
@@ -122,6 +126,14 @@ export function CaddyMoreSheet({
                 word means everywhere else in this app. */}
             <p className="mt-1 text-center text-[10px] text-muted-foreground">
               {WHAT_A_GO_BUYS}
+            </p>
+            {/* And the unit's one condition, in the warning tone, before the
+                prices. Everyone this sheet opens for already holds a fee —
+                the till (`topupRefusal`) refuses anyone who does not — so
+                this is not a gate but a fact about what is being bought:
+                goes attach to the fee, they are not a cheaper way around it. */}
+            <p className="mt-1 text-center text-[10px] font-semibold text-hazard">
+              {WHAT_A_GO_NEEDS}
             </p>
             {/* Two rungs of the same kind of thing, ascending. It was three,
                 and the odd one out bought a second course to *keep* rather

@@ -285,7 +285,9 @@ cheaper-per-card product read as the dearer one. Stripe product names are the
 exception that proves the rule: a receipt line stands alone with no caddy near
 it, so it says "Caddy — three course plans" while the button says "3 more
 goes". `WHAT_A_GO_BUYS` defines the unit at the point of sale, because a unit
-nobody has defined has to be guessed from its own name.
+nobody has defined has to be guessed from its own name; `WHAT_A_GO_NEEDS`
+states its one condition — goes ride on a green fee — in the hazard tone on
+both surfaces that price a top-up, so nobody meets `topupRefusal` ignorant.
 
 Two hosted environments, both deployed by the platforms rather than from this
 repo — Vercel's git integration builds the app, Supabase's GitHub integration

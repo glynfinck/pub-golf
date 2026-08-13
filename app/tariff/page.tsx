@@ -10,7 +10,7 @@ import {
   GREEN_FEE_EXTRAS,
 } from "@/lib/billing";
 import { SUPPORT_EMAIL } from "@/lib/config";
-import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
+import { CADDY_TOPUP_OFFERS, WHAT_A_GO_NEEDS } from "@/lib/caddy/credits";
 import { GREEN_FEE_PRICE, TARIFF } from "@/lib/tariff";
 
 export const metadata = {
@@ -99,16 +99,19 @@ export default function TariffPage() {
           : " The taps are still being fitted; the prices above are what they'll cost when the bar opens."}
       </p>
 
-      {/* The top-ups' one condition, said where their prices are. A price
-          list that quotes a rung without saying it rides on the fee invites
-          exactly the reading the till now refuses — the £5 line as a cheap
-          way in rather than more goes on a membership. `topupRefusal` is the
-          enforcement; this is the disclosure. */}
+      {/* The top-ups' one condition, said where their prices are and in the
+          warning tone. A price list that quotes a rung without saying it
+          rides on the fee invites exactly the reading the till now refuses —
+          the £5 line as a cheap way in rather than more goes on a
+          membership. `topupRefusal` is the enforcement; this is the warning,
+          and it is the same sentence the refusal sheet shows
+          (`WHAT_A_GO_NEEDS`), because a condition worded twice is two
+          conditions the moment one of them is edited. */}
+      <p className="text-xs font-semibold text-hazard">{WHAT_A_GO_NEEDS}</p>
       <p className="text-xs text-muted-foreground">
-        More caddy tops up a green fee rather than standing in for one: it
-        adds goes for a host who has bought the fee, and those goes are yours
-        to keep — they never run out with the day. On an account with no fee
-        behind it, the till offers the fee first.
+        The goes a top-up adds are yours to keep — they never run out with
+        the day. On an account with no fee behind it, the till offers the fee
+        first.
       </p>
 
       <section>
