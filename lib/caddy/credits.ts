@@ -256,6 +256,24 @@ export function tearOutNotice(input: {
 export const WHAT_A_GO_BUYS =
   "A go is one fresh plan of your course. You keep the newest one.";
 
+/**
+ * The condition on the unit, said in the same breath as the unit.
+ *
+ * `topupRefusal` is the enforcement — the till turns a fee-less buyer away —
+ * and this is the warning that means nobody meets that refusal ignorant. It
+ * renders in the hazard tone on both surfaces that show a top-up price (the
+ * refusal sheet and `/tariff`), because "these only work over a green fee" is
+ * the one fact about the product that, missed, reads later as a trick: a £5
+ * line under a £12 line invites exactly the wrong-way-round purchase the
+ * gate exists to stop.
+ *
+ * One constant for both surfaces, the same argument as `WHAT_A_GO_BUYS`
+ * directly above: a condition worded twice is two conditions the moment one
+ * of them is edited.
+ */
+export const WHAT_A_GO_NEEDS =
+  "Goes ride on a green fee — a top-up adds them to your fee and can't stand in for one.";
+
 /** The board, reachable by lookup key. Built from the tariff entries' own
  * keys rather than typed out, so it cannot mis-map a rung onto another rung's
  * price — the failure this file keeps having is a number in two places. */

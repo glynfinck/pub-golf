@@ -11,6 +11,7 @@ import {
   CADDY_QUOTAS,
   CADDY_TOPUP_OFFERS,
   coursesLeftNote,
+  WHAT_A_GO_NEEDS,
 } from "@/lib/caddy/credits";
 import { sticker, TARIFF } from "@/lib/tariff";
 
@@ -117,6 +118,18 @@ describe("the top-up offers and the tariff agree", () => {
       expect(sku.productName).not.toMatch(/round/i);
       expect(sku.productName).toMatch(/caddy/i);
     }
+  });
+
+  it("warns that goes ride on a green fee, wherever a top-up is priced", () => {
+    // The warning the till's refusal (`topupRefusal`) makes true: a top-up
+    // adds goes to a fee and is not a cheaper way around one. One constant on
+    // both surfaces that quote a top-up price — the refusal sheet and
+    // `/tariff` — so the shelf and the board cannot tell it differently.
+    expect(WHAT_A_GO_NEEDS).toMatch(/green fee/i);
+    // In the unit's own vocabulary, and never a price: the warning names the
+    // condition, the buttons name the money.
+    expect(WHAT_A_GO_NEEDS).toMatch(/\bgoe?s?\b/i);
+    expect(WHAT_A_GO_NEEDS).not.toMatch(/£|\$|\d+\.\d\d/);
   });
 });
 

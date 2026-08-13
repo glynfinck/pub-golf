@@ -249,7 +249,18 @@ true; the card it produced is never swept.
 The green fee's day **starts at tee-off, not at purchase** (`activate_day_pass`,
 `entitlements.activated_at`) — a null `expires_at` means dormant, not expired,
 and every point-of-sale sentence has to say so. Top-up SKUs sit above it and
-never expire, because cost is incurred at redemption. A plan costs about
+never expire, because cost is incurred at redemption — and they sell only over
+a green fee: a top-up adds goes to a membership and never stands in for one,
+so `topupRefusal` turns a fee-less buyer away at the till
+(`startCaddyTopupCheckout`). Any fee counts however long expired — durable
+goes are the product, and the day-ran-out refusal offers more caddy — and the
+gate is the till alone, because the webhook honours whatever was actually
+sold; nothing on the spend side re-checks it. A fee-less viewer never *sees*
+a top-up either: `/tariff` prints the rungs and their hazard condition only
+for a buyer the till would let through (`everBoughtGreenFee` in
+`lib/data/billing.ts`), and the more-caddy sheet only ever opens off
+fee-holding refusals — the board shows each viewer what the house can sell
+*them*. A plan costs about
 21p to serve, a roll 6p and a tweak 5p, so the worst a fee can cost — every
 credit spent — is about £4 against £12 taken; `lib/caddy/budget.ts` carries
 that arithmetic and `tests/unit/caddy-credits.test.ts` holds the rule that no
@@ -279,7 +290,9 @@ cheaper-per-card product read as the dearer one. Stripe product names are the
 exception that proves the rule: a receipt line stands alone with no caddy near
 it, so it says "Caddy — three course plans" while the button says "3 more
 goes". `WHAT_A_GO_BUYS` defines the unit at the point of sale, because a unit
-nobody has defined has to be guessed from its own name.
+nobody has defined has to be guessed from its own name; `WHAT_A_GO_NEEDS`
+states its one condition — goes ride on a green fee — in the hazard tone on
+both surfaces that price a top-up, so nobody meets `topupRefusal` ignorant.
 
 Two hosted environments, both deployed by the platforms rather than from this
 repo — Vercel's git integration builds the app, Supabase's GitHub integration

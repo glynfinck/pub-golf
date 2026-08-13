@@ -178,6 +178,45 @@ export function secondFeeRefusal(input: {
 }
 
 /**
+ * Why a top-up is refused to this buyer, or null to let the sale through.
+ *
+ * A top-up adds goes to a green fee; it has never been a way in on its own.
+ * For a while it was exactly that: nothing between `startCaddyTopupCheckout`
+ * and the ledger asked whether a fee existed, and `guard_caddy_spend`'s
+ * ladder happily pays for a whole first card out of a top-up's re-design
+ * grant — so a buyer could take the caddy's entire product for the price of
+ * one extra go and never buy the fee it was priced to extend.
+ * `tests/unit/caddy-credits.test.ts` holds the rule that no rung may sell a
+ * card cheaper than the fee does, and this is the same rule at the door: a
+ * rung that sells *without* the fee undercuts it whatever it costs.
+ *
+ * The till is the only honest place to say no. Fulfilment honours whatever
+ * was sold — a purchase is a promise, and the webhook grants against any
+ * completed checkout — so the refusal has to come before the money moves,
+ * exactly as `secondFeeRefusal` does for the fee itself. Nothing changes on
+ * the spending side on purpose: credits already sold to a fee-less account
+ * were sold, and the ledger keeps answering for them.
+ *
+ * **Any fee counts, however long ago its day ran out** — which is why this
+ * takes the rows and ignores their expiries rather than being handed a
+ * pre-filtered "live" list. The goes a top-up buys are durable by design
+ * ("yours to keep — these don't run out with the day"), and the pipeline
+ * offers more caddy to a host whose day has just ended (`PASS_RAN_OUT`);
+ * gating this on a live pass would make that offer a dead end at its own
+ * till. Expiry ends the pass, not the membership. What does stop counting is
+ * a refund: a refunded fee's row is deleted with its grants, so it stops
+ * answering here by the same cascade.
+ */
+export function topupRefusal(input: {
+  /** Every green fee on the buyer's account, as the rows read — expired ones
+   * included, refunded ones already gone. */
+  fees: { expiresAt: string | null }[];
+}): string | null {
+  if (input.fees.length > 0) return null;
+  return "A top-up adds goes to a green fee, and there isn't one on this account yet. Start with the fee — it comes with goes of its own.";
+}
+
+/**
  * What the green fee buys today.
  *
  * Listed on the members' options group and nowhere else — and it lists what

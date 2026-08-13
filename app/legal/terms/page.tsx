@@ -33,9 +33,12 @@ export default function TermsPage() {
           There are three things a host can pay for, all of them one-off and
           none of them a subscription: the <b>green fee</b>, a day pass
           covering every round you host once you tee one off; <b>more caddy</b>,
-          which adds courses or changes to what the caddy will plan for you;
-          and the <b>honesty box</b>, which is a tip and buys nothing. Every
-          price is on <a href="/tariff">the tariff</a>.
+          extra goes at the course your fee planned — a top-up rides on a
+          green fee, never stands in for one, and the goes it adds don&apos;t
+          run out; and the <b>honesty box</b>, which is a tip and buys
+          nothing. <a href="/tariff">The tariff</a> lists what the house can
+          sell you — the top-ups join it once a fee is on your account — and
+          every price is shown again at the till before you pay.
         </p>
         <p>
           Payment goes through <b>Stripe</b>, on Stripe&apos;s own page — card

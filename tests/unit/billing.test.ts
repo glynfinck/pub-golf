@@ -9,6 +9,7 @@ import {
   GREEN_FEE_EXTRAS,
   honestyBoxHref,
   secondFeeRefusal,
+  topupRefusal,
 } from "@/lib/billing";
 
 describe("billingEnabled", () => {
@@ -169,6 +170,43 @@ describe("why a second green fee is refused", () => {
         );
       }
     }
+  });
+});
+
+/**
+ * The fee-first rule at the top-up till.
+ *
+ * A top-up adds goes to a green fee — it is not a way in on its own. Without
+ * this gate the £5 rung was one: `guard_caddy_spend`'s ladder pays for a
+ * whole first card out of a re-design grant, so a fee-less buyer took the
+ * caddy's entire product for the price of one extra go. The refusal lives at
+ * the till because fulfilment honours whatever was actually sold.
+ */
+describe("why a fee-less top-up is refused", () => {
+  const over = new Date(Date.now() - 3_600_000).toISOString();
+  const running = new Date(Date.now() + 3_600_000).toISOString();
+
+  it("refuses a buyer with no green fee behind the account", () => {
+    expect(topupRefusal({ fees: [] })).toMatch(/green fee/i);
+  });
+
+  it("lets any fee stand — live, dormant, or a day long over", () => {
+    // Durable goes are the product ("yours to keep — these don't run out with
+    // the day"), and the pipeline offers more caddy to a host whose day has
+    // just ended — so expiry must end the pass, never the membership. A
+    // refunded fee never reaches this function at all: its row is deleted
+    // with its grants, which is the one way out of counting.
+    for (const expiresAt of [null, over, running]) {
+      expect(topupRefusal({ fees: [{ expiresAt }] })).toBeNull();
+    }
+  });
+
+  it("points at the fee as the way on, and quotes no price", () => {
+    // Money answers a refusal, so naming the fee here is legitimate — but the
+    // price stays on the sheets and the tariff, per covenant-money.
+    const refusal = topupRefusal({ fees: [] });
+    expect(refusal).toMatch(/fee/i);
+    expect(refusal ?? "").not.toMatch(/£|\$|\d+\.\d\d/);
   });
 });
 
