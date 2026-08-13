@@ -99,6 +99,18 @@ export default function TariffPage() {
           : " The taps are still being fitted; the prices above are what they'll cost when the bar opens."}
       </p>
 
+      {/* The top-ups' one condition, said where their prices are. A price
+          list that quotes a rung without saying it rides on the fee invites
+          exactly the reading the till now refuses — the £5 line as a cheap
+          way in rather than more goes on a membership. `topupRefusal` is the
+          enforcement; this is the disclosure. */}
+      <p className="text-xs text-muted-foreground">
+        More caddy tops up a green fee rather than standing in for one: it
+        adds goes for a host who has bought the fee, and those goes are yours
+        to keep — they never run out with the day. On an account with no fee
+        behind it, the till offers the fee first.
+      </p>
+
       <section>
         <h3 className="eyebrow mb-2">House rules on money</h3>
         <Card className="gap-0 px-4 py-1">

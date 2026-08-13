@@ -249,7 +249,13 @@ true; the card it produced is never swept.
 The green fee's day **starts at tee-off, not at purchase** (`activate_day_pass`,
 `entitlements.activated_at`) — a null `expires_at` means dormant, not expired,
 and every point-of-sale sentence has to say so. Top-up SKUs sit above it and
-never expire, because cost is incurred at redemption. A plan costs about
+never expire, because cost is incurred at redemption — and they sell only over
+a green fee: a top-up adds goes to a membership and never stands in for one,
+so `topupRefusal` turns a fee-less buyer away at the till
+(`startCaddyTopupCheckout`). Any fee counts however long expired — durable
+goes are the product, and the day-ran-out refusal offers more caddy — and the
+gate is the till alone, because the webhook honours whatever was actually
+sold; nothing on the spend side re-checks it. A plan costs about
 21p to serve, a roll 6p and a tweak 5p, so the worst a fee can cost — every
 credit spent — is about £4 against £12 taken; `lib/caddy/budget.ts` carries
 that arithmetic and `tests/unit/caddy-credits.test.ts` holds the rule that no

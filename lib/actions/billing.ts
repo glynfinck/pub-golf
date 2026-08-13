@@ -10,6 +10,7 @@ import {
   dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
   secondFeeRefusal,
+  topupRefusal,
 } from "@/lib/billing";
 import { caddyAllowance } from "@/lib/data/caddy";
 import { SITE_URL } from "@/lib/config";
@@ -124,6 +125,12 @@ export async function startGreenFeeCheckout(): Promise<{
  * of a round is incurred when it is redeemed and an unredeemed one costs
  * nothing to hold.
  *
+ * Like the fee, though, it refuses before it sells. A top-up adds goes to a
+ * green fee, so a buyer with no fee behind the account meets `topupRefusal`
+ * rather than a checkout — see that function for why the gate lives at the
+ * till and why any fee counts, however long expired. Selling without it was
+ * the caddy's whole product for the price of one go.
+ *
  * The lookup key is also the entitlement kind and the reason on the ledger
  * row, so one string carries the purchase from here to the grant. It is
  * checked against the code's own list rather than trusted, so a crafted call
@@ -154,6 +161,27 @@ export async function startCaddyTopupCheckout(
   if (user.is_anonymous) {
     return { error: "Hosting a round takes a Google sign-in." };
   }
+
+  // The fee-first gate. Every fee the buyer has ever bought, expiries and all
+  // — no liveness filter, because `topupRefusal` is the one that decides and
+  // it decides on existence. RLS already scopes the table to the owner's own
+  // rows; the `eq` restates it the way `getDayPass` does. Refunded fees are
+  // deleted rows, so they answer here exactly as they answer everywhere.
+  const { data: fees, error: feeError } = await supabase
+    .from("entitlements")
+    .select("expires_at")
+    .eq("user_id", user.id)
+    .eq("kind", "green_fee")
+    .limit(1);
+  // An unanswered read refuses nothing and sells nothing. "No fee on this
+  // account" is a sentence about their account, and a hiccup is not evidence
+  // for it — but a sale on a guess re-opens the door this gate closes, so the
+  // answer is "try again" rather than either.
+  if (feeError) return { error: "The till didn't answer. Give it another go." };
+  const refusal = topupRefusal({
+    fees: (fees ?? []).map((row) => ({ expiresAt: row.expires_at })),
+  });
+  if (refusal) return { error: refusal };
 
   try {
     const stripe = new Stripe(secretKey as string);
