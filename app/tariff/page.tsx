@@ -58,16 +58,27 @@ export default function TariffPage() {
           label="Green fee — a day of extras"
           value={GREEN_FEE_PRICE}
         />
-        {/* The top-ups are on the board because a price list that omits three
-            of four things sold is not one. They are never *offered* here — the
+        {/* The top-ups are on the board because a price list that omits what
+            the house sells is not one. They are never *offered* here — the
             covenant keeps an offer to the moment a host is refused something
             (`tests/unit/covenant-money.test.ts`) — but disclosure and
             marketing are different acts, and a processor reading this page
-            should find every price the house can charge. */}
+            should find every price the house can charge.
+
+            Driven off the offers, so a retired rung leaves this board with it.
+            That is the honest direction: `caddy_topup_course` cannot be bought
+            any more (`startCaddyTopupCheckout` refuses it), and a price list
+            that quotes a price nobody can pay is worse than one that omits it.
+
+            These read "a go" rather than "a round" for the reason this page
+            demonstrates better than any other: three lines below, "round"
+            means a night of pub golf, four times over. The £12 three-pack sat
+            directly under the £12 green fee calling itself three rounds, which
+            made the fee look like the worse buy at identical money. */}
         {CADDY_TOPUP_OFFERS.map((offer) => (
           <DotLeaderRow
             key={offer.lookupKey}
-            label={`More caddy — ${offer.rounds.toLowerCase()}${offer.keepsACourse ? ", and a course to keep" : ""}`}
+            label={`More caddy — ${offer.goes}`}
             value={offer.price}
           />
         ))}

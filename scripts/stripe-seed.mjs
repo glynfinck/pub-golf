@@ -48,17 +48,20 @@ const PRICES = [
       aud: { unit_amount: 2400, tax_behavior: "inclusive" },
     },
   },
-  // More caddy, and the only things here that do not expire. Three rungs
-  // answering two questions: `caddy_topup_1` and `caddy_topup_3` sell more
-  // *goes at the course in the book*, `caddy_topup_course` sells a second
-  // course to keep. All three price a whole card above the £2.40 the green fee
-  // implies, so the bundle stays the obvious buy — the standing rule in
-  // the tariff, and there is a unit test holding it. Mirrors
-  // TARIFF.caddyTopup* in lib/tariff.ts.
+  // More caddy, and the only things here that do not expire. Two rungs on the
+  // shelf — `caddy_topup_1` and `caddy_topup_3` sell more *goes at the course
+  // in the book* — plus `caddy_topup_course`, retired from sale and seeded
+  // anyway (see its own note below). All of them price a whole card above the
+  // £2.40 the green fee implies, so the bundle stays the obvious buy — the
+  // standing rule in the tariff, and there is a unit test holding it. Mirrors
+  // TARIFF.caddyTopup* in lib/tariff.ts, product names included: these are the
+  // receipt, and they were "Another round" / "A few more rounds" until a card
+  // statement from a pub golf app reading "Another round · £5.00" turned out
+  // to name the one thing the buyer had not bought.
   {
     lookup_key: "caddy_topup_1",
-    nickname: "Another round — one more course from the caddy",
-    product: { name: "Another round", metadata: { kind: "caddy_topup_1" } },
+    nickname: "Caddy — one course plan",
+    product: { name: "Caddy — one course plan", metadata: { kind: "caddy_topup_1" } },
     metadata: { kind: "caddy_topup_1" },
     currency: "gbp",
     unit_amount: 500,
@@ -71,8 +74,8 @@ const PRICES = [
   },
   {
     lookup_key: "caddy_topup_3",
-    nickname: "A few more rounds — three more courses from the caddy",
-    product: { name: "A few more rounds", metadata: { kind: "caddy_topup_3" } },
+    nickname: "Caddy — three course plans",
+    product: { name: "Caddy — three course plans", metadata: { kind: "caddy_topup_3" } },
     metadata: { kind: "caddy_topup_3" },
     currency: "gbp",
     unit_amount: 1200,
@@ -83,9 +86,15 @@ const PRICES = [
       aud: { unit_amount: 2400, tax_behavior: "inclusive" },
     },
   },
+  // Retired from the shelf, still seeded and still active. `CADDY_TOPUPS_ON_SALE`
+  // in lib/billing.ts is what took it off sale and carries the reasoning; the
+  // price object stays because tests/sandbox asserts every key the ledger
+  // honours is on sale, so a rung the grant logic knows can never 404 at the
+  // till. `startCaddyTopupCheckout` is what refuses a new purchase. Its name
+  // needed no rewrite — `course` was never the ambiguous word.
   {
     lookup_key: "caddy_topup_course",
-    nickname: "Another course — a second card to keep, with a revision",
+    nickname: "Another course — a second card to keep, with a revision (retired)",
     product: { name: "Another course", metadata: { kind: "caddy_topup_course" } },
     metadata: { kind: "caddy_topup_course" },
     currency: "gbp",
@@ -175,9 +184,29 @@ for (const spec of PRICES) {
 
   if (existing && onBoard(existing, spec)) {
     const product = await stripe.products.retrieve(productOf(existing));
-    if (!product.tax_code) {
-      await stripe.products.update(product.id, { tax_code: TAX_CODE });
-      console.log(`stripe-seed: ${spec.lookup_key} — patched missing tax code.`);
+    /**
+     * What an already-seeded account may still be wrong about.
+     *
+     * `onBoard` compares amounts, so a price that matches short-circuits to
+     * "already seeded" — which is right for the number and was wrong for
+     * everything else on the product. The rename from "Another round" to
+     * "Caddy — one course plan" would have reached a fresh sandbox and no
+     * existing account, so the receipt this repo just spent a commit getting
+     * right would have stayed wrong everywhere it had already been seeded.
+     *
+     * Both of these are mutable on a Stripe product, which is what makes them
+     * repairable in place. An amount is not — moving the board mints a new
+     * price below, and that asymmetry is the reason this branch exists at all.
+     */
+    const patch = {};
+    if (!product.tax_code) patch.tax_code = TAX_CODE;
+    if (product.name !== spec.product.name) patch.name = spec.product.name;
+    const patched = Object.keys(patch);
+    if (patched.length) {
+      await stripe.products.update(product.id, patch);
+      console.log(
+        `stripe-seed: ${spec.lookup_key} — patched ${patched.join(", ")}.`,
+      );
     } else {
       console.log(`stripe-seed: ${spec.lookup_key} — already seeded.`);
     }

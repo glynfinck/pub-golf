@@ -1,10 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import Stripe from "stripe";
 
 import {
   billingEnabled,
-  CADDY_TOPUP_LOOKUP_KEYS,
+  CADDY_TOPUPS_ON_SALE,
+  checkoutOrigin,
   dayPassSessionParams,
   GREEN_FEE_LOOKUP_KEY,
   secondFeeRefusal,
@@ -97,7 +99,10 @@ export async function startGreenFeeCheckout(): Promise<{
       dayPassSessionParams({
         priceId: price.id,
         userId: user.id,
-        origin: SITE_URL,
+        // The origin the buyer is actually on, not the one this build was
+        // compiled for — see `checkoutOrigin`. `SITE_URL` is the fallback for
+        // a context with no request headers, which is where it was right.
+        origin: checkoutOrigin(await headers(), SITE_URL),
       }),
     );
     if (!session.url) {
@@ -131,7 +136,13 @@ export async function startCaddyTopupCheckout(
   if (!billingEnabled(secretKey)) {
     return { error: "The till isn't plugged in yet." };
   }
-  if (!(CADDY_TOPUP_LOOKUP_KEYS as readonly string[]).includes(lookupKey)) {
+  // Against what is *on sale*, not against every key the ledger honours. The
+  // two lists differ the moment a rung retires, and this is the side that has
+  // to be strict: `caddy_topup_course` still has a live price object in Stripe
+  // (the sandbox suite asserts every honoured key does, so a grantable rung can
+  // never 404 at the till), so checking the honoured list would let a crafted
+  // request buy something the house has taken off the board.
+  if (!(CADDY_TOPUPS_ON_SALE as readonly string[]).includes(lookupKey)) {
     return { error: "That isn't on the tariff." };
   }
 
@@ -150,13 +161,16 @@ export async function startCaddyTopupCheckout(
     const price = prices.data[0];
     if (!price) return { error: "That isn't on the tariff yet." };
 
+    // The drafting table they were standing at, on the deployment they were
+    // standing on. Built from the request rather than from `SITE_URL`, which
+    // sent every preview purchase home to production — see `checkoutOrigin`.
+    const origin = checkoutOrigin(await headers(), SITE_URL);
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [{ price: price.id, quantity: 1 }],
       client_reference_id: user.id,
-      // Back to the drafting table, which is where they were standing.
-      success_url: `${SITE_URL}/courses/new?caddy=topped-up`,
-      cancel_url: `${SITE_URL}/courses/new`,
+      success_url: `${origin}/courses/new?caddy=topped-up`,
+      cancel_url: `${origin}/courses/new`,
       metadata: { kind: lookupKey, user_id: user.id },
     });
     if (!session.url) {

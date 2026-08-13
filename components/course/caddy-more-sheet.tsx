@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { useAction } from "@/hooks/use-action";
 import { startCaddyTopupCheckout } from "@/lib/actions/billing";
-import { CADDY_TOPUP_OFFERS } from "@/lib/caddy/credits";
+import { CADDY_TOPUP_OFFERS, WHAT_A_GO_BUYS } from "@/lib/caddy/credits";
 import { cn } from "@/lib/utils";
 
 /**
@@ -112,6 +112,23 @@ export function CaddyMoreSheet({
             <p className="text-center text-[10px] text-muted-foreground">
               Or have the caddy plan more.
             </p>
+            {/* What a go is, before the price rather than after it.
+                The shelf shipped without this and the shape of the confusion
+                was predictable in hindsight: an undefined unit has to be
+                guessed from its own name, so the name was asked to carry both
+                "this produces a whole fresh card" and "the fresh one replaces
+                what you have". No word does that, which is why the old one
+                ("rounds") was read as a night of pub golf — the thing that
+                word means everywhere else in this app. */}
+            <p className="mt-1 text-center text-[10px] text-muted-foreground">
+              {WHAT_A_GO_BUYS}
+            </p>
+            {/* Two rungs of the same kind of thing, ascending. It was three,
+                and the odd one out bought a second course to *keep* rather
+                than another go at this one — a difference the price and the
+                count could not show, on a row that ran £5, £12, £9 and so did
+                not sort. `CADDY_TOPUPS_ON_SALE` is what retired it; hosts who
+                already bought one keep their slot. */}
             <div className="mt-2 flex gap-2">
               {CADDY_TOPUP_OFFERS.map((offer) => (
                 <Button
@@ -124,17 +141,8 @@ export function CaddyMoreSheet({
                 >
                   <span className="font-serif text-base">{offer.price}</span>
                   <span className="text-[10px] font-normal text-muted-foreground">
-                    {offer.rounds}
+                    {offer.goes}
                   </span>
-                  {/* The difference a host is actually choosing between, and
-                      the one the price and the round count cannot show: two of
-                      these rungs buy more goes at the course in the book, and
-                      one buys a second course to keep. */}
-                  {offer.keepsACourse ? (
-                    <span className="text-[9px] font-normal text-fairway">
-                      + a course to keep
-                    </span>
-                  ) : null}
                 </Button>
               ))}
             </div>

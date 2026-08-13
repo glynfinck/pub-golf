@@ -5,17 +5,14 @@ import type Stripe from "stripe";
 export const GREEN_FEE_LOOKUP_KEY = "green_fee";
 
 /**
- * More caddy, for a host whose fee has planned everything it holds.
+ * Every rung the house has ever sold, and the set it will honour for ever.
  *
- * Three rungs, and they answer two different questions. `caddy_topup_1` and
- * `caddy_topup_3` sell more *goes at the course in the book*;
- * `caddy_topup_course` sells a second course to keep. Demand is lopsided —
- * most hosts need none — so the list stays short and the ladder stays legible:
- * £5 a card, £4 a card, £4 a card with a slot.
- *
- * `tests/unit/caddy-credits.test.ts` holds the arithmetic and the rule none of them
- * may break: the green fee is the best rate anyone can get, or the bundle is
- * the option to avoid.
+ * This list only grows. A purchase is a promise: the webhook grants against
+ * whatever kind Stripe hands back, `caddy_topup_size()` sizes it, and a host
+ * who bought a rung two months ago must still get what they paid for long
+ * after the shop stopped showing it. Taking a key *out* of here would strand
+ * an in-flight checkout and silently void a grant — which is why retirement is
+ * expressed by `CADDY_TOPUPS_ON_SALE` below rather than by deletion.
  *
  * The lookup key is also the entitlement `kind` and the reason stamped on the
  * grants, so one string identifies the purchase from Stripe through to the
@@ -29,6 +26,32 @@ export const CADDY_TOPUP_LOOKUP_KEYS = [
 ] as const;
 export type CaddyTopupKey = (typeof CADDY_TOPUP_LOOKUP_KEYS)[number];
 
+/**
+ * What is actually on the shelf — two rungs of the same kind of thing.
+ *
+ * `caddy_topup_course` is retired. It sold a second course to *keep* while the
+ * other two sell more goes at the course already in the book, and putting two
+ * different kinds of thing on one row of three buttons was most of why the
+ * sheet read as confusing: the prices ran £5, £12, £9 — a ladder that does not
+ * sort, with the dearest rung in the middle — and the odd one out could not be
+ * told from the other two without already knowing the one-course-per-fee rule,
+ * which that sheet has never explained. Demand for it was the lopsided end of
+ * a lopsided list. A host who wants a second course to keep wants it because
+ * they are hosting a second night, and a green fee is what you buy to host a
+ * night — at £2.40 a card it is the best rate on the board, so this rung was
+ * routing that demand away from the better product.
+ *
+ * The price object stays live in Stripe on purpose. Archiving it would fail
+ * `tests/sandbox` — which asserts every honoured key is on sale, correctly, so
+ * that a rung the grant logic knows cannot 404 at the till — and buys nothing:
+ * with the key off this list, `startCaddyTopupCheckout` refuses it, so no new
+ * sale can start whatever a crafted request asks for.
+ */
+export const CADDY_TOPUPS_ON_SALE: readonly CaddyTopupKey[] = [
+  "caddy_topup_1",
+  "caddy_topup_3",
+];
+
 /** What each rung grants, mirrored from `public.caddy_topup_size()` and proved
  * equal by a db test. Durable on purpose: these carry no expiry, because cost
  * is incurred at redemption and an unredeemed round costs nothing to hold. */
@@ -39,13 +62,18 @@ export const CADDY_TOPUPS: Record<
   caddy_topup_1: { redesign: 1, tweak: 10 },
   caddy_topup_3: { redesign: 3, tweak: 30 },
   /**
+   * Retired from the shelf, honoured for ever — see `CADDY_TOPUPS_ON_SALE`.
+   * These numbers are what somebody already paid for, so they are frozen
+   * rather than tidied away: the balance a past buyer reads is summed from
+   * this row, and `caddy_topup_size()` still answers for it in Postgres.
+   *
    * The only rung that buys a second course *kept*, rather than more goes at
    * the one in the book.
    *
    * A fee files one course, and the rule is per **purchase** —
    * `caddy_sessions_one_course_per_fee` is keyed on `entitlement_id` — so this
    * needs no exception written for it anywhere. Its own entitlement gets its
-   * own slot, which is what "another course" has to mean to be worth £8.
+   * own slot, which is what "another course" had to mean to be worth £9.
    *
    * The revision is not optional garnish. `liveFee` resolves which purchase a
    * session works under by walking the same ladder the spend does, and a rung
@@ -171,6 +199,43 @@ export const GREEN_FEE_EXTRAS = [
     detail: "one course, planned for you — yours to change or replace",
   },
 ] as const;
+
+/**
+ * Where Stripe should send the buyer back to: the origin they are actually on.
+ *
+ * Both checkout actions used to build their return URLs from `SITE_URL`, which
+ * is `NEXT_PUBLIC_SITE_URL` or a hardcoded `https://pub-golf.glyn.dev`. On
+ * production those agree and nothing was ever wrong. Anywhere else they do
+ * not: paying on preview handed you back to the **live site**, on a different
+ * Supabase project, with no entitlement to show for it — the purchase
+ * succeeded, the webhook fulfilled it on preview, and the buyer was looking at
+ * production wondering where it went. That makes end-to-end testing a paid
+ * flow off production impossible to read, which is exactly what it is for.
+ *
+ * Vercel gives every deployment its own hostname, so the only origin that is
+ * always right is the request's own. `dayPassSessionParams` already took an
+ * `origin` — it was being handed a constant.
+ *
+ * Pure, and taking `Headers`, per `ipBiasFrom` in `lib/pub-search.ts`: the
+ * request-scoped read stays in the action and the decision stays testable.
+ *
+ * The header is not a trust boundary here and does not need to be. The return
+ * URL carries no token and grants nothing — fulfilment is the webhook's, off
+ * the signed event — so a spoofed host redirects the spoofer to their own page
+ * and buys them exactly what they paid for.
+ */
+export function checkoutOrigin(headers: Headers, fallback: string): string {
+  // Vercel sets x-forwarded-host to the hostname the browser asked for;
+  // `host` is the internal one. Comma-joined when proxies stack, and the
+  // first entry is the client's.
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "")
+    .split(",")[0]
+    .trim();
+  if (!host) return fallback;
+  const proto =
+    (headers.get("x-forwarded-proto") ?? "").split(",")[0].trim() || "https";
+  return `${proto}://${host}`;
+}
 
 /**
  * Checkout Session params for one day pass. Pure so the shape is testable:
