@@ -46,6 +46,27 @@ export const PLAN_STAGES: {
 
 const ORDER: PlanStage[] = PLAN_STAGES.map((stage) => stage.id);
 
+/**
+ * What the caddy's job is doing, and the one question worth asking about it.
+ *
+ * The gallery's stage and "is a request in flight" are different facts, and
+ * reading one for the other is what broke the course room: the stage *label*
+ * is non-null at `menu` (a walk is waiting to be picked) and at `failed` (an
+ * apology is waiting to be read), neither of which is a plan running. The room
+ * closed the road back on any label at all, so the rail went dead the moment
+ * the menu arrived and stayed dead through a refusal — which, with the
+ * fullscreen gallery closing itself on the way out, is exactly the "I pressed
+ * it and nothing happened" that this pair of functions exists to prevent.
+ *
+ * One definition, read by the group that reports it and the gallery that
+ * draws it, so they cannot drift apart again.
+ */
+export type JobStage = "opening" | "menu" | "dressing" | "done" | "failed";
+
+export function jobWorking(stage: JobStage): boolean {
+  return stage === "opening" || stage === "dressing";
+}
+
 /** Everything the room knows about how far the host has got. */
 export interface PlanProgress {
   /** The map is held still, so there is a frame to draw on. */

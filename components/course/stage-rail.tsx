@@ -31,7 +31,9 @@ export function StageRail({
   className,
 }: {
   progress: PlanProgress;
-  onGo: (stage: PlanStage) => void;
+  /** Absent makes this a display rather than a control — the same four acts,
+   * read-only, for a surface with nowhere to send the host back to. */
+  onGo?: (stage: PlanStage) => void;
   className?: string;
 }) {
   const now = stageNow(progress);
@@ -40,7 +42,7 @@ export function StageRail({
       {PLAN_STAGES.map((stage, index) => {
         const here = stage.id === now;
         const done = stageDone(stage.id, progress);
-        const open = stageOpen(stage.id, progress);
+        const open = onGo != null && stageOpen(stage.id, progress);
         return (
           <div key={stage.id} className="flex min-w-0 items-center gap-1">
             {index > 0 ? (
@@ -60,7 +62,7 @@ export function StageRail({
               // rather than a bare label that reads the same at every stage.
               aria-label={`${stage.label}${done ? ", done" : here ? ", current" : ", not yet"}`}
               title={stage.doing}
-              onClick={() => onGo(stage.id)}
+              onClick={() => onGo?.(stage.id)}
               className={cn(
                 "flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
                 here && "bg-fairway text-primary-foreground",

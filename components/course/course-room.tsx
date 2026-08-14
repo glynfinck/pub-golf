@@ -73,16 +73,18 @@ export function CourseRoom({
   /** Whether the map is held still — reported by the surface's own handlers,
    * so the rail and the pen can never disagree about which act is on. */
   const [locked, setLocked] = useState(false);
-  /** What the caddy is doing, if anything. The rail closes the road back
-   * while a plan is in flight: there is nothing to go back to until it lands,
-   * and the fee is already spent. */
-  const [job, setJob] = useState<string | null>(null);
+  /**
+   * Whether a request is in flight. The rail closes the road back only for
+   * this — never for a stage *label*, which stays non-null at the menu and
+   * after a failure and would leave the rail dead in both.
+   */
+  const [working, setWorking] = useState(false);
   const draw = useRef<DrawControls | null>(null);
 
   const progress = {
     locked,
     aimed: Boolean(stroke),
-    planning: job != null,
+    planning: working,
     carded: landed != null,
   };
 
@@ -220,7 +222,8 @@ export function CourseRoom({
               reach={reach}
               onReach={setReach}
               onSession={() => {}}
-              onStage={setJob}
+              onWorking={setWorking}
+              onStep={goToStage}
               // A card landing opens the panel — an event, not an effect, so
               // the strict hooks rules stay satisfied and the host can push
               // it straight back down.

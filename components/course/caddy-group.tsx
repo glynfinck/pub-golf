@@ -69,6 +69,7 @@ import {
   type GalleryStage,
 } from "@/components/course/caddy-gallery";
 import type { CaddyMenu } from "@/lib/caddy/menu";
+import { jobWorking, type PlanStage } from "@/lib/caddy/stages";
 import { DrawWalkSheet } from "@/components/course/draw-walk-sheet";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -112,6 +113,8 @@ export function CaddyGroup({
   onReach,
   reach,
   onStage,
+  onWorking,
+  onStep,
   room = false,
   strokeOverride,
   session = null,
@@ -175,6 +178,21 @@ export function CaddyGroup({
   /** The job's stage, as a label the minimap wears — null when no plan is
    * live. One of the three windows on the job (gallery, pill, badge). */
   onStage?: (label: string | null) => void;
+  /**
+   * Whether a request is actually in flight — true only while the patch is
+   * being walked or the card dressed.
+   *
+   * Separate from `onStage` because the two answer different questions, and
+   * reading one for the other is what froze the course room's stage rail: the
+   * label is non-null at `menu` and at `failed`, neither of which is a plan
+   * running. Anything that closes a road on the host has to key on this.
+   */
+  onWorking?: (working: boolean) => void;
+  /** Step back an act from inside the gallery. The gallery is a fullscreen
+   * portal, so it covers whatever rail the surface behind it has — carrying
+   * one is how pressing *Dress this walk* stops looking like losing the
+   * progress bar. Absent where there is no rail to step on. */
+  onStep?: (stage: PlanStage) => void;
   /**
    * Rendered inside the Course Room rather than on the drafting table.
    *
@@ -298,6 +316,13 @@ export function CaddyGroup({
   function advance(next: GalleryStage) {
     setGalleryStage(next);
     if (next === "done") setJobActive(false);
+    // **Working is not the same as having something to come back to**, and
+    // conflating them froze the course room's stage rail. `jobActive` means
+    // the pill has something to say — a failure to read, a menu to pick from
+    // — and stays true at `menu` and `failed`. Only these two stages are a
+    // request actually in flight, which is the one thing that may close the
+    // road back.
+    onWorking?.(jobWorking(next));
     onStage?.(
       next === "opening"
         ? "Walking the patch"
@@ -309,6 +334,26 @@ export function CaddyGroup({
               ? "The caddy lost the ball"
               : null,
     );
+  }
+
+  /**
+   * The run is over with neither a card nor a failure — a refusal.
+   *
+   * Every path that answers with money used to end by closing the gallery and
+   * returning, which left the job in whatever stage it had reached. The pill
+   * went on saying "the caddy's dressing the card" over a plan that had
+   * already been turned down at the till, and once the course room started
+   * reading the stage, its rail froze mid-flight: every step behind the host
+   * disabled, nothing on screen moving, and a fullscreen gallery that had
+   * silently vanished. "Nothing happened" is exactly what that looks like.
+   *
+   * So a refusal ends the run properly. The sheet is the answer; the job is
+   * finished, and says so.
+   */
+  function settle() {
+    setJobActive(false);
+    onWorking?.(false);
+    onStage?.(null);
   }
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
@@ -473,6 +518,7 @@ export function CaddyGroup({
           offer?: CaddyOffer;
         } | null;
         setGallery(false);
+        settle();
         if (body?.offer && body.error) {
           refusedRef.current = true;
           setRefusal({ text: body.error, offer: body.offer });
@@ -509,6 +555,7 @@ export function CaddyGroup({
         } else if (event.offer) {
           refusedRef.current = true;
           setGallery(false);
+          settle();
           setRefusal({ text: event.error, offer: event.offer });
         } else {
           failure = { error: event.error, detail: event.detail };
@@ -601,6 +648,7 @@ export function CaddyGroup({
       }
       if (!body || body.error || !body.sessionId || !body.menu) {
         setGallery(false);
+        settle();
         if (body?.offer && body.error) {
           setRefusal({ text: body.error, offer: body.offer });
           return {};
@@ -625,7 +673,17 @@ export function CaddyGroup({
 
   /** The host chose — or declined to choose — and the turn that spends runs. */
   function dress(choice: DressChoice) {
-    if (!menuSession.current) return;
+    // Returning silently here is literally "I pressed it and nothing
+    // happened": no toast, no stage change, no way to tell a lost thread from
+    // a dead button. It should not be reachable — the session is set the
+    // moment the menu arrives — so if it ever is, say so.
+    if (!menuSession.current) {
+      advance("failed");
+      setGalleryError(
+        "The caddy lost the thread on this patch. Plan it again — this one's free.",
+      );
+      return;
+    }
     stream({
       sessionId: menuSession.current,
       route: choice.route,
@@ -793,6 +851,16 @@ export function CaddyGroup({
       holes={holes}
       stretch={stretch}
       onDress={dress}
+      onStep={
+        onStep
+          ? (stage) => {
+              // Stepping back leaves the gallery on the way out: the act the
+              // host is going to lives on the surface behind it.
+              setGallery(false);
+              onStep(stage);
+            }
+          : undefined
+      }
       onClose={() => setGallery(false)}
     />
   );

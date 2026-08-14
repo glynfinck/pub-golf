@@ -25,6 +25,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { RetractingPanel } from "@/components/course/retracting-panel";
+import { StageRail } from "@/components/course/stage-rail";
+import {
+  jobWorking,
+  type JobStage,
+  type PlanProgress,
+  type PlanStage,
+} from "@/lib/caddy/stages";
 import { swapOptions, walkStats, withMove, withSwap } from "@/lib/caddy/swap";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
@@ -64,7 +71,10 @@ import { cn } from "@/lib/utils";
  *   builder keeps everywhere else.
  */
 
-export type GalleryStage = "opening" | "menu" | "dressing" | "done" | "failed";
+/** The gallery's own name for `JobStage`. An alias rather than a copy: the
+ * two lists drifting is how "in flight" and "has something to say" came to be
+ * confused in the first place. */
+export type GalleryStage = JobStage;
 
 export interface GalleryState {
   stage: GalleryStage;
@@ -149,6 +159,7 @@ export function CaddyGallery({
   onDress,
   onClose,
   onReopen,
+  onStep,
 }: {
   open: boolean;
   /** A plan is in flight (or failed unseen). This is what makes the job
@@ -165,6 +176,9 @@ export function CaddyGallery({
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
   onReopen: () => void;
+  /** Step back an act. Absent on surfaces with no stage rail behind them, in
+   * which case the gallery's own rail is a display. */
+  onStep?: (stage: PlanStage) => void;
 }) {
   // Mounted portals only: the overlay renders into <body>, so no ancestor
   // transform can trap the fixed positioning. `useSyncExternalStore` is the
@@ -220,6 +234,7 @@ export function CaddyGallery({
       stretch={stretch}
       onDress={onDress}
       onClose={onClose}
+      onStep={onStep}
     />,
     body,
   );
@@ -231,12 +246,14 @@ function GalleryBody({
   stretch,
   onDress,
   onClose,
+  onStep,
 }: {
   state: GalleryState;
   holes: number;
   stretch: number;
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
+  onStep?: (stage: PlanStage) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const reducedMotion = usePrefersReducedMotion();
@@ -324,6 +341,19 @@ function GalleryBody({
             : [],
         )
       : [];
+
+  /**
+   * Where the host is, in the room's own vocabulary. By the time the gallery
+   * is up the first three acts are behind them by definition — there is no
+   * gallery without an aim — so the only live question is whether the caddy
+   * is mid-request, which is what closes the road back.
+   */
+  const galleryProgress: PlanProgress = {
+    locked: true,
+    aimed: true,
+    planning: jobWorking(state.stage),
+    carded: state.stage === "done",
+  };
 
   // Down, the tab is the whole panel, so it says what the panel is holding —
   // and at the menu it names the walk on the map, which is the one fact worth
@@ -547,12 +577,25 @@ function GalleryBody({
           </Map>
         </APIProvider>
 
-        {/* The stage, named. */}
-        <span className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
-          {state.stage === "done" && state.course
-            ? `On the table — ${state.course.name}`
-            : STAGE_LINES[state.stage]}
-        </span>
+        {/* The four acts, carried into the gallery.
+            The gallery is a fullscreen portal over the course room, so it
+            covered the room's own rail at exactly the moment a host most
+            wants it — pressing *Dress this walk* looked like losing the
+            progress bar. Same component, same rules, and stepping back closes
+            the gallery on the way. */}
+        <div className="absolute inset-x-2 top-2 z-20 flex flex-col items-center gap-1">
+          <div className="flex max-w-full items-center overflow-x-auto rounded-full border border-border bg-card/95 px-1.5 shadow-sm">
+            <StageRail
+              progress={galleryProgress}
+              onGo={onStep ? (stage) => onStep(stage) : undefined}
+            />
+          </div>
+          <span className="pointer-events-none max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
+            {state.stage === "done" && state.course
+              ? `On the table — ${state.course.name}`
+              : STAGE_LINES[state.stage]}
+          </span>
+        </div>
 
         {/* The pub the host tapped. Over the map rather than in a sheet: a
             dialog inside a fullscreen dialog is a stack nobody asked for,

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  jobWorking,
   PLAN_STAGES,
   stageDone,
   stageNow,
   stageOpen,
   undoFor,
+  type JobStage,
   type PlanProgress,
   type PlanStage,
 } from "@/lib/caddy/stages";
@@ -98,6 +100,46 @@ describe("stageOpen", () => {
       at({ carded: true }),
     ]) {
       expect(stageOpen(stageNow(progress), progress)).toBe(true);
+    }
+  });
+});
+
+describe("jobWorking", () => {
+  /**
+   * The regression, in the layer that can hold it.
+   *
+   * The room closed the road back on any non-null stage *label*, and the label
+   * is non-null at `menu` and at `failed` — so the rail went dead the moment
+   * the walks arrived and stayed dead through a refusal, while the fullscreen
+   * gallery closed itself on the way out. Pressing *Dress this walk* and being
+   * refused therefore looked exactly like a broken button.
+   */
+  it("counts only a request actually in flight", () => {
+    expect(jobWorking("opening")).toBe(true);
+    expect(jobWorking("dressing")).toBe(true);
+  });
+
+  it("does not count a menu waiting to be picked from", () => {
+    expect(jobWorking("menu")).toBe(false);
+    expect(
+      stageOpen(
+        "draw",
+        at({ locked: true, aimed: true, planning: jobWorking("menu") }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not count a finished run, however it finished", () => {
+    expect(jobWorking("done")).toBe(false);
+    expect(jobWorking("failed")).toBe(false);
+    for (const stage of ["done", "failed"] as JobStage[]) {
+      const after = at({
+        locked: true,
+        aimed: true,
+        planning: jobWorking(stage),
+      });
+      expect(stageOpen("tune", after)).toBe(true);
+      expect(stageOpen("area", after)).toBe(true);
     }
   });
 });
