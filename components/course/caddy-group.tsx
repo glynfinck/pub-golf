@@ -47,6 +47,7 @@ import {
   type CaddyOffer,
 } from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
+import { previewOf, thinPatchNote } from "@/lib/caddy/preflight";
 import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { formatTimeLeft } from "@/lib/time";
@@ -221,7 +222,7 @@ export function CaddyGroup({
       return;
     }
     let cancelled = false;
-    const centre = async (query: string) => {
+    const lookup = async (query: string) => {
       if (!query.trim()) return null;
       try {
         const response = await fetch("/api/places/search", {
@@ -230,9 +231,15 @@ export function CaddyGroup({
           body: JSON.stringify({ query }),
         });
         const body = (await response.json()) as {
-          results?: { lat: number | null; lng: number | null }[];
+          results?: {
+            id: string;
+            lat: number | null;
+            lng: number | null;
+            address: string | null;
+          }[];
         };
-        return centreOf(body.results ?? []);
+        const results = body.results ?? [];
+        return { centre: centreOf(results), results };
       } catch {
         // A ring is an aid, never a gate. A search that will not answer costs
         // the host nothing but the drawing.
@@ -240,8 +247,15 @@ export function CaddyGroup({
       }
     };
     const timer = setTimeout(async () => {
-      const [from, to] = await Promise.all([centre(where), centre(whereTo)]);
-      if (!cancelled) onReach?.(reachOf(from, to, holes));
+      const [from, to] = await Promise.all([lookup(where), lookup(whereTo)]);
+      if (cancelled) return;
+      const reach = reachOf(from?.centre ?? null, to?.centre ?? null, holes);
+      // The pre-flight rides on the reach: the same results that placed the
+      // ring become the pins, the count and the echo, so the host sees what
+      // the caddy is about to look at before anything is spent.
+      onReach?.(
+        reach ? { ...reach, preview: previewOf(from?.results ?? []) } : null,
+      );
     }, 600);
     return () => {
       cancelled = true;
@@ -817,6 +831,17 @@ export function CaddyGroup({
             </Chip>
           ))}
         </div>
+        {/* The counter-offer, before the button rather than after the fee:
+            the count is the lean search's floor, so this warns and names the
+            hole count that fits — it never gates. The server still decides. */}
+        {reach?.preview ? (
+          (() => {
+            const thin = thinPatchNote(reach.preview.count, holes);
+            return thin ? (
+              <p className="mt-1 text-[10px] text-hazard">{thin}</p>
+            ) : null;
+          })()
+        ) : null}
       </div>
 
       <div>

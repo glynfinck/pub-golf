@@ -8,6 +8,7 @@ import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
 import type { Reach } from "@/lib/caddy/reach";
+import { echoLine } from "@/lib/caddy/preflight";
 import {
   RoutePreview,
   type LivePatch,
@@ -526,7 +527,17 @@ export function CourseBuilder({
           between. */}
       <RoutePreview
         stops={holes}
-        live={patch}
+        // While the caddy plans, its own patch owns the map. Before that, the
+        // pre-flight's pins do: the free lean search's results, faint on the
+        // ring, so the host sees what the caddy is about to look at before
+        // anything is spent.
+        live={
+          patch ??
+          (reach?.preview?.pins.length
+            ? { pins: reach.preview.pins, picked: [] }
+            : null)
+        }
+        chip={patch ? null : reach?.preview ? echoLine(reach.preview) : null}
         drawKey={drawKey}
         ring={
           reach

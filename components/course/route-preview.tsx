@@ -87,6 +87,7 @@ export function RoutePreview({
   live,
   onOpen,
   ring,
+  chip,
   drawKey = 0,
   className,
 }: {
@@ -112,6 +113,10 @@ export function RoutePreview({
    * `stretchWarning` fires, so the ring and the sentence agree by
    * construction. */
   ring?: { lat: number; lng: number; km: number; warn?: boolean } | null;
+  /** The echo: where the typed name resolved and how much is there, as one
+   * short line on the map — the host's two-second catch for a wrong Camden.
+   * Null when there is nothing worth echoing. */
+  chip?: string | null;
   drawKey?: number;
   className?: string;
 }) {
@@ -174,6 +179,13 @@ export function RoutePreview({
           )}
         </Map>
       </APIProvider>
+      {/* The echo, floated over the map: what the typed name resolved to and
+          how much is there. Inert on purpose — it is a fact, not a control. */}
+      {chip ? (
+        <span className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] font-medium text-foreground shadow-sm">
+          {chip}
+        </span>
+      ) : null}
       {/* The way in. A real button over an inert map, rather than handlers on
           the map itself: the map is deliberately deaf to gestures, so the thing
           you tap has to sit above it — and being a button is what makes it
