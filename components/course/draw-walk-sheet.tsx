@@ -78,9 +78,15 @@ export function DrawWalkSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
+      {/* The height must ride the same data-[side=bottom] variant the sheet
+          primitive uses for its own h-auto — a plain h-* merges into a
+          different group and loses the specificity contest, the sheet sizes
+          to its content, and the flex-1 map area (which has no content of
+          its own) collapses to nothing but the bottom controls. The atlas
+          sheet learned this first; same fix, same comment. */}
       <SheetContent
         side="bottom"
-        className="mx-auto flex h-[92dvh] max-w-md flex-col gap-0 rounded-t-2xl p-0"
+        className="mx-auto flex max-w-md flex-col gap-0 overflow-hidden rounded-t-2xl p-0 data-[side=bottom]:h-[92dvh]"
       >
         <SheetTitle className="sr-only">Draw the walk</SheetTitle>
         <SheetDescription className="sr-only">
