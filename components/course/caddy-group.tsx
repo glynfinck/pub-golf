@@ -22,10 +22,12 @@ import { useCountdown } from "@/hooks/use-countdown";
 import {
   DEFAULT_HOLES,
   DEFAULT_STRETCH,
+  DEFAULT_TEE_OFF_MINUTES,
   HOLE_CHOICES,
   NOTE_MAX,
   PARTICULARS,
   STRETCH_CHOICES,
+  TEE_OFF_CHOICES,
   VIBES,
   WHERE_MAX,
   stretchMeaning,
@@ -196,6 +198,12 @@ export function CaddyGroup({
   const [whereTo, setWhereTo] = useState("");
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
+  /** When the round happens. The weekday is resolved in `briefBody`, inside
+   * the submit handler — the one place this component may read a clock. */
+  const [when, setWhen] = useState<"tonight" | "tomorrow">("tonight");
+  const [teeOffMinutes, setTeeOffMinutes] = useState<number>(
+    DEFAULT_TEE_OFF_MINUTES,
+  );
 
   /**
    * The gallery: the fullscreen view the plan performs on.
@@ -319,6 +327,11 @@ export function CaddyGroup({
       stretch,
       startVenueId: null,
       finishVenueId: null,
+      // Resolved here, in the handler, because "tonight" only means a weekday
+      // next to a calendar — and the brief stays pure by carrying the answer
+      // rather than the question.
+      teeOffDay: (new Date().getDay() + (when === "tomorrow" ? 1 : 0)) % 7,
+      teeOffMinutes,
     };
   }
 
@@ -1044,6 +1057,43 @@ export function CaddyGroup({
         </div>
         <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
           {stretchNote}
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel htmlFor="caddy-when">When</FieldLabel>
+        <div
+          className="flex flex-wrap gap-1.5"
+          id="caddy-when"
+          role="radiogroup"
+          aria-label="When the round happens"
+        >
+          {(["tonight", "tomorrow"] as const).map((choice) => (
+            <Chip
+              key={choice}
+              role="radio"
+              aria-checked={when === choice}
+              active={when === choice}
+              onClick={() => setWhen(choice)}
+            >
+              {choice === "tonight" ? "Tonight" : "Tomorrow"}
+            </Chip>
+          ))}
+          <span className="mx-0.5 self-center text-[10px] text-muted-foreground">
+            tee off
+          </span>
+          {TEE_OFF_CHOICES.map((choice) => (
+            <Chip
+              key={choice.minutes}
+              active={teeOffMinutes === choice.minutes}
+              onClick={() => setTeeOffMinutes(choice.minutes)}
+            >
+              {choice.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
+          So nothing on the card is shut when you reach it.
         </p>
       </div>
 

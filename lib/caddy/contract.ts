@@ -1,7 +1,14 @@
 import type { CandidateDossier } from "@/lib/caddy/dossier";
+import {
+  DWELL_MINUTES,
+  LAST_ORDERS_MARGIN,
+  openAt,
+  openFor,
+  type TeeOff,
+} from "@/lib/caddy/hours";
 import type { PlannedHole } from "@/lib/caddy/plan";
 import { HAZARDS } from "@/lib/hazards";
-import { haversineKm } from "@/lib/geo";
+import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
  * The Card Contract: what a card that was worth paying for looks like, as a
@@ -36,6 +43,7 @@ export type ContractClause =
   | "hazards-legal"
   | "legs-in-bounds"
   | "drinks-pourable"
+  | "open-at-arrival"
   | "named";
 
 export interface ContractFinding {
@@ -118,6 +126,9 @@ export function checkCard(
   holes: PlannedHole[],
   brief: ContractBrief,
   candidates: CandidateDossier[] = [],
+  /** When the round tees off, or null for "no day named" — which switches
+   * the hours clause off entirely rather than guessing a day. */
+  when: TeeOff | null = null,
 ): ContractReport {
   const findings: ContractFinding[] = [];
   const byVenue = new Map(candidates.map((c) => [c.venueId, c]));
@@ -229,6 +240,49 @@ export function checkCard(
       });
     }
   });
+
+  // Open at arrival, where a day was named and hours are known. The same
+  // schedule arithmetic the router prunes with (`walkFeasible`), re-run over
+  // the finished card — the router prevents, the contract proves.
+  if (when) {
+    let walked = 0;
+    holes.forEach((hole, index) => {
+      if (index > 0) {
+        const prev = holes[index - 1];
+        if (
+          prev.lat != null &&
+          prev.lng != null &&
+          hole.lat != null &&
+          hole.lng != null
+        ) {
+          walked +=
+            haversineKm(prev.lat, prev.lng, hole.lat, hole.lng) *
+            WALK_MINUTES_PER_KM;
+        }
+      }
+      const hours = hole.venue_id ? byVenue.get(hole.venue_id)?.hours : null;
+      if (!hours) return;
+      const arrival = when.minutes + Math.round(walked) + index * DWELL_MINUTES;
+      if (!openAt(hours, when.day, arrival)) {
+        findings.push({
+          clause: "open-at-arrival",
+          hole: index + 1,
+          note: "Shut when the group would arrive.",
+        });
+        return;
+      }
+      if (index === holes.length - 1) {
+        const left = openFor(hours, when.day, arrival);
+        if (left !== null && left < LAST_ORDERS_MARGIN) {
+          findings.push({
+            clause: "open-at-arrival",
+            hole: index + 1,
+            note: `Only ${left} minutes before close — the finish keeps a ${LAST_ORDERS_MARGIN}-minute margin.`,
+          });
+        }
+      }
+    });
+  }
 
   return { findings, clean: findings.length === 0 };
 }

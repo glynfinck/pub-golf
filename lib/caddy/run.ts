@@ -299,7 +299,7 @@ async function cachePubs(
   // Google's relevance order, preserved — the caddy is told to route and
   // dress, not to re-rank a search result.
   return gathered
-    .map((pub) => {
+    .map((pub): PubSource | null => {
       const venueId = idByPlace.get(pub.googlePlaceId);
       if (!venueId) return null;
       // The Google id has done its job — matching the upsert back to the row.
@@ -317,6 +317,7 @@ async function cachePubs(
         facts: pub.facts,
         editorial: pub.editorial,
         reviews: pub.reviews,
+        hours: pub.hours ?? null,
       } satisfies PubSource;
     })
     .filter((pub): pub is PubSource => pub !== null);
@@ -1006,7 +1007,14 @@ export async function runTurn(input: {
   // lands — a hole with a note beats no card — and the findings are what
   // price the next fix.
   const contract = contractRecord(
-    checkCard(outcome.course.holes, input.brief, input.candidates),
+    checkCard(
+      outcome.course.holes,
+      input.brief,
+      input.candidates,
+      input.brief.teeOffDay != null
+        ? { day: input.brief.teeOffDay, minutes: input.brief.teeOffMinutes }
+        : null,
+    ),
   );
   let { data: filed, error } = await record(false, outcome.course, contract)
     .select("id")

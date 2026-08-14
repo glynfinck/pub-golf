@@ -54,6 +54,10 @@ const BRIEF = {
   // minimum-leg rule reshuffling them. lib/caddy/route.ts owns spacing and
   // tests/unit/caddy-route.test.ts is where it is proved.
   stretch: 0,
+  // No day named, so the hours checks stay off — lib/caddy/hours.ts owns
+  // time and its own suite proves it.
+  teeOffDay: null,
+  teeOffMinutes: 1140,
 };
 
 function plan(ids: string[], over: Record<string, unknown> = {}) {

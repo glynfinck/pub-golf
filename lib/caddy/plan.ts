@@ -236,6 +236,13 @@ export function briefBlock(
       `Spacing: ${stretchMeaning(brief.stretch)} Aim for about ${brief.stretch} minutes' walk between consecutive pubs, and do not pick three that sit on the same corner — the walk between rounds is what paces the night.`,
     );
   }
+  if (brief.teeOffDay != null) {
+    const hh = String(Math.floor(brief.teeOffMinutes / 60)).padStart(2, "0");
+    const mm = String(brief.teeOffMinutes % 60).padStart(2, "0");
+    lines.push(
+      `Tee-off at ${hh}:${mm}. The walks in <routes> already avoid pubs that would be shut when the group arrives.`,
+    );
+  }
   const start = brief.startVenueId ? byVenue.get(brief.startVenueId) : undefined;
   const finish = brief.finishVenueId
     ? byVenue.get(brief.finishVenueId)
@@ -310,6 +317,10 @@ export function patchBlock(
     targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
     aimFrom: brief.aimFrom,
     aimTo: brief.aimTo,
+    teeOff:
+      brief.teeOffDay != null
+        ? { day: brief.teeOffDay, minutes: brief.teeOffMinutes }
+        : null,
   });
   const routes = routesBlock(graph);
   return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);

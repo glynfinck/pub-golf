@@ -1,6 +1,7 @@
 import "server-only";
 
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
+import { windowsOf } from "@/lib/caddy/hours";
 import { corridorSamples, haversineKm } from "@/lib/geo";
 import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
@@ -42,6 +43,9 @@ export const CADDY_FIELD_MASK = [
   "places.goodForGroups",
   "places.editorialSummary",
   "places.reviews",
+  // A route is a schedule: the router refuses to build a walk that reaches
+  // a pub after it shuts, and these are what "shuts" means.
+  "places.regularOpeningHours",
 ].join(",");
 
 const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
@@ -82,6 +86,12 @@ interface GooglePlace {
   goodForGroups?: boolean;
   editorialSummary?: { text?: string };
   reviews?: { text?: { text?: string } }[];
+  regularOpeningHours?: {
+    periods?: {
+      open?: { day?: number; hour?: number; minute?: number };
+      close?: { day?: number; hour?: number; minute?: number };
+    }[];
+  };
 }
 
 /** Google's price level enum, as the 0–4 the dossier prints. */
@@ -136,6 +146,7 @@ function toGathered(place: GooglePlace): GatheredPub | null {
     reviews: (place.reviews ?? [])
       .map((review) => review.text?.text ?? "")
       .filter(Boolean),
+    hours: windowsOf(place.regularOpeningHours?.periods),
   };
 }
 

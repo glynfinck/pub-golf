@@ -41,6 +41,33 @@ export const STRETCH_CHOICES = [
  * can actually answer it. */
 export const DEFAULT_STRETCH = 5;
 
+/**
+ * When the round tees off, as minutes from midnight. Four chips, because a
+ * crawl starts in the evening and a quarter-hour picker is a form nobody
+ * asked for. Seven is the default the product has always implicitly assumed.
+ */
+export const TEE_OFF_CHOICES = [
+  { minutes: 1080, label: "6 pm" },
+  { minutes: 1140, label: "7 pm" },
+  { minutes: 1200, label: "8 pm" },
+  { minutes: 1260, label: "9 pm" },
+] as const;
+export const DEFAULT_TEE_OFF_MINUTES = 1140;
+
+export function readTeeOffMinutes(value: unknown): number {
+  const asked = Math.round(Number(value));
+  if (!Number.isFinite(asked)) return DEFAULT_TEE_OFF_MINUTES;
+  return Math.min(1439, Math.max(0, asked));
+}
+
+/** The weekday the round happens (0 Sunday … 6 Saturday), resolved by the
+ * browser where "tonight" was tapped — the server never reads a clock for
+ * it. Null means unknown, and unknown switches every hours check off. */
+export function readTeeOffDay(value: unknown): number | null {
+  const asked = Math.round(Number(value));
+  return Number.isFinite(asked) && asked >= 0 && asked <= 6 ? asked : null;
+}
+
 export function readStretch(value: unknown): number {
   const asked = Number(value);
   return STRETCH_CHOICES.some((choice) => choice.id === asked)
@@ -171,6 +198,11 @@ export interface CaddyBrief {
   note: string;
   /** The shortest walk the host wants between two pubs, in minutes. */
   stretch: number;
+  /** The weekday the round happens, browser-resolved; null means unknown
+   * and switches the hours checks off (`lib/caddy/hours.ts`). */
+  teeOffDay: number | null;
+  /** Tee-off, minutes from midnight. */
+  teeOffMinutes: number;
 }
 
 export const WHERE_MAX = 120;
@@ -225,6 +257,8 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     vibe: readVibe(input.vibe),
     stretch: readStretch(input.stretch),
     particulars,
+    teeOffDay: readTeeOffDay(input.teeOffDay),
+    teeOffMinutes: readTeeOffMinutes(input.teeOffMinutes),
     note: typeof input.note === "string" ? input.note.trim().slice(0, NOTE_MAX) : "",
     /**
      * Where the round is aimed, read back off a brief that has already been

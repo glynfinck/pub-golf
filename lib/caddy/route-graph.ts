@@ -1,5 +1,13 @@
 import type { CandidateDossier, PubFacts } from "@/lib/caddy/dossier";
-import { haversineKm } from "@/lib/geo";
+import {
+  DWELL_MINUTES,
+  LAST_ORDERS_MARGIN,
+  openAt,
+  openFor,
+  type OpenWindow,
+  type TeeOff,
+} from "@/lib/caddy/hours";
+import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
  * The map, worked out before the caddy is asked.
@@ -41,6 +49,8 @@ export interface RouteNode {
   reviewCount: number | null;
   priceLevel: number | null;
   facts: PubFacts;
+  /** Opening windows, or null/undefined for unknown — which never punishes. */
+  hours?: OpenWindow[] | null;
   /** Chains repeat their name, so the normalised name is a good enough
    * "kind of place" for variety scoring without needing a taxonomy. */
   kind: string;
@@ -118,6 +128,15 @@ export interface RouteRequest {
    */
   aimFrom?: { lat: number; lng: number } | null;
   aimTo?: { lat: number; lng: number } | null;
+  /**
+   * When the round tees off, or null for "no day named". A route is a
+   * schedule: with a tee-off on the brief the exact DP refuses to build a
+   * state that arrives after a pub shuts, every constructed walk is checked
+   * whole (`walkFeasible`), and the menu prefers walks that stay open —
+   * falling back to the unchecked set only when nothing passes, because a
+   * late-night patch with thin hours data must still get a card.
+   */
+  teeOff?: TeeOff | null;
 }
 
 const DEFAULT_NEIGHBOURS = 5;
@@ -205,6 +224,7 @@ export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
       reviewCount: candidate.reviewCount,
       priceLevel: candidate.priceLevel,
       facts: candidate.facts,
+      hours: candidate.hours ?? null,
       kind: kindOf(candidate.name),
     });
   }
@@ -304,6 +324,37 @@ function along(node: RouteNode, axis: { x: number; y: number }, origin: RouteNod
 }
 
 /**
+ * Does this walk stay ahead of closing time?
+ *
+ * The schedule is arithmetic: arrival at stop *i* is tee-off, plus the walk
+ * so far, plus a dwell for every hole already drunk. Every stop must be open
+ * at its arrival, and the finish — the hole nobody leaves — must have at
+ * least the last-orders margin left in it. Unknown hours pass everything:
+ * thin data is not a shut door.
+ */
+export function walkFeasible(
+  table: Map<string, Map<string, number>>,
+  byId: Map<string, RouteNode>,
+  stops: string[],
+  teeOff: TeeOff | null | undefined,
+): boolean {
+  if (!teeOff) return true;
+  let walked = 0;
+  for (let i = 0; i < stops.length; i += 1) {
+    if (i > 0) walked += gap(table, stops[i - 1], stops[i]) * WALK_MINUTES_PER_KM;
+    const node = byId.get(stops[i]);
+    if (!node) return false;
+    const arrival = teeOff.minutes + Math.round(walked) + i * DWELL_MINUTES;
+    if (!openAt(node.hours, teeOff.day, arrival)) return false;
+    if (i === stops.length - 1) {
+      const left = openFor(node.hours, teeOff.day, arrival);
+      if (left !== null && left < LAST_ORDERS_MARGIN) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * The best forward walk there is, chosen whole.
  *
  * `snakeWalk` below cannot reverse along the axis, and that was not enough: it
@@ -335,6 +386,7 @@ function bestForwardWalk(
   startId: string | null,
   finishId: string | null,
   drift: number,
+  teeOff: TeeOff | null = null,
 ): string[] | null {
   const origin = (startId ? byId.get(startId) : null) ?? nodes[0];
   if (!origin) return null;
@@ -358,14 +410,30 @@ function bestForwardWalk(
     gap(table, order[i].node.id, order[j].node.id) - drift * (order[j].t - order[i].t);
 
   // best[k][j] — the cheapest k-stop walk ending at j. `from` remembers the
-  // step that got there so the route can be read back out.
+  // step that got there so the route can be read back out. `mins` rides
+  // alongside: the walking minutes of the best-cost path into each state,
+  // which is what makes closing time a *pruning* rule rather than a filter —
+  // a state the group would reach after the towels go up is never built.
+  // (The cheapest path is treated as the earliest; with drift in the cost
+  // that is an approximation, and `walkFeasible` still checks the whole.)
   const INF = Number.POSITIVE_INFINITY;
   const best: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(INF));
   const from: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(-1));
+  const mins: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(0));
+
+  const shutAt = (j: number, k: number, walked: number) =>
+    teeOff
+      ? !openAt(
+          order[j].node.hours,
+          teeOff.day,
+          teeOff.minutes + Math.round(walked) + (k - 1) * DWELL_MINUTES,
+        )
+      : false;
 
   for (let j = 0; j < n; j += 1) {
-    // Where a walk may begin: the pinned tee, or anywhere if none was named.
-    if (startAt === -1 || j === startAt) best[1][j] = 0;
+    // Where a walk may begin: the pinned tee, or anywhere if none was named
+    // — and never somewhere that is shut at tee-off.
+    if ((startAt === -1 || j === startAt) && !shutAt(j, 1, 0)) best[1][j] = 0;
   }
   for (let k = 2; k <= holes; k += 1) {
     for (let j = 0; j < n; j += 1) {
@@ -374,8 +442,13 @@ function bestForwardWalk(
         if (best[k - 1][i] === INF) continue;
         const cost = best[k - 1][i] + step(i, j);
         if (cost < best[k][j]) {
+          const walked =
+            mins[k - 1][i] +
+            gap(table, order[i].node.id, order[j].node.id) * WALK_MINUTES_PER_KM;
+          if (shutAt(j, k, walked)) continue;
           best[k][j] = cost;
           from[k][j] = i;
+          mins[k][j] = walked;
         }
       }
     }
@@ -851,7 +924,16 @@ export function buildRouteGraph(
       // all. The greedy one is kept behind it: the exact walk needs a pinned
       // tee to sit at the end of the line it travels, and refuses rather than
       // bending that, so a patch with awkward pins still gets a route.
-      const exact = bestForwardWalk(table, nodes, byId, holes, origin, finishId, drift);
+      const exact = bestForwardWalk(
+        table,
+        nodes,
+        byId,
+        holes,
+        origin,
+        finishId,
+        drift,
+        request.teeOff ?? null,
+      );
       if (exact) snakes.push(exact);
       const seed = snakeWalk(table, nodes, byId, holes, origin, finishId, drift);
       if (seed) snakes.push(seed);
@@ -867,6 +949,16 @@ export function buildRouteGraph(
 
   const described = [...improved, ...snakes].map((stops) => describe(table, byId, stops, ""));
 
+  // Closing time, applied to the whole pool. Walks that stay open outrank
+  // walks that do not; only when *nothing* passes does the unchecked pool
+  // stand, because a patch with thin hours data must still get a card — the
+  // contract will say what could not be proved.
+  const teeOff = request.teeOff ?? null;
+  const feasible = teeOff
+    ? described.filter((route) => walkFeasible(table, byId, route.stops, teeOff))
+    : described;
+  const pool2 = feasible.length > 0 ? feasible : described;
+
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they
   // are answers to different questions, not because they were perturbed.
@@ -880,7 +972,7 @@ export function buildRouteGraph(
   const wanted = request.routes ?? DEFAULT_ROUTES;
   for (const objective of ROUTE_OBJECTIVES) {
     if (kept.length >= wanted) break;
-    const ranked = [...described].sort(
+    const ranked = [...pool2].sort(
       (a, b) => objective.score(a, byId, target) - objective.score(b, byId, target),
     );
     const winner = ranked.find(

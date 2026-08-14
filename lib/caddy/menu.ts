@@ -3,6 +3,7 @@ import {
   EMPTY_FACTS,
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
+import type { TeeOff } from "@/lib/caddy/hours";
 import {
   buildRouteGraph,
   targetKmFor,
@@ -57,6 +58,8 @@ export interface CaddyMenu {
   aimFrom: { lat: number; lng: number } | null;
   aimTo: { lat: number; lng: number } | null;
   reachKm: number;
+  /** When the round tees off, so a browser re-route keeps the same clock. */
+  teeOff: TeeOff | null;
 }
 
 /** A pinned tee arrives as a `venues` row id; the graph speaks candidate
@@ -85,6 +88,10 @@ export function menuOf(
   candidates: CandidateDossier[],
   brief: CaddyBrief,
 ): CaddyMenu {
+  const teeOff =
+    brief.teeOffDay != null
+      ? { day: brief.teeOffDay, minutes: brief.teeOffMinutes }
+      : null;
   const graph = buildRouteGraph(candidates, {
     holes: brief.holes,
     startId: candidateIdFor(candidates, brief.startVenueId),
@@ -92,6 +99,7 @@ export function menuOf(
     targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
     aimFrom: brief.aimFrom,
     aimTo: brief.aimTo,
+    teeOff,
   });
   const names = new Map(candidates.map((c) => [c.id, c.name]));
   return {
@@ -108,6 +116,7 @@ export function menuOf(
     aimFrom: brief.aimFrom ?? null,
     aimTo: brief.aimTo ?? null,
     reachKm: brief.reachKm,
+    teeOff,
   };
 }
 
@@ -149,6 +158,9 @@ export function rerouteMenu(
     targetKm: targetKmFor(dials.stretch, dials.holes, menu.reachKm),
     aimFrom: menu.aimFrom,
     aimTo: menu.aimTo,
+    // Lean nodes carry no hours, so this is inert in the browser today —
+    // carried anyway so the wire shape does not change when they do.
+    teeOff: menu.teeOff ?? null,
   });
   return menuRoutes(graph);
 }
