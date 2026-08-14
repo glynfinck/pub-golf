@@ -995,8 +995,45 @@ export function CaddyGroup({
       {moreSheet}
       {feeSheet}
 
+      {/* The pen comes first: reposition, lock, draw. Drawing the walk is
+          the most concrete brief there is — the density field shows where a
+          night can live, the stroke is the axis, and the swath is the
+          gather. The typed patch below stays for the host who would rather
+          name a place than draw one. */}
+      {MAPS_BROWSER_KEY ? (
+        <div>
+          {stroke ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-fairway">
+                Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km
+              </span>
+              <Chip onClick={() => setDrawOpen(true)}>Redraw</Chip>
+              <Chip onClick={() => setStroke(null)}>Clear</Chip>
+            </div>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setDrawOpen(true)}
+                data-testid="open-draw-walk"
+              >
+                Draw the walk on the map
+              </Button>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Reposition, hold still, draw — the map shows where the pubs
+                are thick before you commit.
+              </p>
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div>
-        <FieldLabel htmlFor="caddy-where">Where</FieldLabel>
+        <FieldLabel htmlFor="caddy-where">
+          {MAPS_BROWSER_KEY ? "Or name a patch" : "Where"}
+        </FieldLabel>
         <Input
           id="caddy-where"
           value={where}
@@ -1026,30 +1063,7 @@ export function CaddyGroup({
         <p className="mt-1 text-[10px] text-muted-foreground">
           Leave it empty to stay in one patch.
         </p>
-        {/* The pen, for the night with a shape in mind: along the river,
-            round the park, the L through the market. The stroke outranks the
-            named areas' geometry; the names stay for the course's own
-            vocabulary. */}
-        {MAPS_BROWSER_KEY ? (
-          stroke ? (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-semibold text-fairway">
-                Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km
-              </span>
-              <Chip onClick={() => setDrawOpen(true)}>Redraw</Chip>
-              <Chip onClick={() => setStroke(null)}>Clear</Chip>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDrawOpen(true)}
-              className="mt-1 min-h-11 text-[11px] font-semibold text-fairway hover:underline"
-              data-testid="open-draw-walk"
-            >
-              Or draw the walk on the map
-            </button>
-          )
-        ) : null}
+
         {/* The same fact the ring shows, in words. It appears only when there
             is something worth saying — a warning on every plan is a warning
             nobody reads — and it appears *before* the fee is spent, which is

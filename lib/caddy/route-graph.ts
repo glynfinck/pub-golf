@@ -680,6 +680,39 @@ function swapIn(
   return route;
 }
 
+/** A leg midpoint further than this from every candidate is crossing dead
+ * ground. Half a kilometre: the glow of one pub, roughly. */
+export const DEAD_GROUND_KM = 0.5;
+
+/**
+ * The worst dead ground on a walk: the largest distance from any leg's
+ * midpoint to its nearest candidate. The candidate cloud is the density
+ * field — where there are doors there is light, and a walk should keep to
+ * it where it can.
+ */
+export function worstDeadGroundKm(
+  stops: string[],
+  nodes: RouteNode[],
+  byId: Map<string, RouteNode>,
+): number {
+  let worst = 0;
+  for (let i = 1; i < stops.length; i += 1) {
+    const a = byId.get(stops[i - 1]);
+    const b = byId.get(stops[i]);
+    if (!a || !b) continue;
+    const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+      nearest = Math.min(
+        nearest,
+        haversineKm(mid.lat, mid.lng, node.lat, node.lng),
+      );
+    }
+    if (nearest !== Number.POSITIVE_INFINITY) worst = Math.max(worst, nearest);
+  }
+  return worst;
+}
+
 /**
  * The non-dominated set: every route no other route beats on *all* the
  * arguments at once. Sequential objective-winners had accidental coverage —
@@ -1048,10 +1081,20 @@ export function buildRouteGraph(
     : timed;
   const grounded = dry.length > 0 ? dry : timed;
 
+  // Density is a field the candidates themselves draw: a leg whose midpoint
+  // sits far from every pub crosses dead ground — a park, a river, an
+  // industrial estate the map cannot otherwise see. Walks that stay in the
+  // glow outrank walks that cross the dark, with the usual honest fallback
+  // when every walk must cross it.
+  const populated = grounded.filter(
+    (route) => worstDeadGroundKm(route.stops, nodes, byId) <= DEAD_GROUND_KM,
+  );
+  const lit = populated.length > 0 ? populated : grounded;
+
   // And the menu chooses from the non-dominated set: nothing on it is beaten
   // on every argument at once by something off it.
-  const front = paretoFront(grounded, byId, target);
-  const pool2 = front.length > 0 ? front : grounded;
+  const front = paretoFront(lit, byId, target);
+  const pool2 = front.length > 0 ? front : lit;
 
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they

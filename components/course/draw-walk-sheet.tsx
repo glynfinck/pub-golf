@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   AdvancedMarker,
@@ -47,6 +47,11 @@ import { cn } from "@/lib/utils";
  * hundreds wide — the authoritative geometry (`lib/caddy/stroke.ts`) runs
  * on the latlng line, not on the pixels.
  */
+
+/** The widest view that may be locked, corner to corner. Past a night's
+ * walking the density read is meaningless and the fetch is a city — zoom in
+ * instead. */
+const MAX_LOCK_KM = 6;
 
 const WIDTH_CHOICES = [
   { m: 300, label: "300 m" },
@@ -126,11 +131,18 @@ function DrawSurface({
 }) {
   const map = useMap();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const densityRef = useRef<HTMLCanvasElement | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [frozen, setFrozen] = useState<Frozen | null>(null);
   const [raw, setRaw] = useState<{ x: number; y: number }[]>([]);
   const [stroke, setStroke] = useState<StrokePoint[] | null>(null);
   const [widthM, setWidthM] = useState<number>(500);
+  /** Every pub and bar in the locked view, fetched the moment it locks —
+   * the density field, and the membership pins while drawing. */
+  const [viewPubs, setViewPubs] = useState<
+    { id: string; lat: number; lng: number }[] | null
+  >(null);
+  const [lockNote, setLockNote] = useState<string | null>(null);
   const pointerDown = useRef(false);
 
   /** The viewport, held still: the whole conversion in one object. */
@@ -172,18 +184,55 @@ function DrawSurface({
   }
 
   const widthKm = widthM / 1000;
+  const activePins = viewPubs ?? pins;
   const inSwath = stroke
-    ? pins.filter((pin) => distanceToStrokeKm(pin, stroke) <= widthKm)
+    ? activePins.filter((pin) => distanceToStrokeKm(pin, stroke) <= widthKm)
     : [];
   const inIds = new Set(inSwath.map((pin) => pin.id));
+
+  /** Kilometres across the frozen frame, corner to corner-ish. */
+  function acrossKm(f: Frozen): number {
+    return (
+      (f.bounds.east - f.bounds.west) *
+      111.32 *
+      Math.cos((((f.bounds.north + f.bounds.south) / 2) * Math.PI) / 180)
+    );
+  }
 
   function begin() {
     const f = freeze();
     if (!f) return;
+    // Within reason: a locked view is a fetch and a density read, and past a
+    // night's walking both are meaningless. Zoom in, then lock.
+    if (acrossKm(f) > MAX_LOCK_KM) {
+      setLockNote("Zoom in a little — that view is more than a night's walking.");
+      return;
+    }
+    setLockNote(null);
     setFrozen(f);
     setDrawing(true);
     setStroke(null);
     setRaw([]);
+    setViewPubs(null);
+    // Every pub and bar in the locked view. The same free search the builder
+    // makes, aimed by bounds — the answer is the density field.
+    void fetch("/api/places/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bounds: f.bounds }),
+    })
+      .then((response) => response.json())
+      .then((data: { results?: { id: string; lat: number | null; lng: number | null }[] }) => {
+        setViewPubs(
+          (data.results ?? [])
+            .filter(
+              (row): row is { id: string; lat: number; lng: number } =>
+                row.lat != null && row.lng != null,
+            )
+            .map((row) => ({ id: row.id, lat: row.lat, lng: row.lng })),
+        );
+      })
+      .catch(() => setViewPubs(null));
   }
 
   function finish(points: { x: number; y: number }[]) {
@@ -191,6 +240,39 @@ function DrawSurface({
     const world = points.map((p) => toWorld(frozen, p.x, p.y));
     setStroke(simplifyStroke(world, widthKm / 3));
   }
+
+  /**
+   * The density field, painted once per lock: a soft blob per pub, overlaps
+   * summing into brightness. Bright is busy; dark is dead ground — the map
+   * telling the host where a walk can actually live before they draw one.
+   * A canvas because sixty translucent gradients is what canvases are for.
+   */
+  useEffect(() => {
+    const canvas = densityRef.current;
+    if (!canvas || !frozen) return;
+    const scale = window.devicePixelRatio || 1;
+    canvas.width = Math.round(frozen.width * scale);
+    canvas.height = Math.round(frozen.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.clearRect(0, 0, frozen.width, frozen.height);
+    if (!viewPubs?.length) return;
+    const base = dark ? "rgba(127, 176, 141, " : "rgba(30, 70, 48, ";
+    const r = Math.max(24, 0.35 * pxPerKm(frozen));
+    for (const pub of viewPubs) {
+      const at = toScreen(frozen, pub);
+      const blob = ctx.createRadialGradient(at.x, at.y, 0, at.x, at.y, r);
+      blob.addColorStop(0, `${base}0.16)`);
+      blob.addColorStop(1, `${base}0)`);
+      ctx.fillStyle = blob;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Painting only — no state is set here, so the effect cannot cascade.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewPubs, frozen, dark]);
 
   const strokePx =
     frozen && stroke ? stroke.map((p) => toScreen(frozen, p)) : null;
@@ -210,7 +292,7 @@ function DrawSurface({
         keyboardShortcuts={false}
         clickableIcons={false}
       >
-        {pins.map((pin) => (
+        {activePins.map((pin) => (
           <AdvancedMarker
             key={pin.id}
             position={{ lat: pin.lat, lng: pin.lng }}
@@ -228,6 +310,16 @@ function DrawSurface({
         ))}
       </Map>
 
+      {/* The density field, under the pen: bright is busy, dark is dead
+          ground. Locked-view only — it is a picture of the frozen frame. */}
+      {drawing && frozen ? (
+        <canvas
+          ref={densityRef}
+          className="pointer-events-none absolute inset-0 z-[5]"
+          style={{ width: "100%", height: "100%" }}
+          aria-hidden
+        />
+      ) : null}
       {/* The drawing surface: present only in draw mode, so panning and
           drawing never share a gesture. */}
       {drawing && frozen ? (
@@ -304,11 +396,15 @@ function DrawSurface({
       ) : null}
 
       <span className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold whitespace-nowrap shadow-sm">
-        {drawing
-          ? stroke
-            ? `${inSwath.length} pubs in the swath · ${strokeLengthKm(stroke).toFixed(1)} km drawn`
-            : "One finger draws the walk"
-          : "Frame your patch, then hold it still"}
+        {lockNote
+          ? lockNote
+          : drawing
+            ? stroke
+              ? `${inSwath.length} pubs in the swath · ${strokeLengthKm(stroke).toFixed(1)} km drawn`
+              : viewPubs
+                ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
+                : "One finger draws the walk"
+            : "Frame your patch, then hold it still"}
       </span>
 
       {/* The controls: the mode switch, the width dial, the two ways out. */}
