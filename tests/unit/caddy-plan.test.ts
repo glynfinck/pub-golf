@@ -38,17 +38,22 @@ function source(n: number, over: Partial<PubSource> = {}): PubSource {
   };
 }
 
-const CANDIDATES = buildCandidates(Array.from({ length: 12 }, (_, i) => source(i + 1)));
+const CANDIDATES = buildCandidates(
+  Array.from({ length: 12 }, (_, i) => source(i + 1)),
+);
 
 const BRIEF = {
   where: "Shoreditch, London",
-      whereTo: "",
-      reachKm: 0,
+  whereTo: "",
+  reachKm: 0,
   startVenueId: null,
   finishVenueId: null,
   holes: 3,
   vibe: "traditional" as const,
   particulars: [] as never[],
+  // No measures named, which means the caddy chooses — the reading these
+  // fixtures have always had, now that it can be said out loud.
+  measures: [] as never[],
   note: "",
   // Spacing off, so these fixtures exercise ordering and dressing without the
   // minimum-leg rule reshuffling them. lib/caddy/route.ts owns spacing and
@@ -84,17 +89,17 @@ describe("the caddy cannot name a pub", () => {
     // An allowlist, not a search: if a future edit adds anywhere a venue name,
     // address or coordinate could be returned, this fails — which is the whole
     // never-invent-a-pub rule, held at the one place it can be held.
-    expect(Object.keys(schema.properties.holes.items.properties).sort()).toEqual(
-      [
-        "candidateId",
-        "drink",
-        "fitNote",
-        "hazard",
-        "hazardNote",
-        "localRules",
-        "par",
-      ],
-    );
+    expect(
+      Object.keys(schema.properties.holes.items.properties).sort(),
+    ).toEqual([
+      "candidateId",
+      "drink",
+      "fitNote",
+      "hazard",
+      "hazardNote",
+      "localRules",
+      "par",
+    ]);
   });
 
   it("constrains candidateId to an enum of ids actually offered", () => {
@@ -109,7 +114,11 @@ describe("the caddy cannot name a pub", () => {
   });
 
   it("drops a hole naming an id nobody offered", () => {
-    const result = parsePlan(plan(["p1", "p99", "p2", "p3"]), CANDIDATES, BRIEF);
+    const result = parsePlan(
+      plan(["p1", "p99", "p2", "p3"]),
+      CANDIDATES,
+      BRIEF,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.course.holes.map((h) => h.venue_name)).toEqual([
@@ -123,7 +132,12 @@ describe("the caddy cannot name a pub", () => {
     const forged = {
       courseName: "The Forged Three",
       holes: [
-        { candidateId: "p1", drink: "Pint", par: 4, venue_name: "The Nonexistent Arms" },
+        {
+          candidateId: "p1",
+          drink: "Pint",
+          par: 4,
+          venue_name: "The Nonexistent Arms",
+        },
         { candidateId: "p2", drink: "Pint", par: 4, name: "Also Not Real" },
         { candidateId: "p3", drink: "Pint", par: 4 },
       ],
@@ -204,7 +218,14 @@ describe("parsePlan", () => {
 
   it("falls back rather than failing on a missing drink or par", () => {
     const result = parsePlan(
-      { courseName: "", holes: [{ candidateId: "p1" }, { candidateId: "p2" }, { candidateId: "p3" }] },
+      {
+        courseName: "",
+        holes: [
+          { candidateId: "p1" },
+          { candidateId: "p2" },
+          { candidateId: "p3" },
+        ],
+      },
       CANDIDATES,
       BRIEF,
     );
@@ -251,7 +272,9 @@ describe("parsePlan", () => {
     expect(parsePlan(null, CANDIDATES, BRIEF).ok).toBe(false);
     expect(parsePlan("nope", CANDIDATES, BRIEF).ok).toBe(false);
     expect(parsePlan({ holes: "nope" }, CANDIDATES, BRIEF).ok).toBe(false);
-    expect(parsePlan({ courseName: "x", holes: [] }, CANDIDATES, BRIEF)).toEqual({
+    expect(
+      parsePlan({ courseName: "x", holes: [] }, CANDIDATES, BRIEF),
+    ).toEqual({
       ok: false,
       reason: "empty",
     });
@@ -374,12 +397,12 @@ describe("particulars", () => {
 
 describe("readBrief", () => {
   it("clamps a hole count off the menu back to the default", () => {
-    expect(readBrief({ where: "Soho",
-      whereTo: "",
-      reachKm: 0, holes: 400 })?.holes).toBe(9);
-    expect(readBrief({ where: "Soho",
-      whereTo: "",
-      reachKm: 0, holes: 12 })?.holes).toBe(12);
+    expect(
+      readBrief({ where: "Soho", whereTo: "", reachKm: 0, holes: 400 })?.holes,
+    ).toBe(9);
+    expect(
+      readBrief({ where: "Soho", whereTo: "", reachKm: 0, holes: 12 })?.holes,
+    ).toBe(12);
   });
 
   it("keeps only particulars that exist", () => {
@@ -395,22 +418,33 @@ describe("readBrief", () => {
   it("refuses a brief with nothing to aim at", () => {
     expect(readBrief({ where: "   " })).toBeNull();
     expect(readBrief(null)).toBeNull();
-    expect(readBrief({ where: "",
-      whereTo: "",
-      reachKm: 0, startVenueId: "not-a-uuid" })).toBeNull();
+    expect(
+      readBrief({
+        where: "",
+        whereTo: "",
+        reachKm: 0,
+        startVenueId: "not-a-uuid",
+      }),
+    ).toBeNull();
   });
 
   it("takes a pinned tee as an aim of its own", () => {
     const id = "00000000-0000-4000-8000-000000000001";
-    expect(readBrief({ where: "",
-      whereTo: "",
-      reachKm: 0, startVenueId: id })?.startVenueId).toBe(id);
+    expect(
+      readBrief({ where: "", whereTo: "", reachKm: 0, startVenueId: id })
+        ?.startVenueId,
+    ).toBe(id);
   });
 
   it("bounds the note", () => {
-    expect(readBrief({ where: "Soho",
-      whereTo: "",
-      reachKm: 0, note: "x".repeat(400) })?.note).toHaveLength(120);
+    expect(
+      readBrief({
+        where: "Soho",
+        whereTo: "",
+        reachKm: 0,
+        note: "x".repeat(400),
+      })?.note,
+    ).toHaveLength(120);
   });
 });
 
@@ -440,7 +474,9 @@ describe("changedHoles", () => {
     }));
 
   it("names only the hole that moved", () => {
-    expect(changedHoles(card(["a", "b", "c"]), card(["a", "z", "c"]))).toEqual([1]);
+    expect(changedHoles(card(["a", "b", "c"]), card(["a", "z", "c"]))).toEqual([
+      1,
+    ]);
   });
 
   it("says nothing changed when nothing did", () => {
@@ -478,21 +514,31 @@ describe("schemas a constrained decoder will actually accept", () => {
     ["CADDY_TOOLS", CADDY_TOOLS.map((tool) => tool.input_schema)],
   ];
 
-  it.each(SCHEMAS)("%s never pairs an enum with a union type", (_name, schema) => {
-    // The bug this is here for cost an afternoon of round trips. Anthropic's
-    // validator checks each enum value against the declared type and refuses
-    // `{ type: ["string","null"], enum: [...] }` with "Enum value 'water' does
-    // not match declared type" — a 400 before the model ever sees the request.
-    // `enum` alone is the accepted spelling and is strictly stronger.
-    subschemas(schema).forEach((node) => {
-      if (node.enum !== undefined) expect(Array.isArray(node.type)).toBe(false);
-    });
-  });
+  it.each(SCHEMAS)(
+    "%s never pairs an enum with a union type",
+    (_name, schema) => {
+      // The bug this is here for cost an afternoon of round trips. Anthropic's
+      // validator checks each enum value against the declared type and refuses
+      // `{ type: ["string","null"], enum: [...] }` with "Enum value 'water' does
+      // not match declared type" — a 400 before the model ever sees the request.
+      // `enum` alone is the accepted spelling and is strictly stronger.
+      subschemas(schema).forEach((node) => {
+        if (node.enum !== undefined)
+          expect(Array.isArray(node.type)).toBe(false);
+      });
+    },
+  );
 
   it("still constrains the hazard to the house's three, or nothing", () => {
-    const holes = (planSchema(CANDIDATES) as never as {
-      properties: { holes: { items: { properties: Record<string, { enum?: unknown[] }> } } };
-    }).properties.holes.items.properties;
+    const holes = (
+      planSchema(CANDIDATES) as never as {
+        properties: {
+          holes: {
+            items: { properties: Record<string, { enum?: unknown[] }> };
+          };
+        };
+      }
+    ).properties.holes.items.properties;
     expect(holes.hazard.enum).toEqual([...HAZARDS.map((h) => h.id), null]);
   });
 });
@@ -517,7 +563,11 @@ describe("the last hole", () => {
     // the one a group settles into. Stripped here rather than only asked for
     // in the prompt, because the caddy cannot know which hole ends up last —
     // the walking order is decided after it answers.
-    const result = parsePlan(planWithHazard(["p1", "p2", "p3"], "water"), CANDIDATES, BRIEF);
+    const result = parsePlan(
+      planWithHazard(["p1", "p2", "p3"], "water"),
+      CANDIDATES,
+      BRIEF,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const holes = result.course.holes;
@@ -525,7 +575,9 @@ describe("the last hole", () => {
     expect(holes[holes.length - 1].hazard_note).toBeNull();
     // The middle holes keep their water — only the ends carry rules. The
     // first hole loses its hazard too, to the first-hole rule below.
-    expect(holes.slice(1, -1).every((hole) => hole.hazard === "water")).toBe(true);
+    expect(holes.slice(1, -1).every((hole) => hole.hazard === "water")).toBe(
+      true,
+    );
   });
 
   it("never opens on a hazard, whatever kind it is", () => {
@@ -563,9 +615,9 @@ describe("the last hole", () => {
 
   it("has exactly one hazard that cannot finish a round", () => {
     // If a fourth hazard is added, this makes somebody decide which it is.
-    expect(HAZARDS.filter((hazard) => !hazard.onFinalHole).map((h) => h.id)).toEqual([
-      "water",
-    ]);
+    expect(
+      HAZARDS.filter((hazard) => !hazard.onFinalHole).map((h) => h.id),
+    ).toEqual(["water"]);
   });
 });
 
@@ -622,7 +674,10 @@ describe("search results live in their own namespace", () => {
   });
 
   it("numbers a gather from p1", () => {
-    const built = buildCandidates([source("v1", "The First"), source("v2", "The Second")]);
+    const built = buildCandidates([
+      source("v1", "The First"),
+      source("v2", "The Second"),
+    ]);
     expect(built.map((c) => c.id)).toEqual(["p1", "p2"]);
   });
 
@@ -645,7 +700,9 @@ describe("search results live in their own namespace", () => {
     );
     const pooled = [...gathered, ...found];
     const ids = pooled.map((c) => c.id);
-    expect(new Set(ids).size, `collision in ${ids.join(",")}`).toBe(pooled.length);
+    expect(new Set(ids).size, `collision in ${ids.join(",")}`).toBe(
+      pooled.length,
+    );
 
     // And the property that actually broke: the last writer of a Map keyed by
     // id must be the pub that owns the id.

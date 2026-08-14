@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CandidateDossier } from "@/lib/caddy/dossier";
 import { interleaveRings } from "@/lib/caddy/rings";
 import {
+  bestStrokeWalk,
   buildRouteGraph,
   followsStroke,
   routableNodes,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/caddy/route-graph";
 import {
   alongStrokeKm,
+  distanceToStrokeKm,
   strokeFit,
   strokeLengthKm,
   type StrokePoint,
@@ -135,6 +137,139 @@ describe("strokeFit", () => {
   it("never punishes what it cannot measure", () => {
     expect(strokeFit([], LINE).coverage).toBe(0);
     expect(followsStroke([{ lat: 51.5, lng: -0.1 }], [])).toBe(true);
+  });
+});
+
+// ————————————————— the optimum —————————————————
+
+/**
+ * The heart of it, proved rather than eyeballed.
+ *
+ * Following a drawn line is an optimisation — choose k stops, in arc order,
+ * minimising total distance from the line, subject to spacing — and an
+ * optimisation is the one kind of behaviour a test can hold *exactly*: the
+ * brute-force answer is computable at this size, so the router either finds it
+ * or it does not. No "looks reasonable", no tolerance band.
+ */
+function bruteForceBest(
+  nodes: ReturnType<typeof routableNodes>,
+  holes: number,
+  stroke: StrokePoint[],
+  minGapKm: number,
+): { stops: string[]; cost: number } | null {
+  const placed = nodes
+    .map((node) => ({
+      id: node.id,
+      along: alongStrokeKm({ lat: node.lat, lng: node.lng }, stroke),
+      off: distanceToStrokeKm({ lat: node.lat, lng: node.lng }, stroke),
+    }))
+    .sort((a, b) => a.along - b.along || (a.id < b.id ? -1 : 1));
+
+  let best: { stops: string[]; cost: number } | null = null;
+  const pick: number[] = [];
+  const walk = (from: number) => {
+    if (pick.length === holes) {
+      const cost = pick.reduce((sum, i) => sum + placed[i].off, 0);
+      if (!best || cost < best.cost - 1e-12) {
+        best = { stops: pick.map((i) => placed[i].id), cost };
+      }
+      return;
+    }
+    for (let i = from; i < placed.length; i += 1) {
+      const previous = pick[pick.length - 1];
+      if (
+        pick.length > 0 &&
+        placed[i].along - placed[previous].along < minGapKm - 1e-9
+      ) {
+        continue;
+      }
+      pick.push(i);
+      walk(i + 1);
+      pick.pop();
+    }
+  };
+  walk(0);
+  return best;
+}
+
+describe("bestStrokeWalk", () => {
+  // Sixteen pubs scattered either side of a line: enough that the greedy and
+  // the optimal answers genuinely differ, small enough to enumerate.
+  const SCATTER = Array.from({ length: 16 }, (_, i) =>
+    pub(
+      `s${i}`,
+      // Alternating, uneven offsets from the line — so "nearest to the line"
+      // and "evenly spaced" pull in different directions.
+      51.5 + (i % 4) * 0.0007 * (i % 2 === 0 ? 1 : -1),
+      -0.1 + STEP * 0.27 * i,
+      3.5 + (i % 5) * 0.3,
+    ),
+  );
+  const nodes = routableNodes(SCATTER);
+
+  const costOf = (stops: string[]) =>
+    stops.reduce((sum, id) => {
+      const node = nodes.find((entry) => entry.id === id)!;
+      return sum + distanceToStrokeKm({ lat: node.lat, lng: node.lng }, DRAWN);
+    }, 0);
+
+  it("finds the true optimum, not a good-looking one", () => {
+    let compared = 0;
+    for (const holes of [4, 5, 6]) {
+      for (const minGapKm of [0, 0.2, 0.5]) {
+        const found = bestStrokeWalk(nodes, holes, DRAWN, { minGapKm });
+        const truth = bruteForceBest(nodes, holes, DRAWN, minGapKm);
+        // Agreeing that a spacing cannot be met is part of being exact: six
+        // stops half a kilometre apart do not fit on a two-and-a-half
+        // kilometre line, and neither search should pretend otherwise.
+        if (truth === null) {
+          expect(found).toBeNull();
+          continue;
+        }
+        expect(found).not.toBeNull();
+        expect(costOf(found!)).toBeCloseTo(truth.cost, 9);
+        compared += 1;
+      }
+    }
+    // Guard against the loop quietly comparing nothing.
+    expect(compared).toBeGreaterThanOrEqual(7);
+  });
+
+  it("returns the stops in arc order, always", () => {
+    const stops = bestStrokeWalk(nodes, 6, DRAWN, { minGapKm: 0.2 })!;
+    const along = stops.map((id) => {
+      const node = nodes.find((entry) => entry.id === id)!;
+      return alongStrokeKm({ lat: node.lat, lng: node.lng }, DRAWN);
+    });
+    for (let i = 1; i < along.length; i += 1) {
+      expect(along[i]).toBeGreaterThanOrEqual(along[i - 1]);
+    }
+  });
+
+  it("honours a pinned tee and refuses one it was never given", () => {
+    const stops = bestStrokeWalk(nodes, 5, DRAWN, {
+      minGapKm: 0.2,
+      startId: "s2",
+      finishId: "s14",
+    });
+    expect(stops?.[0]).toBe("s2");
+    expect(stops?.[stops.length - 1]).toBe("s14");
+    expect(
+      bestStrokeWalk(nodes, 5, DRAWN, { minGapKm: 0.2, startId: "nobody" }),
+    ).toBeNull();
+  });
+
+  it("refuses rather than inventing when the spacing cannot be met", () => {
+    // Six stops a kilometre apart do not fit on this line.
+    expect(bestStrokeWalk(nodes, 6, DRAWN, { minGapKm: 5 })).toBeNull();
+  });
+
+  it("is deterministic — the same patch gives the same walk", () => {
+    const once = bestStrokeWalk(nodes, 6, DRAWN, { minGapKm: 0.2 });
+    const twice = bestStrokeWalk([...nodes].reverse(), 6, DRAWN, {
+      minGapKm: 0.2,
+    });
+    expect(once).toEqual(twice);
   });
 });
 

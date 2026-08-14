@@ -39,6 +39,19 @@ export const STRETCH_CHOICES = [
   { id: 10, label: "Stretch", meaning: "A proper walk between rounds." },
 ] as const;
 
+/**
+ * The ends of the dial. Four presets were the whole of it, which made a
+ * perfectly ordinary "seven minutes" unsayable — the same truncation the
+ * tee-off chips made of the clock. The presets survive as the *menu's* quick
+ * re-dial (`caddy-gallery`), where a thumb is flipping between offered walks
+ * rather than writing a brief; on the brief itself the minutes are the host's.
+ *
+ * Twenty is not arbitrary: past that the legs cost more than the drinks and it
+ * is a hike with pubs on it, which `stretchWarning` already says out loud.
+ */
+export const STRETCH_MIN = 0;
+export const STRETCH_MAX = 20;
+
 /** Five minutes: long enough to pace the night, short enough that most patches
  * can actually answer it. */
 export const DEFAULT_STRETCH = 5;
@@ -70,18 +83,30 @@ export function readTeeOffDay(value: unknown): number | null {
   return Number.isFinite(asked) && asked >= 0 && asked <= 6 ? asked : null;
 }
 
+/** Clamped rather than whitelisted: any whole number of minutes the host can
+ * reach on the dial is a real answer, and something unreadable is the default
+ * rather than an error — same rule the rest of this parser keeps. */
 export function readStretch(value: unknown): number {
-  const asked = Number(value);
-  return STRETCH_CHOICES.some((choice) => choice.id === asked)
-    ? asked
-    : DEFAULT_STRETCH;
+  const asked = Math.round(Number(value));
+  if (!Number.isFinite(asked)) return DEFAULT_STRETCH;
+  return Math.min(STRETCH_MAX, Math.max(STRETCH_MIN, asked));
 }
 
+/**
+ * What a spacing means, in the voice the caddy is briefed in and the host
+ * reads — one string for both, the arrangement `VIBES` keeps for the same
+ * reason. Computed rather than looked up, because the dial is continuous now
+ * and a table would only answer four of its twenty-one positions.
+ */
 export function stretchMeaning(minutes: number): string {
-  return (
-    STRETCH_CHOICES.find((choice) => choice.id === minutes)?.meaning ??
-    STRETCH_CHOICES.find((choice) => choice.id === DEFAULT_STRETCH)!.meaning
-  );
+  if (minutes <= 0) return "Whatever's closest, however close.";
+  if (minutes <= 2) return "Doors a minute or two apart.";
+  if (minutes <= 4) return "A few minutes between doors.";
+  if (minutes <= 7) return `About ${minutes} minutes' walk between pubs.`;
+  if (minutes <= 12) {
+    return `A proper walk between rounds — about ${minutes} minutes a leg.`;
+  }
+  return `A march between rounds: about ${minutes} minutes on foot each leg.`;
 }
 
 /**
@@ -111,6 +136,17 @@ export const VIBES = [
     id: "punishing",
     label: "Punishing",
     meaning: "The caddy shows no mercy.",
+  },
+  {
+    id: "smart",
+    label: "Smart",
+    meaning:
+      "Somewhere you would take someone. Proper glassware, no sticky tables.",
+  },
+  {
+    id: "rough",
+    label: "Rough and ready",
+    meaning: "Dives, sticky carpets, no airs and nothing dear.",
   },
 ] as const;
 
@@ -157,6 +193,71 @@ export function particularLabel(id: ParticularId): string {
   return PARTICULARS.find((p) => p.id === id)?.label ?? id;
 }
 
+/**
+ * What may go on the card, in measures.
+ *
+ * The one thing on a hole the host could not say a word about, on the app
+ * whose whole unit is the drink. The caddy wrote nine pints for a group who
+ * wanted halves, or shots for a group who wanted none, and the only recourse
+ * was to edit nine holes by hand afterwards.
+ *
+ * **Not bound by the `signal` rule the particulars keep**, and the difference
+ * is worth stating: a particular is a claim *about a pub* and may only be
+ * offered where the dossier can check it, while a measure is the caddy's own
+ * dressing — it decides what to write, not what is true. What keeps it honest
+ * is the other end: `drinks-pourable` in `lib/caddy/contract.ts` already
+ * refuses a beer at a place Google says pours none, and a hazard's own
+ * `drinkRule` still outranks everything here (`drinkForHazard`).
+ *
+ * An empty list means **the caddy chooses**, not "nothing is allowed" — a
+ * host who unticks everything has expressed no preference, and a card with no
+ * drinks on it is not a reading anybody intends.
+ */
+export const MEASURES = [
+  { id: "pint", label: "Pints", meaning: "full pints" },
+  { id: "half", label: "Halves", meaning: "halves and two-thirds" },
+  { id: "spirit", label: "Spirit & mixer", meaning: "a single with a mixer" },
+  { id: "wine", label: "Wine", meaning: "a glass of wine" },
+  {
+    id: "cocktail",
+    label: "Cocktails",
+    meaning: "cocktails where they mix them",
+  },
+  { id: "shot", label: "Shots", meaning: "shots, short and quick" },
+  {
+    id: "soft",
+    label: "Something soft",
+    meaning: "at least one hole that can be played sober",
+  },
+] as const;
+
+export type MeasureId = (typeof MEASURES)[number]["id"];
+
+/** Pints, halves and a spirit with a mixer — the card the app has always
+ * written, named at last so it can be argued with. */
+export const DEFAULT_MEASURES: MeasureId[] = ["pint", "half", "spirit"];
+
+export function readMeasures(value: unknown): MeasureId[] {
+  const wanted: unknown[] = Array.isArray(value) ? value : [];
+  return MEASURES.filter((measure) => wanted.includes(measure.id)).map(
+    (measure) => measure.id,
+  );
+}
+
+export function measureLabel(id: MeasureId): string {
+  return MEASURES.find((measure) => measure.id === id)?.label ?? id;
+}
+
+/** The measures as one clause for the prompt, in the caddy's own reading. */
+export function measuresMeaning(ids: MeasureId[]): string {
+  const meanings = MEASURES.filter((measure) => ids.includes(measure.id)).map(
+    (measure) => measure.meaning,
+  );
+  if (meanings.length === 0) return "";
+  if (meanings.length === 1) return meanings[0];
+  return `${meanings.slice(0, -1).join(", ")} and ${meanings[meanings.length - 1]}`;
+}
+
 /** What the host asked for, once it has been read off the wire. */
 export interface CaddyBrief {
   /** The patch, in the host's own words. */
@@ -196,6 +297,10 @@ export interface CaddyBrief {
   holes: number;
   vibe: VibeId;
   particulars: ParticularId[];
+  /** What may go on a hole, in measures. Empty is "the caddy chooses" — see
+   * `MEASURES`, and note a card written before this field existed reads that
+   * way, which is exactly what it did. */
+  measures: MeasureId[];
   /** One line, the host's own. Fenced before it reaches the model. */
   note: string;
   /** The shortest walk the host wants between two pubs, in minutes. */
@@ -221,6 +326,58 @@ export interface CaddyBrief {
 
 export const WHERE_MAX = 120;
 
+const HOLE_WORDS: Record<number, string> = {
+  6: "Six",
+  9: "Nine",
+  12: "Twelve",
+  18: "Eighteen",
+};
+
+/**
+ * The brief, read back as a sentence.
+ *
+ * A form is a list of settings; a brief is a commission, and the difference on
+ * screen is whether anything ever says the whole of it back. Every tap rewrites
+ * this line, so the host reads what they have asked for rather than
+ * reconstructing it from eight chip groups.
+ *
+ * It is also a truth-forcing device, which is why it lives here with the
+ * parser rather than in the markup. Writing it is what surfaced that a drawn
+ * walk makes the spacing dial dead — `targetKmFor` takes the stroke's own arc
+ * length and never looks at `stretch` — so the sentence says the line's length
+ * instead of a pace that no longer applies, and the form hides the dial.
+ */
+export function briefSentence(input: {
+  where: string;
+  holes: number;
+  vibe: VibeId;
+  stretch: number;
+  /** The drawn walk's length, or null where nothing was drawn. */
+  strokeKm: number | null;
+}): string {
+  const holes = HOLE_WORDS[input.holes] ?? String(input.holes);
+  const character =
+    VIBES.find((entry) => entry.id === input.vibe)?.label.toLowerCase() ?? "";
+  if (input.strokeKm != null) {
+    return `${holes} holes down the walk you drew — ${character}, spread over ${input.strokeKm.toFixed(1)} km.`;
+  }
+  const patch = input.where.trim()
+    ? `round ${input.where.trim()}`
+    : "round here";
+  return `${holes} holes ${patch} — ${character}, ${stretchPhrase(input.stretch)}.`;
+}
+
+/** The spacing as it reads mid-sentence, where `stretchMeaning` is a whole
+ * one. Same bands, so the two can never disagree about what five minutes is. */
+export function stretchPhrase(minutes: number): string {
+  if (minutes <= 0) return "whatever is closest";
+  if (minutes <= 2) return "doors a minute or two apart";
+  if (minutes <= 4) return "a few minutes between doors";
+  if (minutes <= 7) return `about ${minutes} minutes between pubs`;
+  if (minutes <= 12) return `a proper walk between rounds`;
+  return "a march between rounds";
+}
+
 /**
  * A brief off the wire: bounded, closed-menu, and never trusted.
  *
@@ -233,9 +390,13 @@ export function readBrief(raw: unknown): CaddyBrief | null {
   const input = raw as Record<string, unknown>;
 
   const where =
-    typeof input.where === "string" ? input.where.trim().slice(0, WHERE_MAX) : "";
+    typeof input.where === "string"
+      ? input.where.trim().slice(0, WHERE_MAX)
+      : "";
   const whereTo =
-    typeof input.whereTo === "string" ? input.whereTo.trim().slice(0, WHERE_MAX) : "";
+    typeof input.whereTo === "string"
+      ? input.whereTo.trim().slice(0, WHERE_MAX)
+      : "";
   // Anything past a long day's walk is a typo or a joke, and anything negative
   // is neither. Rounded, because a ring drawn to the metre is false precision.
   const reachKm =
@@ -244,9 +405,8 @@ export function readBrief(raw: unknown): CaddyBrief | null {
       : 0;
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
-  const excludedVenueIds = (Array.isArray(input.excludedVenueIds)
-    ? input.excludedVenueIds
-    : []
+  const excludedVenueIds = (
+    Array.isArray(input.excludedVenueIds) ? input.excludedVenueIds : []
   )
     .map((entry) => readId(entry))
     .filter((id): id is string => id !== null)
@@ -288,9 +448,13 @@ export function readBrief(raw: unknown): CaddyBrief | null {
     vibe: readVibe(input.vibe),
     stretch: readStretch(input.stretch),
     particulars,
+    measures: readMeasures(input.measures),
     teeOffDay: readTeeOffDay(input.teeOffDay),
     teeOffMinutes: readTeeOffMinutes(input.teeOffMinutes),
-    note: typeof input.note === "string" ? input.note.trim().slice(0, NOTE_MAX) : "",
+    note:
+      typeof input.note === "string"
+        ? input.note.trim().slice(0, NOTE_MAX)
+        : "",
     /**
      * Where the round is aimed, read back off a brief that has already been
      * through a gather.
@@ -357,10 +521,7 @@ export function candidateFloor(holes: number): number {
  * kilometre a leg it stops being a crawl and becomes a march between drinks,
  * and eighteen holes of that is a day out.
  */
-export function stretchWarning(
-  apartKm: number,
-  holes: number,
-): string | null {
+export function stretchWarning(apartKm: number, holes: number): string | null {
   const legs = Math.max(holes - 1, 1);
   const perLeg = apartKm / legs;
   if (perLeg > 1.1) {
@@ -389,7 +550,7 @@ export function stretchWarning(
 export function paceForReach(reachKm: number, holes: number): number {
   const legs = Math.max(holes - 1, 1);
   // 4.5 km/h, the stroll the rest of the app estimates walks at.
-  return Math.round(((reachKm / legs) / 4.5) * 60);
+  return Math.round((reachKm / legs / 4.5) * 60);
 }
 
 /** How the derived pace reads on screen, in the voice the chips use. */

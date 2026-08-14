@@ -625,125 +625,177 @@ export function followsStroke(
 }
 
 /**
- * How a band's winner is chosen, and the three answers worth offering.
+ * Walking a drawn line, stated as the optimisation it actually is.
  *
- * Each is a different reading of "walk me down this line", which is what makes
- * them a menu rather than three perturbations: trace it, pace it, or take the
- * best of what stands beside it.
+ * The first attempt built coverage by hand: cut the line into bands, take the
+ * best pub in each. That works and it is a heuristic — it is greedy inside a
+ * band and blind across bands, so a pub two metres outside band three's edge
+ * loses to a worse one just inside it. The real question has a clean form:
+ *
+ *   **choose `holes` candidates, ordered by arc position along the stroke,
+ *   minimising the total cost of the stops, subject to consecutive stops
+ *   being at least `minGapKm` further down the line.**
+ *
+ * That is a shortest path in a DAG. The arc position gives a topological order
+ * for free — every edge runs strictly forwards down the line — so the states
+ * are (candidate, stops used) and each is settled exactly once. This *is* A\*
+ * on that graph with a perfect ordering and no re-expansions; adding a
+ * priority queue and an admissible heuristic to it would visit the same states
+ * and pay for the heap. At `MAX_CANDIDATES` of 40 and at most 18 holes the
+ * whole table is about 29,000 relaxations, which is microseconds. A\* earns
+ * its keep when the state space is too big to settle — if the candidate cap
+ * ever grows by an order of magnitude, or if a non-separable cost (arrival
+ * time, variety across the whole set) has to ride in the state, this is the
+ * function to reach for it in.
+ *
+ * The spacing constraint is what makes coverage fall out rather than be
+ * imposed: `holes` stops each at least `minGapKm` apart span at least
+ * `(holes − 1) × minGapKm` of the line, so asking for `length / holes` asks
+ * for a walk that covers all but a hole's worth of what was drawn.
+ *
+ * Exact, pure and deterministic — ties break on id, because the router sits
+ * behind a cache key and an optimum that wobbles between runs is a card that
+ * wobbles between runs.
  */
-const STROKE_PREFERENCES: {
-  key: string;
-  prefer: (node: RouteNode, offLineKm: number, offCentreKm: number) => number;
-}[] = [
-  { key: "hug", prefer: (_node, offLine) => offLine },
-  { key: "even", prefer: (_node, _offLine, offCentre) => offCentre },
-  // Rating leads, but not off the line entirely: half a kilometre of detour
-  // costs about what a whole star is worth, so a good pub round the corner
-  // wins and a great one two streets away does not.
-  {
-    key: "rated",
-    prefer: (node, offLine) => -(node.rating ?? 0) + offLine * 2,
-  },
-];
-
-/**
- * A walk built to **span** the stroke, band by band.
- *
- * The forward walks above are monotone along the drawn line, and that was
- * mistaken for following it. It is only half: monotone says a walk never goes
- * backwards, and says nothing whatever about how far forwards it gets. Given a
- * line drawn across town and a dense first street, the greedy forward walk
- * spends every hole in that street — perfectly monotone, and not the round the
- * host drew.
- *
- * So this constructs coverage instead of hoping for it. The line is cut into
- * as many bands as there are free holes and each band contributes one stop, in
- * band order, which is stroke order — the walk snakes down the drawn path
- * because it was built along it rather than scored for it afterwards.
- *
- * An empty band is ordinary (a park, a river, a stretch of housing) and takes
- * the nearest unused pub to where the band was, because the host asked for
- * this many holes and a hole is not the thing to drop. Pins are honoured at
- * the ends and shorten the reach the free stops share out; pins that disagree
- * with the direction the stroke was drawn in are refused rather than bent,
- * and another construction answers that patch.
- */
-function strokeWalk(
+export function bestStrokeWalk(
   nodes: RouteNode[],
-  byId: Map<string, RouteNode>,
   holes: number,
   stroke: StrokePoint[],
-  startId: string | null,
-  finishId: string | null,
-  prefer: (node: RouteNode, offLineKm: number, offCentreKm: number) => number,
+  options: {
+    /** The least distance along the line between consecutive stops. */
+    minGapKm: number;
+    /** What one stop costs. Distance from the drawn line, by default. */
+    cost?: (node: RouteNode, offLineKm: number) => number;
+    /** What the gap between two consecutive stops costs, on top of the stops
+     * themselves — how "evenly spaced down the line" is asked for. */
+    gapCost?: (gapKm: number) => number;
+    startId?: string | null;
+    finishId?: string | null;
+  },
 ): string[] | null {
-  const length = strokeLengthKm(stroke);
-  if (length <= 0 || holes < 2 || nodes.length < holes) return null;
+  if (holes < 2 || nodes.length < holes || stroke.length < 2) return null;
+  const cost = options.cost ?? ((_node, offLineKm) => offLineKm);
+  const gapCost = options.gapCost;
 
-  const along = new Map<string, number>();
-  const offLine = new Map<string, number>();
-  for (const node of nodes) {
-    const point = { lat: node.lat, lng: node.lng };
-    along.set(node.id, alongStrokeKm(point, stroke));
-    offLine.set(node.id, distanceToStrokeKm(point, stroke));
+  const placed = nodes
+    .map((node) => {
+      const point = { lat: node.lat, lng: node.lng };
+      return {
+        node,
+        along: alongStrokeKm(point, stroke),
+        off: distanceToStrokeKm(point, stroke),
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.along - b.along ||
+        (a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0),
+    );
+
+  const count = placed.length;
+  const startAt = options.startId
+    ? placed.findIndex((entry) => entry.node.id === options.startId)
+    : -1;
+  const finishAt = options.finishId
+    ? placed.findIndex((entry) => entry.node.id === options.finishId)
+    : -1;
+  // A pin nobody gathered is not a pin. Refused rather than ignored: the other
+  // constructions answer this patch, and quietly dropping a host's own choice
+  // is the failure that would never be noticed.
+  if (options.startId && startAt < 0) return null;
+  if (options.finishId && finishAt < 0) return null;
+
+  const INF = Number.POSITIVE_INFINITY;
+  /** `best[j][i]` — the cheapest j-stop walk whose last stop is candidate i. */
+  const best: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array<number>(count).fill(INF),
+  );
+  const cameFrom: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array<number>(count).fill(-1),
+  );
+
+  for (let i = 0; i < count; i += 1) {
+    // With a pinned tee there is one legal opening; without one, any candidate
+    // may open the walk and the DP decides which.
+    if (startAt >= 0 && i !== startAt) continue;
+    best[1][i] = cost(placed[i].node, placed[i].off);
   }
 
-  const used = new Set<string>();
-  const head = startId && byId.has(startId) ? startId : null;
-  const tail =
-    finishId && byId.has(finishId) && finishId !== head ? finishId : null;
-  if (head) used.add(head);
-  if (tail) used.add(tail);
-
-  const from = head ? (along.get(head) ?? 0) : 0;
-  const to = tail ? (along.get(tail) ?? length) : length;
-  if (to <= from) return null;
-
-  const free = holes - (head ? 1 : 0) - (tail ? 1 : 0);
-  if (free < 1) return null;
-
-  const picked: string[] = [];
-  const width = (to - from) / free;
-  for (let band = 0; band < free; band += 1) {
-    const low = from + width * band;
-    const high = from + width * (band + 1);
-    const centre = (low + high) / 2;
-    let best: string | null = null;
-    let bestCost = Number.POSITIVE_INFINITY;
-    let nearest: string | null = null;
-    let nearestGap = Number.POSITIVE_INFINITY;
-    for (const node of nodes) {
-      if (used.has(node.id)) continue;
-      const at = along.get(node.id) ?? 0;
-      const offCentre = Math.abs(at - centre);
-      if (offCentre < nearestGap) {
-        nearestGap = offCentre;
-        nearest = node.id;
-      }
-      // Half-open bands so a pub on a boundary belongs to exactly one of
-      // them, with the last band closed so the far end of the line is
-      // reachable at all.
-      const inside =
-        at >= low && (band === free - 1 ? at <= high + 1e-9 : at < high);
-      if (!inside) continue;
-      const cost = prefer(node, offLine.get(node.id) ?? 0, offCentre);
-      if (cost < bestCost) {
-        bestCost = cost;
-        best = node.id;
+  for (let stops = 2; stops <= holes; stops += 1) {
+    for (let i = 0; i < count; i += 1) {
+      const here = cost(placed[i].node, placed[i].off);
+      for (let previous = 0; previous < i; previous += 1) {
+        if (best[stops - 1][previous] === INF) continue;
+        const gap = placed[i].along - placed[previous].along;
+        if (gap < options.minGapKm - 1e-9) continue;
+        const total =
+          best[stops - 1][previous] + here + (gapCost ? gapCost(gap) : 0);
+        if (total < best[stops][i] - 1e-12) {
+          best[stops][i] = total;
+          cameFrom[stops][i] = previous;
+        }
       }
     }
-    const chosen = best ?? nearest;
-    if (!chosen) return null;
-    used.add(chosen);
-    picked.push(chosen);
   }
 
-  // Bands are walked in order, but a fallback pick can land out of turn, so
-  // the snake is guaranteed here rather than assumed.
-  picked.sort((a, b) => (along.get(a) ?? 0) - (along.get(b) ?? 0));
-  const stops = [...(head ? [head] : []), ...picked, ...(tail ? [tail] : [])];
-  return stops.length === holes ? stops : null;
+  let end = -1;
+  let cheapest = INF;
+  for (let i = 0; i < count; i += 1) {
+    if (finishAt >= 0 && i !== finishAt) continue;
+    if (best[holes][i] < cheapest) {
+      cheapest = best[holes][i];
+      end = i;
+    }
+  }
+  if (end < 0) return null;
+
+  const stops: string[] = [];
+  let at = end;
+  for (let taken = holes; taken >= 1; taken -= 1) {
+    stops.push(placed[at].node.id);
+    at = cameFrom[taken][at];
+    if (at < 0 && taken > 1) return null;
+  }
+  return stops.reverse();
 }
+
+/**
+ * The spacings tried, most insistent first.
+ *
+ * `length / holes` asks for a walk that spans all but a hole's worth of the
+ * drawn line. Where the pubs cannot answer that — a genuine dead stretch, a
+ * park, a river — the ask relaxes rather than the router refusing, which is
+ * the same honest fallback the hours and barrier filters keep.
+ */
+function strokeGaps(lengthKm: number, holes: number): number[] {
+  const even = lengthKm / Math.max(holes, 1);
+  return [even, even * 0.6, even * 0.3, 0];
+}
+
+/**
+ * The readings of "walk me down this line" worth offering, each an exact
+ * optimum of its own objective rather than a perturbation of one answer.
+ *
+ * Trace it (nothing but distance from the line), pace it (that plus a penalty
+ * on uneven gaps), or take the best of what stands beside it (that plus a
+ * quarter-kilometre's detour bought per star).
+ */
+const STROKE_OBJECTIVES: {
+  key: string;
+  cost?: (node: RouteNode, offLineKm: number) => number;
+  gapCost?: (idealKm: number) => (gapKm: number) => number;
+}[] = [
+  { key: "hug" },
+  {
+    key: "even",
+    gapCost: (idealKm) => (gapKm) =>
+      (gapKm - idealKm) ** 2 / Math.max(idealKm, 0.05),
+  },
+  {
+    key: "rated",
+    cost: (node, offLineKm) => offLineKm + (5 - (node.rating ?? 3.5)) * 0.25,
+  },
+];
 
 /**
  * A greedy tour: from the start, always step to the nearest unused stop, and
@@ -1250,21 +1302,26 @@ export function buildRouteGraph(
     }
   }
 
-  // And the walks built to *span* the drawn line rather than merely to be
-  // monotone along it. Origin-free — a band walk is decided by the stroke, not
-  // by where it happens to begin — so these stand outside the loop above.
+  // And the exact optima for the drawn line: the walk that minimises total
+  // distance from the stroke, subject to spanning it. Origin-free — the line
+  // decides where these begin — so they stand outside the loop above, and each
+  // relaxes its spacing only as far as it has to before it can answer at all.
   if (strokeAxis) {
-    for (const { prefer } of STROKE_PREFERENCES) {
-      const walk = strokeWalk(
-        nodes,
-        byId,
-        holes,
-        strokeAxis,
-        startId,
-        finishId,
-        prefer,
-      );
-      if (walk) snakes.push(walk);
+    const lineKm = strokeLengthKm(strokeAxis);
+    for (const objective of STROKE_OBJECTIVES) {
+      for (const minGapKm of strokeGaps(lineKm, holes)) {
+        const walk = bestStrokeWalk(nodes, holes, strokeAxis, {
+          minGapKm,
+          cost: objective.cost,
+          gapCost: objective.gapCost?.(lineKm / Math.max(holes, 1)),
+          startId,
+          finishId,
+        });
+        if (walk) {
+          snakes.push(walk);
+          break;
+        }
+      }
     }
   }
 

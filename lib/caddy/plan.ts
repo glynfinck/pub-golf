@@ -5,6 +5,7 @@ import {
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
 import {
+  measuresMeaning,
   particularLabel,
   stretchMeaning,
   vibeMeaning,
@@ -129,7 +130,9 @@ export const CADDY_SYSTEM = [
   "same words on the rules sheet during the round:",
   ...HAZARDS.flatMap((hazard) => [
     `  ${hazard.id} — ${hazard.meaning}`,
-    ...(hazard.drinkRule ? [`    On this hazard the drink must be ${hazard.drinkRule}.`] : []),
+    ...(hazard.drinkRule
+      ? [`    On this hazard the drink must be ${hazard.drinkRule}.`]
+      : []),
   ]),
   "",
   "RULES",
@@ -205,7 +208,7 @@ export const CADDY_SYSTEM_TOOLS = [
   "",
   "NAME THE COURSE before you hand it over. `name_course`, once, and make it",
   "this round's rather than any round's — the patch, the shape of the night,",
-  "a joke the group would get. \"The caddy's round\" is what a card is called",
+  'a joke the group would get. "The caddy\'s round" is what a card is called',
   "when nobody named it, and a host can tell.",
   "",
   "Stop when the card holds up: every hole dressed, a name on it, the walk",
@@ -242,6 +245,14 @@ export function briefBlock(
       `Spacing: ${stretchMeaning(brief.stretch)} Aim for about ${brief.stretch} minutes' walk between consecutive pubs, and do not pick three that sit on the same corner — the walk between rounds is what paces the night.`,
     );
   }
+  // Measures, where the host said. Silence here is the caddy's own choice, so
+  // an empty list writes no line at all rather than a line saying "anything" —
+  // which reads as an instruction to vary for its own sake.
+  if (brief.measures.length) {
+    lines.push(
+      `Drinks: keep to ${measuresMeaning(brief.measures)}. A hazard's own drink rule still outranks this, and never write a drink the pub does not pour.`,
+    );
+  }
   if (brief.teeOffDay != null) {
     const hh = String(Math.floor(brief.teeOffMinutes / 60)).padStart(2, "0");
     const mm = String(brief.teeOffMinutes % 60).padStart(2, "0");
@@ -249,7 +260,9 @@ export function briefBlock(
       `Tee-off at ${hh}:${mm}. The walks in <routes> already avoid pubs that would be shut when the group arrives.`,
     );
   }
-  const start = brief.startVenueId ? byVenue.get(brief.startVenueId) : undefined;
+  const start = brief.startVenueId
+    ? byVenue.get(brief.startVenueId)
+    : undefined;
   const finish = brief.finishVenueId
     ? byVenue.get(brief.finishVenueId)
     : undefined;
@@ -330,7 +343,9 @@ export function patchBlock(
     stroke: brief.stroke,
   });
   const routes = routesBlock(graph);
-  return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);
+  return routes
+    ? `${dossierBlock(candidates)}\n\n${routes}`
+    : dossierBlock(candidates);
 }
 
 /**
@@ -348,7 +363,9 @@ export function patchBlock(
  * the same validator and a second copy is a second chance to spell it the way
  * that fails.
  */
-export function nullableEnum(values: readonly string[]): Record<string, unknown> {
+export function nullableEnum(
+  values: readonly string[],
+): Record<string, unknown> {
   return { enum: [...values, null] };
 }
 
@@ -406,7 +423,12 @@ export function planSchema(
  * bounds a whole-card answer is clamped to. Two paths now reach a hole — the
  * structured card and a `set_hole` call — and the moment they disagree, one of
  * them is a way to write something `createCourse` will refuse. */
-export function clampInt(value: unknown, min: number, max: number, fallback: number) {
+export function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
@@ -499,7 +521,9 @@ export function parsePlan(
       ),
       par: clampInt(row.par, 1, 20, 4),
       hazard,
-      hazard_note: hazard ? clampText(row.hazardNote, HAZARD_NOTE_MAX) || null : null,
+      hazard_note: hazard
+        ? clampText(row.hazardNote, HAZARD_NOTE_MAX) || null
+        : null,
       penalties: readRules(row.localRules),
       fit_note: clampText(row.fitNote, FIT_NOTE_MAX) || null,
     });
@@ -585,7 +609,10 @@ export function parsePlan(
   // deferred until the hole is filed, and the last hole is the one nobody
   // leaves (`lib/hazards.ts`).
   const final = settled[settled.length - 1];
-  if (final.hazard && !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole) {
+  if (
+    final.hazard &&
+    !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole
+  ) {
     settled[settled.length - 1] = { ...final, hazard: null, hazard_note: null };
   }
 

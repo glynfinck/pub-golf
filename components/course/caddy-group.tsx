@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Sparkle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -20,20 +20,29 @@ import { Putt } from "@/components/ui/putt";
 import { useAction } from "@/hooks/use-action";
 import { useCountdown } from "@/hooks/use-countdown";
 import {
+  briefSentence,
   DEFAULT_HOLES,
+  DEFAULT_MEASURES,
   DEFAULT_STRETCH,
   DEFAULT_TEE_OFF_MINUTES,
   HOLE_CHOICES,
+  MEASURES,
+  measuresMeaning,
   NOTE_MAX,
   PARTICULARS,
-  STRETCH_CHOICES,
-  TEE_OFF_CHOICES,
+  STRETCH_MAX,
+  STRETCH_MIN,
   VIBES,
   WHERE_MAX,
   stretchMeaning,
+  type MeasureId,
   type ParticularId,
   type VibeId,
 } from "@/lib/caddy/brief";
+import { dayOptions, teeLine, teeOffNote } from "@/lib/caddy/tee-off";
+import { Ask, BriefSection } from "@/components/course/brief-parts";
+import { Stepper } from "@/components/ui/stepper";
+import { TeeTimeNudger } from "@/components/ui/tee-time";
 import {
   askTheCaddy,
   collectCaddyCard,
@@ -66,6 +75,18 @@ import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { formatTimeLeft } from "@/lib/time";
 import { cn } from "@/lib/utils";
+
+/**
+ * Today's weekday, read through the house's hydration guard.
+ *
+ * `useSyncExternalStore` rather than a mounted-flag effect (CLAUDE.md), and a
+ * subscription that never fires because the day does not change under a form
+ * being filled in. The server snapshot is null, which is also what "no day
+ * named" means downstream — every opening-hours check switches off rather
+ * than guessing at a weekday the browser has not confirmed.
+ */
+const noClock = () => () => {};
+const readToday = () => new Date().getDay();
 
 /**
  * The caddy, as one members' group on the drafting table.
@@ -209,7 +230,10 @@ export function CaddyGroup({
    * only be set by a refusal the host walked into. That is the covenant's
    * money rule with somewhere to live.
    */
-  const [refusal, setRefusal] = useState<{ text: string; offer: CaddyOffer } | null>(null);
+  const [refusal, setRefusal] = useState<{
+    text: string;
+    offer: CaddyOffer;
+  } | null>(null);
   // Read back inside the streaming closure, which cannot see a state update it
   // made a moment ago.
   const refusedRef = useRef(false);
@@ -225,9 +249,20 @@ export function CaddyGroup({
   const [ownStroke, setStroke] = useState<StrokePoint[] | null>(null);
   const stroke = strokeOverride !== undefined ? strokeOverride : ownStroke;
   const [drawOpen, setDrawOpen] = useState(false);
-  /** When the round happens. The weekday is resolved in `briefBody`, inside
-   * the submit handler — the one place this component may read a clock. */
-  const [when, setWhen] = useState<"tonight" | "tomorrow">("tonight");
+  const [measures, setMeasures] = useState<MeasureId[]>(DEFAULT_MEASURES);
+  /**
+   * When the round happens.
+   *
+   * Today's weekday comes through `useSyncExternalStore` — the house's
+   * hydration guard, never a mounted-flag effect — so the server renders no
+   * day strip and the browser renders the real week. Null before hydration,
+   * which is also what "no day named" means downstream: every opening-hours
+   * check switches off rather than guessing.
+   */
+  const today = useSyncExternalStore(noClock, readToday, () => null);
+  const [ownDay, setDay] = useState<number | null>(null);
+  const teeDay = ownDay ?? today;
+  const days = dayOptions(today);
   const [teeOffMinutes, setTeeOffMinutes] = useState<number>(
     DEFAULT_TEE_OFF_MINUTES,
   );
@@ -243,7 +278,9 @@ export function CaddyGroup({
   const [galleryStage, setGalleryStage] = useState<GalleryStage>("opening");
   const [menu, setMenu] = useState<CaddyMenu | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
-  const [galleryCourse, setGalleryCourse] = useState<PlannedCourse | null>(null);
+  const [galleryCourse, setGalleryCourse] = useState<PlannedCourse | null>(
+    null,
+  );
   const [galleryError, setGalleryError] = useState<string | null>(null);
   /** Bumped per plan so the gallery's body remounts and re-seeds its dials. */
   const [galleryNonce, setGalleryNonce] = useState(0);
@@ -275,6 +312,13 @@ export function CaddyGroup({
   }
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
+  const sentence = briefSentence({
+    where,
+    holes,
+    vibe,
+    stretch,
+    strokeKm: stroke ? strokeLengthKm(stroke) : null,
+  });
   // One patch, one pace: the spacing chips mean exactly what they say now
   // that nothing else sets the walk's length. A drawn walk overrides them
   // with its own arc length, server-side, where it can be measured.
@@ -364,15 +408,17 @@ export function CaddyGroup({
       holes,
       vibe,
       particulars,
+      measures,
       note,
       stretch,
       startVenueId: null,
       finishVenueId: null,
       stroke,
-      // Resolved here, in the handler, because "tonight" only means a weekday
-      // next to a calendar — and the brief stays pure by carrying the answer
-      // rather than the question.
-      teeOffDay: (new Date().getDay() + (when === "tomorrow" ? 1 : 0)) % 7,
+      // The weekday the host picked, already resolved against the browser's
+      // own calendar — the brief stays pure by carrying the answer rather
+      // than the question. Null until hydration, which is the honest reading
+      // of "no day named" and switches the hours checks off.
+      teeOffDay: teeDay,
       teeOffMinutes,
     };
   }
@@ -418,10 +464,14 @@ export function CaddyGroup({
       // A refusal decided before the model was ever asked — no fee, a thin
       // patch, no sign-in — comes back as ordinary JSON rather than as a
       // stream that opens only to apologise.
-      if (!response.body || !response.headers.get("content-type")?.includes("ndjson")) {
-        const body = (await response.json().catch(() => null)) as
-          | { error?: string; offer?: CaddyOffer }
-          | null;
+      if (
+        !response.body ||
+        !response.headers.get("content-type")?.includes("ndjson")
+      ) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          offer?: CaddyOffer;
+        } | null;
         setGallery(false);
         if (body?.offer && body.error) {
           refusedRef.current = true;
@@ -563,7 +613,11 @@ export function CaddyGroup({
       // The patch frames the drafting table's own map too, so leaving the
       // gallery lands on a view that already knows the neighbourhood.
       onPatch?.(
-        body.menu.nodes.map((node) => ({ id: node.id, lat: node.lat, lng: node.lng })),
+        body.menu.nodes.map((node) => ({
+          id: node.id,
+          lat: node.lat,
+          lng: node.lng,
+        })),
       );
       return {};
     });
@@ -636,7 +690,10 @@ export function CaddyGroup({
    * so planning again replaces the one in the book.
    */
   const freshSheet = (
-    <Sheet open={confirming} onOpenChange={(open) => !open && setConfirming(false)}>
+    <Sheet
+      open={confirming}
+      onOpenChange={(open) => !open && setConfirming(false)}
+    >
       <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-2xl">
         <SheetHeader className="pb-0 text-center">
           <SheetTitle className="eyebrow text-center text-fairway">
@@ -795,12 +852,15 @@ export function CaddyGroup({
   if (!sessionId && reopen) {
     return (
       <div
-        className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
+        className={cn(
+          "engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5",
+          className,
+        )}
       >
         <span className="eyebrow text-fairway">The caddy</span>
         <p className="text-[13px] text-muted-foreground">
-          The caddy has put this patch away for the night. Fetch it back and
-          you can carry on changing the card — it costs nothing off your fee.
+          The caddy has put this patch away for the night. Fetch it back and you
+          can carry on changing the card — it costs nothing off your fee.
         </p>
         <Button
           type="button"
@@ -833,7 +893,10 @@ export function CaddyGroup({
   if (sessionId) {
     return (
       <div
-        className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
+        className={cn(
+          "engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5",
+          className,
+        )}
       >
         {galleryEl}
         {moreSheet}
@@ -887,7 +950,10 @@ export function CaddyGroup({
   if (!open && !room) {
     return (
       <div
-        className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
+        className={cn(
+          "engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5",
+          className,
+        )}
       >
         <div className="flex items-center justify-between gap-2">
           <span className="eyebrow text-fairway">Members</span>
@@ -897,7 +963,11 @@ export function CaddyGroup({
               not, right up to the moment it refuses them. `CaddyUsage` exists
               for exactly this and had only ever been wired into the brief. */}
           {hasPass ? (
-            allowance ? <CaddyUsage left={allowance.left} /> : <CoveredBadge />
+            allowance ? (
+              <CaddyUsage left={allowance.left} />
+            ) : (
+              <CoveredBadge />
+            )
           ) : null}
         </div>
         <div className="font-serif text-base leading-tight">
@@ -932,10 +1002,17 @@ export function CaddyGroup({
   // hosts who had never paid for anything. See `feeIsSpent` for the whole of
   // it; with no pass the group falls through to the brief, where asking for a
   // course is answered with the green fee.
-  if (allowance && feeIsSpent({ hasPass, canPlan: allowance.canPlan }) && !sessionId) {
+  if (
+    allowance &&
+    feeIsSpent({ hasPass, canPlan: allowance.canPlan }) &&
+    !sessionId
+  ) {
     return (
       <div
-        className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
+        className={cn(
+          "engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5",
+          className,
+        )}
         data-testid="caddy-spent"
       >
         {moreSheet}
@@ -953,7 +1030,10 @@ export function CaddyGroup({
         {allowance.courseId ? (
           <Link
             href={`/courses/${allowance.courseId}`}
-            className={cn(buttonVariants({ variant: "outline", size: "compact" }), "h-10 w-full")}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "compact" }),
+              "h-10 w-full",
+            )}
           >
             Open your course
           </Link>
@@ -965,7 +1045,9 @@ export function CaddyGroup({
             still only opens because they asked. */}
         <button
           type="button"
-          onClick={() => setRefusal({ text: CADDY_CREDITS_SPENT, offer: "more" })}
+          onClick={() =>
+            setRefusal({ text: CADDY_CREDITS_SPENT, offer: "more" })
+          }
           className="min-h-11 text-[11px] font-semibold text-muted-foreground hover:text-fairway"
         >
           Have the caddy plan more
@@ -982,9 +1064,7 @@ export function CaddyGroup({
     <div
       className={cn(
         "flex flex-col gap-3",
-        room
-          ? "px-4 pt-2 pb-4"
-          : "engraved rounded-xl bg-card px-4 py-3.5",
+        room ? "px-4 pt-2 pb-4" : "engraved rounded-xl bg-card px-4 py-3.5",
         className,
       )}
     >
@@ -998,7 +1078,11 @@ export function CaddyGroup({
             is a fee, what it says is what is left on it. With no fee it says
             nothing at all: the price belongs to the refusal, not to the form. */}
         {hasPass ? (
-          allowance ? <CaddyUsage left={allowance.left} /> : <CoveredBadge />
+          allowance ? (
+            <CaddyUsage left={allowance.left} />
+          ) : (
+            <CoveredBadge />
+          )
         ) : null}
       </div>
       {room ? null : (
@@ -1010,211 +1094,294 @@ export function CaddyGroup({
       {moreSheet}
       {feeSheet}
 
-      {/* The pen comes first: reposition, lock, draw. Drawing the walk is
-          the most concrete brief there is — the density field shows where a
-          night can live, the stroke is the axis, and the swath is the
-          gather. The typed patch below stays for the host who would rather
-          name a place than draw one. */}
-      {MAPS_BROWSER_KEY && !room ? (
-        <div>
-          {stroke ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-fairway">
-                Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km
-              </span>
-              <Chip onClick={() => setDrawOpen(true)}>Redraw</Chip>
-              <Chip onClick={() => setStroke(null)}>Clear</Chip>
-            </div>
-          ) : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => setDrawOpen(true)}
-                data-testid="open-draw-walk"
-              >
-                Draw the walk on the map
-              </Button>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                Reposition, hold still, draw — the map shows where the pubs
-                are thick before you commit.
-              </p>
-            </>
-          )}
-        </div>
-      ) : null}
-
-      <div>
-        <FieldLabel htmlFor="caddy-where">
-          {MAPS_BROWSER_KEY ? "Or name a patch" : "Where"}
-        </FieldLabel>
-        <Input
-          id="caddy-where"
-          value={where}
-          onChange={(event) => setWhere(event.target.value.slice(0, WHERE_MAX))}
-          placeholder="Shoreditch, London"
-        />
-        <p className="mt-1 text-[10px] text-muted-foreground">
-          A neighbourhood, a street, a town.
+      {/* The brief, read back as a sentence.
+          A form is a list of settings; a brief is a commission, and the
+          difference on screen is whether anything says the whole of it back.
+          Every tap rewrites this, so the host reads what they have asked for
+          rather than reassembling it from eight groups of chips. */}
+      <div className="rounded-xl border border-border bg-secondary/40 px-3.5 py-3">
+        <p
+          className="font-serif text-[15px] leading-snug text-balance"
+          data-testid="brief-sentence"
+        >
+          {sentence}
+        </p>
+        <p className="tabular mt-1 text-[11px] font-semibold text-muted-foreground">
+          {teeLine(teeOffMinutes, teeDay, today)}
         </p>
       </div>
 
-      {/* **The destination field is gone.**
-          It asked the host to name where the night finishes — which the walk
-          they drew has already said, twice over: `gatherPubs` takes the
-          stroke's own ends as the corridor's, and `readBrief` measures its
-          arc length for the reach. Asking again was asking for something
-          already answered, and it brought a whole second pace control with
-          it. A typed patch is one patch now, paced by the spacing chips; a
-          drawn walk is paced by its own length. `whereTo` stays on the wire
-          and in `readBrief` so sessions written before this still read. */}
-
-      <div>
-        <FieldLabel htmlFor="caddy-holes">Holes</FieldLabel>
-        <div className="flex flex-wrap gap-1.5" id="caddy-holes" role="radiogroup" aria-label="Holes">
-          {HOLE_CHOICES.map((count) => (
-            <Chip
-              key={count}
-              role="radio"
-              aria-checked={holes === count}
-              active={holes === count}
-              onClick={() => setHoles(count)}
-            >
-              {count}
-            </Chip>
-          ))}
-        </div>
-        {/* The counter-offer, before the button rather than after the fee:
-            the count is the lean search's floor, so this warns and names the
-            hole count that fits — it never gates. The server still decides. */}
-        {reach?.preview ? (
-          (() => {
-            const thin = thinPatchNote(reach.preview.count, holes);
-            return thin ? (
-              <p className="mt-1 text-[10px] text-hazard">{thin}</p>
-            ) : null;
-          })()
+      <BriefSection title="The patch">
+        {/* The pen comes first: reposition, lock, draw. Drawing the walk is
+            the most concrete brief there is — the density field shows where a
+            night can live, the stroke is the axis, and the swath is the
+            gather. The typed patch below stays for the host who would rather
+            name a place than draw one. */}
+        {MAPS_BROWSER_KEY && !room ? (
+          <div>
+            {stroke ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-fairway">
+                  Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km
+                </span>
+                <Chip onClick={() => setDrawOpen(true)}>Redraw</Chip>
+                <Chip onClick={() => setStroke(null)}>Clear</Chip>
+              </div>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setDrawOpen(true)}
+                  data-testid="open-draw-walk"
+                >
+                  Draw the walk on the map
+                </Button>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Reposition, hold still, draw — the map shows where the pubs
+                  are thick before you commit.
+                </p>
+              </>
+            )}
+          </div>
         ) : null}
-      </div>
 
-      <div>
-        <FieldLabel htmlFor="caddy-vibe">What kind of round</FieldLabel>
-        <div className="flex flex-wrap gap-1.5" id="caddy-vibe" role="radiogroup" aria-label="What kind of round">
-          {VIBES.map((entry) => (
-            <Chip
-              key={entry.id}
-              role="radio"
-              aria-checked={vibe === entry.id}
-              active={vibe === entry.id}
-              onClick={() => setVibe(entry.id)}
-            >
-              {entry.label}
-            </Chip>
-          ))}
+        <div>
+          <FieldLabel htmlFor="caddy-where">
+            {MAPS_BROWSER_KEY ? "Or name a patch" : "Where"}
+          </FieldLabel>
+          <Input
+            id="caddy-where"
+            value={where}
+            onChange={(event) =>
+              setWhere(event.target.value.slice(0, WHERE_MAX))
+            }
+            placeholder="Shoreditch, London"
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            A neighbourhood, a street, a town.
+          </p>
         </div>
-        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
-          {meaning}
-        </p>
-      </div>
 
-      <div>
-        <FieldLabel htmlFor="caddy-stretch">How far apart</FieldLabel>
-        <div
-          className="flex flex-wrap gap-1.5"
-          id="caddy-stretch"
-          role="radiogroup"
-          aria-label="How far apart"
-        >
-          {STRETCH_CHOICES.map((entry) => (
-            <Chip
-              key={entry.id}
-              role="radio"
-              aria-checked={stretch === entry.id}
-              active={stretch === entry.id}
-              onClick={() => setStretch(entry.id)}
-            >
-              {entry.label}
-            </Chip>
-          ))}
-        </div>
-        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
-          {stretchNote}
-        </p>
-      </div>
+        {/* **The destination field is gone.**
+            It asked the host to name where the night finishes — which the walk
+            they drew has already said, twice over: `gatherPubs` takes the
+            stroke's own ends as the corridor's, and `readBrief` measures its
+            arc length for the reach. Asking again was asking for something
+            already answered, and it brought a whole second pace control with
+            it. A typed patch is one patch now, paced by the spacing dial; a
+            drawn walk is paced by its own length. `whereTo` stays on the wire
+            and in `readBrief` so sessions written before this still read. */}
+      </BriefSection>
 
-      <div>
-        <FieldLabel htmlFor="caddy-when">When</FieldLabel>
-        <div
-          className="flex flex-wrap gap-1.5"
-          id="caddy-when"
-          role="radiogroup"
-          aria-label="When the round happens"
-        >
-          {(["tonight", "tomorrow"] as const).map((choice) => (
-            <Chip
-              key={choice}
-              role="radio"
-              aria-checked={when === choice}
-              active={when === choice}
-              onClick={() => setWhen(choice)}
-            >
-              {choice === "tonight" ? "Tonight" : "Tomorrow"}
-            </Chip>
-          ))}
-          <span className="mx-0.5 self-center text-[10px] text-muted-foreground">
-            tee off
-          </span>
-          {TEE_OFF_CHOICES.map((choice) => (
-            <Chip
-              key={choice.minutes}
-              active={teeOffMinutes === choice.minutes}
-              onClick={() => setTeeOffMinutes(choice.minutes)}
-            >
-              {choice.label}
-            </Chip>
-          ))}
-        </div>
-        <p className="mt-1 font-serif text-[11px] italic text-muted-foreground">
-          So nothing on the card is shut when you reach it.
-        </p>
-      </div>
+      <BriefSection title="The round">
+        <Ask id="caddy-holes" label="Holes">
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="radiogroup"
+            aria-labelledby="caddy-holes"
+          >
+            {HOLE_CHOICES.map((count) => (
+              <Chip
+                key={count}
+                role="radio"
+                aria-checked={holes === count}
+                active={holes === count}
+                onClick={() => setHoles(count)}
+              >
+                {count}
+              </Chip>
+            ))}
+          </div>
+          {/* The counter-offer, before the button rather than after the fee:
+              the count is the lean search's floor, so this warns and names the
+              hole count that fits — it never gates. The server still decides. */}
+          {reach?.preview
+            ? (() => {
+                const thin = thinPatchNote(reach.preview.count, holes);
+                return thin ? (
+                  <p className="mt-1 text-[10px] text-hazard">{thin}</p>
+                ) : null;
+              })()
+            : null}
+        </Ask>
 
-      <div>
-        <FieldLabel htmlFor="caddy-particulars">Particulars</FieldLabel>
-        <div className="flex flex-wrap gap-1.5" id="caddy-particulars">
-          {PARTICULARS.map((entry) => {
-            const on = particulars.includes(entry.id);
-            return (
+        <Ask id="caddy-vibe" label="What kind of round" note={meaning}>
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="radiogroup"
+            aria-labelledby="caddy-vibe"
+          >
+            {VIBES.map((entry) => (
               <Chip
                 key={entry.id}
-                active={on}
-                onClick={() =>
-                  setParticulars((current) =>
-                    on
-                      ? current.filter((id) => id !== entry.id)
-                      : [...current, entry.id],
-                  )
-                }
+                role="radio"
+                aria-checked={vibe === entry.id}
+                active={vibe === entry.id}
+                onClick={() => setVibe(entry.id)}
               >
                 {entry.label}
               </Chip>
-            );
-          })}
-        </div>
-      </div>
+            ))}
+          </div>
+        </Ask>
 
-      <div>
-        <FieldLabel htmlFor="caddy-note">
-          Anything the caddy should know
-        </FieldLabel>
-        <Input
-          id="caddy-note"
-          value={note}
-          onChange={(event) => setNote(event.target.value.slice(0, NOTE_MAX))}
-          placeholder="Short walks — one of us is on crutches"
-        />
-      </div>
+        {/* Hidden rather than disabled when a walk is drawn, and that is a fix
+            rather than tidiness: `targetKmFor` takes the stroke's own arc
+            length and never reads `stretch` at all, so this dial was sitting
+            there doing nothing while looking exactly like a control. */}
+        {stroke ? (
+          <p className="font-serif text-[11px] italic text-muted-foreground">
+            The walk you drew sets the pace —{" "}
+            {strokeLengthKm(stroke).toFixed(1)} km over {holes} holes.
+          </p>
+        ) : (
+          <Ask
+            id="caddy-stretch"
+            label="How far apart"
+            note={stretchNote}
+            className="items-start"
+          >
+            {/* Four presets were the whole of it, so a perfectly ordinary
+                "seven minutes" was unsayable. The dial is the host's now. */}
+            <Stepper
+              className="w-40"
+              value={stretch}
+              onChange={setStretch}
+              min={STRETCH_MIN}
+              max={STRETCH_MAX}
+              label="minutes between pubs"
+              decrementLabel="Less walking between pubs"
+              incrementLabel="More walking between pubs"
+              format={(value) => (value === 0 ? "any" : `${value} min`)}
+            />
+          </Ask>
+        )}
+      </BriefSection>
+
+      <BriefSection title="The night">
+        {/* The tee-off is not decoration: it is what decides which pubs are
+            open enough to be on the card at all, so it gets a real control
+            rather than four evening chips. */}
+        <Ask id="caddy-day" label="Which day">
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="radiogroup"
+            aria-labelledby="caddy-day"
+          >
+            {days.map((choice) => (
+              <Chip
+                key={choice.day}
+                role="radio"
+                aria-checked={teeDay === choice.day}
+                active={teeDay === choice.day}
+                onClick={() => setDay(choice.day)}
+              >
+                {choice.label}
+              </Chip>
+            ))}
+          </div>
+        </Ask>
+
+        <Ask
+          id="caddy-tee"
+          label="First tee"
+          note={teeOffNote(teeOffMinutes)}
+          className="items-start"
+        >
+          <TeeTimeNudger
+            className="w-52"
+            value={teeOffMinutes}
+            onChange={setTeeOffMinutes}
+          />
+        </Ask>
+      </BriefSection>
+
+      <BriefSection title="The card">
+        {/* The one part of a hole the host could not say a word about, on the
+            app whose unit is the drink. Unlike a particular this is not a
+            claim about a pub — it is what the caddy may write — so it is not
+            bound by the dossier-signal rule. `drinks-pourable` still refuses a
+            beer where Google says none is poured. */}
+        <Ask
+          id="caddy-measures"
+          label="What you are drinking"
+          note={
+            measures.length
+              ? `The caddy keeps to ${measuresMeaning(measures)}.`
+              : "Nothing ticked, so the caddy pours what suits each pub."
+          }
+        >
+          <div
+            className="flex flex-wrap gap-1.5"
+            aria-labelledby="caddy-measures"
+          >
+            {MEASURES.map((entry) => {
+              const on = measures.includes(entry.id);
+              return (
+                <Chip
+                  key={entry.id}
+                  active={on}
+                  aria-pressed={on}
+                  onClick={() =>
+                    setMeasures((current) =>
+                      on
+                        ? current.filter((id) => id !== entry.id)
+                        : [...current, entry.id],
+                    )
+                  }
+                >
+                  {entry.label}
+                </Chip>
+              );
+            })}
+          </div>
+        </Ask>
+
+        <Ask
+          id="caddy-particulars"
+          label="Particulars"
+          note="Only asked for where Google can actually answer it."
+        >
+          <div
+            className="flex flex-wrap gap-1.5"
+            aria-labelledby="caddy-particulars"
+          >
+            {PARTICULARS.map((entry) => {
+              const on = particulars.includes(entry.id);
+              return (
+                <Chip
+                  key={entry.id}
+                  active={on}
+                  aria-pressed={on}
+                  onClick={() =>
+                    setParticulars((current) =>
+                      on
+                        ? current.filter((id) => id !== entry.id)
+                        : [...current, entry.id],
+                    )
+                  }
+                >
+                  {entry.label}
+                </Chip>
+              );
+            })}
+          </div>
+        </Ask>
+
+        <div>
+          <FieldLabel htmlFor="caddy-note">
+            Anything the caddy should know
+          </FieldLabel>
+          <Input
+            id="caddy-note"
+            value={note}
+            onChange={(event) => setNote(event.target.value.slice(0, NOTE_MAX))}
+            placeholder="Short walks — one of us is on crutches"
+          />
+        </div>
+      </BriefSection>
 
       {/* This line quoted the price. It has been kept, without it: what a host
           needs before they press the button is that the caddy is the members'
