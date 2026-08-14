@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
-import { X } from "lucide-react";
+import { ExternalLink, Star, X } from "lucide-react";
 import {
   AdvancedMarker,
   AdvancedMarkerAnchorPoint,
@@ -76,6 +76,34 @@ export interface DressChoice {
   route: string[] | null;
   holes: number;
   stretch: number;
+}
+
+/**
+ * A pub the host tapped, whichever stage they tapped it in.
+ *
+ * The menu's lean node and the finished card's hole carry different halves
+ * of the same pub, so both are normalised to this before anything renders —
+ * one card, not two nearly-identical ones. Everything here is what Google's
+ * *free* search already shows anyone; the dossier's atmosphere half never
+ * leaves the server, so nothing about this costs a second call.
+ */
+interface TappedPub {
+  name: string;
+  address: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+  lat: number;
+  lng: number;
+  /** Set only once the card exists — its dressing, in the house's words. */
+  hole?: { number: number; drink: string; par: number; hazard: string | null };
+}
+
+/** Google's own page for the place. A link out rather than a fetch: their
+ * terms want Places results on a Google surface, and it is the one place
+ * that always has the hours, the photos and the reviews in full. */
+function googleMapsHref(pub: TappedPub): string {
+  const query = encodeURIComponent(`${pub.name} ${pub.lat},${pub.lng}`);
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
 const STAGE_LINES: Record<GalleryStage, string> = {
@@ -203,6 +231,8 @@ function GalleryBody({
   const [dialHoles, setDialHoles] = useState(holes);
   const [dialStretch, setDialStretch] = useState(stretch);
   const [routeIndex, setRouteIndex] = useState(0);
+  /** The pub the host tapped, if any. Null is the ordinary state. */
+  const [tapped, setTapped] = useState<TappedPub | null>(null);
 
   /**
    * The walks on offer: the server's menu as dealt, re-routed in the browser
@@ -291,6 +321,16 @@ function GalleryBody({
                 position={{ lat: node.lat, lng: node.lng }}
                 anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                 title={node.name}
+                onClick={() =>
+                  setTapped({
+                    name: node.name,
+                    address: node.address,
+                    rating: node.rating,
+                    reviewCount: node.reviewCount,
+                    lat: node.lat,
+                    lng: node.lng,
+                  })
+                }
               >
                 <div
                   className={cn(
@@ -314,6 +354,16 @@ function GalleryBody({
                       position={{ lat: node.lat, lng: node.lng }}
                       anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                       title={`Hole ${index + 1} — ${node.name}`}
+                      onClick={() =>
+                        setTapped({
+                          name: node.name,
+                          address: node.address,
+                          rating: node.rating,
+                          reviewCount: node.reviewCount,
+                          lat: node.lat,
+                          lng: node.lng,
+                        })
+                      }
                     >
                       <div
                         className={cn(
@@ -336,6 +386,22 @@ function GalleryBody({
                       position={{ lat: hole.lat, lng: hole.lng }}
                       anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                       title={`Hole ${index + 1} — ${hole.venue_name}`}
+                      onClick={() =>
+                        setTapped({
+                          name: hole.venue_name,
+                          address: hole.address,
+                          rating: hole.rating,
+                          reviewCount: null,
+                          lat: hole.lat as number,
+                          lng: hole.lng as number,
+                          hole: {
+                            number: index + 1,
+                            drink: hole.drink,
+                            par: hole.par,
+                            hazard: hole.hazard,
+                          },
+                        })
+                      }
                     >
                       <div
                         className={cn(
@@ -361,6 +427,78 @@ function GalleryBody({
             ? `On the table — ${state.course.name}`
             : STAGE_LINES[state.stage]}
         </span>
+
+        {/* The pub the host tapped. Over the map rather than in a sheet: a
+            dialog inside a fullscreen dialog is a stack nobody asked for,
+            and the point of tapping a pin is to look at it *next to* the
+            walk it sits on. Everything shown is what the free search
+            already returns; Google's own page is one tap further for the
+            hours, the photos and the reviews in full. */}
+        {tapped ? (
+          <div
+            className="animate-in fade-in slide-in-from-bottom-2 absolute inset-x-3 bottom-3 z-30 rounded-xl border border-border bg-card p-3 shadow-lg"
+            data-testid="pub-card"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                {tapped.hole ? (
+                  <span className="eyebrow text-fairway">
+                    Hole {tapped.hole.number}
+                    {tapped.hole.hazard ? ` · ${tapped.hole.hazard}` : ""}
+                  </span>
+                ) : null}
+                <p className="truncate font-serif text-base leading-tight">
+                  {tapped.name}
+                </p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {tapped.rating != null ? (
+                    <>
+                      <Star
+                        className="size-3 fill-marker text-marker"
+                        aria-hidden
+                      />
+                      <span className="tabular">{tapped.rating.toFixed(1)}</span>
+                      {tapped.reviewCount ? (
+                        <span className="tabular">
+                          ({tapped.reviewCount.toLocaleString()})
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span>No rating yet</span>
+                  )}
+                </p>
+                {tapped.address ? (
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {tapped.address}
+                  </p>
+                ) : null}
+                {tapped.hole ? (
+                  <p className="mt-1 text-[11.5px]">
+                    {tapped.hole.drink} · par {tapped.hole.par}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setTapped(null)}
+                aria-label="Close"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            <a
+              href={googleMapsHref(tapped)}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="mt-2 flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border text-[11px] font-bold text-fairway"
+            >
+              Hours, photos and reviews on Google
+              <ExternalLink className="size-3" aria-hidden />
+            </a>
+          </div>
+        ) : null}
 
         {/* The way out. Leaving never cancels: the plan carries on and the
             card lands on the drafting table exactly as it always has. */}

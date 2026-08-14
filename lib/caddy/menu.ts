@@ -40,6 +40,11 @@ export interface MenuNode {
   lat: number;
   lng: number;
   rating: number | null;
+  /** What the free search already shows anyone — the line under a pub's name
+   * in the builder's own list. Carried so a tapped pin can say something
+   * about the place without a second trip to Google. */
+  address: string | null;
+  reviewCount: number | null;
 }
 
 export interface MenuRoute {
@@ -108,14 +113,16 @@ export function menuOf(
     teeOff,
     stroke: brief.stroke,
   });
-  const names = new Map(candidates.map((c) => [c.id, c.name]));
+  const byId = new Map(candidates.map((c) => [c.id, c]));
   return {
     nodes: graph.nodes.map((node) => ({
       id: node.id,
-      name: names.get(node.id) ?? "",
+      name: byId.get(node.id)?.name ?? "",
       lat: node.lat,
       lng: node.lng,
       rating: node.rating,
+      address: byId.get(node.id)?.address ?? null,
+      reviewCount: node.reviewCount,
     })),
     routes: menuRoutes(graph),
     startId: candidateIdFor(candidates, brief.startVenueId),
@@ -143,9 +150,9 @@ export function leanDossier(nodes: MenuNode[]): CandidateDossier[] {
     id: node.id,
     venueId: node.id,
     name: node.name,
-    address: null,
+    address: node.address,
     rating: node.rating,
-    reviewCount: null,
+    reviewCount: node.reviewCount,
     lat: node.lat,
     lng: node.lng,
     priceLevel: null,

@@ -54,11 +54,33 @@ describe("menuOf", () => {
     }
   });
 
-  it("keeps the nodes lean: name, position, rating, and nothing paid", () => {
+  it("keeps the nodes lean: what the free search shows, and nothing paid", () => {
     expect(menu.nodes.length).toBe(CANDIDATES.length);
     for (const node of menu.nodes) {
-      expect(Object.keys(node).sort()).toEqual(["id", "lat", "lng", "name", "rating"]);
+      expect(Object.keys(node).sort()).toEqual([
+        "address",
+        "id",
+        "lat",
+        "lng",
+        "name",
+        "rating",
+        "reviewCount",
+      ]);
     }
+  });
+
+  // The list above is allowed to grow with the free search — a tapped pin
+  // says more about a pub than a marker can. This is the half that may not:
+  // the dossier's reading matter is what the caddy was paid to read, and it
+  // stays server-side however the node is dressed.
+  it("never ships the dossier's paid half to the browser", () => {
+    const paid = ["facts", "priceLevel", "editorial", "reviews"];
+    for (const node of menu.nodes) {
+      for (const field of paid) {
+        expect(Object.keys(node)).not.toContain(field);
+      }
+    }
+    expect(JSON.stringify(menu)).not.toContain("editorial");
   });
 
   it("speaks only candidate ids", () => {
