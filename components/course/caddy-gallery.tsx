@@ -433,9 +433,20 @@ function GalleryBody({
         ) : null}
 
         {state.stage === "done" ? (
-          <Button className="w-full" onClick={onClose} data-testid="gallery-done">
-            Back to the table
-          </Button>
+          <div className="flex flex-col gap-2">
+            {/* Street truth, where the streets answered for every leg. */}
+            {state.course?.legMinutes?.length &&
+            state.course.legMinutes.every((leg) => leg !== null) ? (
+              <p className="text-center text-[11px] text-muted-foreground tabular">
+                Walks checked against the streets —{" "}
+                {state.course.legMinutes.reduce((sum, leg) => sum + (leg ?? 0), 0)}{" "}
+                min all told.
+              </p>
+            ) : null}
+            <Button className="w-full" onClick={onClose} data-testid="gallery-done">
+              Back to the table
+            </Button>
+          </div>
         ) : null}
 
         {state.stage === "failed" ? (

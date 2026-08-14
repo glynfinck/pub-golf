@@ -22,6 +22,7 @@ import {
 } from "@/lib/caddy/dossier";
 import { gatherPubs, type GatheredPub } from "@/lib/caddy/places";
 import { checkCard, contractRecord } from "@/lib/caddy/contract";
+import { routesKey, verifyLegs } from "@/lib/caddy/verify-legs";
 import { planFailureNote, type PlannedCourse } from "@/lib/caddy/plan";
 import type { CaddyOffer } from "@/lib/caddy/stream";
 import { ipBiasFrom } from "@/lib/pub-search";
@@ -1002,6 +1003,14 @@ export async function runTurn(input: {
   // rather than the conversation it happened in: a session runs to sixty-five
   // turns, and by the time anyone triages "the caddy put a Wetherspoons on
   // hole four" the card they meant may have been rolled over twice.
+  // Street truth for the card that shipped: at most seventeen walking legs,
+  // pennies, and the walk stops being an estimate. Absent key or silent
+  // streets answer null per leg and nothing else changes.
+  outcome.course.legMinutes = await verifyLegs(
+    outcome.course.holes,
+    routesKey(process.env),
+  );
+
   // Scored before it is filed, so the turn row carries its own verdict. The
   // contract is telemetry rather than a gate: a card with findings still
   // lands — a hole with a note beats no card — and the findings are what
