@@ -110,7 +110,10 @@ export function CourseRoom({
                 {landed.holes.length} holes, walked in order. Every edit lives
                 on the drafting table — drinks, pars, hazards, the lot.
               </p>
-              <Button onClick={() => router.push("/courses/new")}>
+              {/* `?caddy=1` is the hand-over: it is what tells the table to
+                  reopen this conversation, so the card arrives with its ask
+                  box. Without it the table is blank by design. */}
+              <Button onClick={() => router.push("/courses/new?caddy=1")}>
                 Open on the drafting table
               </Button>
               <button
