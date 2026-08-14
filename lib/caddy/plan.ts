@@ -327,6 +327,7 @@ export function patchBlock(
       brief.teeOffDay != null
         ? { day: brief.teeOffDay, minutes: brief.teeOffMinutes }
         : null,
+    stroke: brief.stroke,
   });
   const routes = routesBlock(graph);
   return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);

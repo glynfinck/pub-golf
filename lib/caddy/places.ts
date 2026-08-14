@@ -2,6 +2,7 @@ import "server-only";
 
 import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
 import { windowsOf } from "@/lib/caddy/hours";
+import { strokeCircles, type StrokePoint } from "@/lib/caddy/stroke";
 import { corridorSamples, haversineKm } from "@/lib/geo";
 import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
@@ -212,6 +213,9 @@ export interface GatherInput {
   /** Coordinates of pinned tees, where the host dropped them. */
   start: { lat: number; lng: number } | null;
   finish: { lat: number; lng: number } | null;
+  /** The walk, drawn. When present the circles sample down this line and
+   * the named areas keep only their words. */
+  stroke: StrokePoint[] | null;
   /** The player's IP city, so an unaimed search follows the phone and not the
    * data centre — the same rule `buildPlacesSearch` already keeps. */
   ipBias: { lat: number; lng: number } | null;
@@ -295,6 +299,30 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       lng: placed.reduce((sum, p) => sum + p.lng, 0) / placed.length,
     };
   };
+
+  // A drawn walk is the most concrete brief there is: its circles are the
+  // gather, its ends are the aim, and no locating search is needed at all.
+  if (input.stroke && input.stroke.length >= 2) {
+    const centres = strokeCircles(input.stroke, CORRIDOR_RADIUS_M / 1000);
+    const rings = await Promise.all(
+      centres.map((centre) =>
+        call(key, NEARBY_URL, nearbyBody(centre, CORRIDOR_RADIUS_M), language),
+      ),
+    );
+    const seen = new Set<string>();
+    const gathered: GatheredPub[] = [];
+    for (const place of rings.flat()) {
+      const pub = toGathered(place);
+      if (!pub || seen.has(pub.googlePlaceId)) continue;
+      seen.add(pub.googlePlaceId);
+      gathered.push(pub);
+    }
+    return {
+      pubs: gathered,
+      from: input.stroke[0],
+      to: input.stroke[input.stroke.length - 1],
+    };
+  }
 
   // Pinned tees win where the host dropped them; otherwise the two named areas
   // are located and become the ends of the walk themselves.

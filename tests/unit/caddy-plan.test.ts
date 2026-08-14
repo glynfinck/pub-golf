@@ -58,6 +58,7 @@ const BRIEF = {
   // time and its own suite proves it.
   teeOffDay: null,
   teeOffMinutes: 1140,
+  stroke: null,
 };
 
 function plan(ids: string[], over: Record<string, unknown> = {}) {

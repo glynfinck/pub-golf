@@ -60,6 +60,8 @@ export interface CaddyMenu {
   reachKm: number;
   /** When the round tees off, so a browser re-route keeps the same clock. */
   teeOff: TeeOff | null;
+  /** The drawn walk, so a browser re-route keeps the same axis. */
+  stroke: { lat: number; lng: number }[] | null;
 }
 
 /** A pinned tee arrives as a `venues` row id; the graph speaks candidate
@@ -100,6 +102,7 @@ export function menuOf(
     aimFrom: brief.aimFrom,
     aimTo: brief.aimTo,
     teeOff,
+    stroke: brief.stroke,
   });
   const names = new Map(candidates.map((c) => [c.id, c.name]));
   return {
@@ -117,6 +120,7 @@ export function menuOf(
     aimTo: brief.aimTo ?? null,
     reachKm: brief.reachKm,
     teeOff,
+    stroke: brief.stroke,
   };
 }
 
@@ -161,6 +165,7 @@ export function rerouteMenu(
     // Lean nodes carry no hours, so this is inert in the browser today —
     // carried anyway so the wire shape does not change when they do.
     teeOff: menu.teeOff ?? null,
+    stroke: menu.stroke ?? null,
   });
   return menuRoutes(graph);
 }

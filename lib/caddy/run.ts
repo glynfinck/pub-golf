@@ -393,6 +393,7 @@ async function gatherFor(
     key: placesKey,
     where: brief.where,
     whereTo: brief.whereTo,
+    stroke: brief.stroke,
     start: start?.lat != null && start.lng != null
       ? { lat: start.lat, lng: start.lng }
       : null,
@@ -840,8 +841,10 @@ function midConversation(brief: CaddyBrief) {
           key,
           where: query,
           // A mid-plan search is one place the caddy went looking for, not a
-          // walk between two — the corridor is the brief's business.
+          // walk between two — the corridor and the stroke are the brief's
+          // business.
           whereTo: "",
+          stroke: null,
           start: null,
           finish: null,
           ipBias: null,

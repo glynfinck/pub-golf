@@ -1,3 +1,5 @@
+import { readStroke, strokeLengthKm } from "@/lib/caddy/stroke";
+
 /**
  * The brief: what the host asks the caddy for.
  *
@@ -203,6 +205,14 @@ export interface CaddyBrief {
   teeOffDay: number | null;
   /** Tee-off, minutes from midnight. */
   teeOffMinutes: number;
+  /**
+   * The walk, drawn: a simplified polyline in the host's own hand
+   * (`lib/caddy/stroke.ts`). When present it outranks the named areas'
+   * geometry — the gather samples its circles down this line, the router
+   * treats it as the axis, and its arc length is the honest reach. The
+   * names stay for what names are for: the course's own vocabulary.
+   */
+  stroke: { lat: number; lng: number }[] | null;
 }
 
 export const WHERE_MAX = 120;
@@ -230,8 +240,9 @@ export function readBrief(raw: unknown): CaddyBrief | null {
       : 0;
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
-  // Nothing to aim at: no patch named and no pin dropped.
-  if (!where && !startVenueId && !finishVenueId) return null;
+  const stroke = readStroke(input.stroke);
+  // Nothing to aim at: no patch named, no pin dropped, no walk drawn.
+  if (!where && !startVenueId && !finishVenueId && !stroke) return null;
 
   const asked = Number(input.holes);
   const holes = HOLE_CHOICES.includes(asked as (typeof HOLE_CHOICES)[number])
@@ -247,10 +258,18 @@ export function readBrief(raw: unknown): CaddyBrief | null {
 
   return {
     where,
+    stroke,
     // The same patch twice is one patch: a host who picks their own area
     // for both ends wants a tight round, not a walk back to where they began.
     whereTo: whereTo.toLowerCase() === where.toLowerCase() ? "" : whereTo,
-    reachKm: whereTo.toLowerCase() === where.toLowerCase() ? 0 : reachKm,
+    // A drawn walk's length is measured, not typed: it outranks whatever
+    // number rode the wire, because the host has already drawn the route
+    // round the river.
+    reachKm: stroke
+      ? Math.round(strokeLengthKm(stroke) * 100) / 100
+      : whereTo.toLowerCase() === where.toLowerCase()
+        ? 0
+        : reachKm,
     startVenueId,
     finishVenueId,
     holes,

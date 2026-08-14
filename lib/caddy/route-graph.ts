@@ -7,6 +7,7 @@ import {
   type OpenWindow,
   type TeeOff,
 } from "@/lib/caddy/hours";
+import { alongStrokeKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
@@ -137,6 +138,13 @@ export interface RouteRequest {
    * late-night patch with thin hours data must still get a card.
    */
   teeOff?: TeeOff | null;
+  /**
+   * The walk, drawn. `principalAxis` guesses the direction of travel from
+   * the candidate cloud; a stroke states it. When present, "how far along"
+   * becomes arc-length along this line — the forward walks stay monotone
+   * along a *curve*, and "forward" means the way the stroke was drawn.
+   */
+  stroke?: StrokePoint[] | null;
 }
 
 const DEFAULT_NEIGHBOURS = 5;
@@ -387,13 +395,15 @@ function bestForwardWalk(
   finishId: string | null,
   drift: number,
   teeOff: TeeOff | null = null,
+  alongFn: ((node: RouteNode) => number) | null = null,
 ): string[] | null {
   const origin = (startId ? byId.get(startId) : null) ?? nodes[0];
   if (!origin) return null;
   const axis = principalAxis(nodes, origin, finishId ? byId.get(finishId) : null);
+  const position = alongFn ?? ((node: RouteNode) => along(node, axis, origin));
 
   const order = nodes
-    .map((node) => ({ node, t: along(node, axis, origin) }))
+    .map((node) => ({ node, t: position(node) }))
     .sort((a, b) => a.t - b.t);
   const n = order.length;
   if (n < holes) return null;
@@ -494,6 +504,7 @@ function snakeWalk(
   startId: string,
   finishId: string | null,
   drift: number,
+  alongFn: ((node: RouteNode) => number) | null = null,
 ): string[] | null {
   const origin = byId.get(startId);
   if (!origin) return null;
@@ -502,7 +513,8 @@ function snakeWalk(
     origin,
     finishId ? byId.get(finishId) : null,
   );
-  const at = new Map(nodes.map((node) => [node.id, along(node, axis, origin)]));
+  const position = alongFn ?? ((node: RouteNode) => along(node, axis, origin));
+  const at = new Map(nodes.map((node) => [node.id, position(node)]));
 
   const used = new Set<string>([startId]);
   if (finishId) used.add(finishId);
@@ -900,6 +912,15 @@ export function buildRouteGraph(
       ? request.finishId
       : null) ?? (aimedFinish && aimedFinish !== startId ? aimedFinish : null);
 
+  // The drawn stroke, where there is one, is the axis every forward walk
+  // projects onto — stated by the host, not guessed from the cloud.
+  const strokeAxis =
+    request.stroke && request.stroke.length >= 2 ? request.stroke : null;
+  const alongFn = strokeAxis
+    ? (node: RouteNode) =>
+        alongStrokeKm({ lat: node.lat, lng: node.lng }, strokeAxis)
+    : null;
+
   // With no pinned tee, try several origins so the seeds genuinely differ.
   const origins = startId ? [startId] : pool.slice(0, 6);
   const seeds: string[][] = [];
@@ -933,9 +954,19 @@ export function buildRouteGraph(
         finishId,
         drift,
         request.teeOff ?? null,
+        alongFn,
       );
       if (exact) snakes.push(exact);
-      const seed = snakeWalk(table, nodes, byId, holes, origin, finishId, drift);
+      const seed = snakeWalk(
+        table,
+        nodes,
+        byId,
+        holes,
+        origin,
+        finishId,
+        drift,
+        alongFn,
+      );
       if (seed) snakes.push(seed);
     }
   }

@@ -56,6 +56,8 @@ import {
   type GalleryStage,
 } from "@/components/course/caddy-gallery";
 import type { CaddyMenu } from "@/lib/caddy/menu";
+import { DrawWalkSheet } from "@/components/course/draw-walk-sheet";
+import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
@@ -198,6 +200,9 @@ export function CaddyGroup({
   const [whereTo, setWhereTo] = useState("");
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
+  /** The walk, drawn — the brief's last escalation. Null is most rounds. */
+  const [stroke, setStroke] = useState<StrokePoint[] | null>(null);
+  const [drawOpen, setDrawOpen] = useState(false);
   /** When the round happens. The weekday is resolved in `briefBody`, inside
    * the submit handler — the one place this component may read a clock. */
   const [when, setWhen] = useState<"tonight" | "tomorrow">("tonight");
@@ -327,6 +332,7 @@ export function CaddyGroup({
       stretch,
       startVenueId: null,
       finishVenueId: null,
+      stroke,
       // Resolved here, in the handler, because "tonight" only means a weekday
       // next to a calendar — and the brief stays pure by carrying the answer
       // rather than the question.
@@ -978,6 +984,30 @@ export function CaddyGroup({
         <p className="mt-1 text-[10px] text-muted-foreground">
           Leave it empty to stay in one patch.
         </p>
+        {/* The pen, for the night with a shape in mind: along the river,
+            round the park, the L through the market. The stroke outranks the
+            named areas' geometry; the names stay for the course's own
+            vocabulary. */}
+        {MAPS_BROWSER_KEY ? (
+          stroke ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-fairway">
+                Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km
+              </span>
+              <Chip onClick={() => setDrawOpen(true)}>Redraw</Chip>
+              <Chip onClick={() => setStroke(null)}>Clear</Chip>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDrawOpen(true)}
+              className="mt-1 min-h-11 text-[11px] font-semibold text-fairway hover:underline"
+              data-testid="open-draw-walk"
+            >
+              Or draw the walk on the map
+            </button>
+          )
+        ) : null}
         {/* The same fact the ring shows, in words. It appears only when there
             is something worth saying — a warning on every plan is a warning
             nobody reads — and it appears *before* the fee is spent, which is
@@ -1145,9 +1175,19 @@ export function CaddyGroup({
       )}
 
       {freshSheet}
+      <DrawWalkSheet
+        open={drawOpen}
+        onOpenChange={setDrawOpen}
+        centre={reach?.centre ?? null}
+        pins={reach?.preview?.pins ?? []}
+        onUse={(drawn) => {
+          setStroke(drawn);
+          setDrawOpen(false);
+        }}
+      />
       <Button
         onClick={() => setConfirming(true)}
-        disabled={pending || !where.trim()}
+        disabled={pending || !(where.trim() || stroke)}
       >
         <PendingLabel
           pending={pending}
