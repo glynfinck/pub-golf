@@ -11,6 +11,7 @@ import {
   CADDY_QUOTAS,
   CADDY_TOPUP_OFFERS,
   coursesLeftNote,
+  feeIsSpent,
   WHAT_A_GO_NEEDS,
 } from "@/lib/caddy/credits";
 import { sticker, TARIFF } from "@/lib/tariff";
@@ -130,6 +131,40 @@ describe("the top-up offers and the tariff agree", () => {
     // condition, the buttons name the money.
     expect(WHAT_A_GO_NEEDS).toMatch(/\bgoe?s?\b/i);
     expect(WHAT_A_GO_NEEDS).not.toMatch(/£|\$|\d+\.\d\d/);
+  });
+});
+
+/**
+ * The rule the spent panel was a boolean short of.
+ *
+ * That panel says "this green fee has planned all its courses" and carries
+ * the door to the top-up shelf. It was keyed on the allowance alone, and an
+ * empty allowance is what a spent fee and a fee that was never bought both
+ * look like — so the shelf was shown to hosts who had never paid for
+ * anything, which is the £5 rung reading as the cheap way in. The till
+ * refused the sale; the screen should never have offered it.
+ */
+describe("a fee is spent only if there is a fee", () => {
+  it("is not spent when there is no fee at all — the bug", () => {
+    // The reported case: nothing on the account, so no grants and no balance.
+    // Identical to a spent fee from the allowance's side, and the opposite
+    // thing to say to the host.
+    expect(feeIsSpent({ hasPass: false, canPlan: false })).toBe(false);
+  });
+
+  it("is spent when a fee is held and has nothing left", () => {
+    expect(feeIsSpent({ hasPass: true, canPlan: false })).toBe(true);
+  });
+
+  it("is not spent while the fee can still plan", () => {
+    expect(feeIsSpent({ hasPass: true, canPlan: true })).toBe(false);
+  });
+
+  it("is not spent on a database that has not caught up", () => {
+    // `caddyAllowance` answers `canPlan: true` when the ledger is mid-deploy,
+    // deliberately — refusing a paid host because a function is missing is the
+    // failure that branch keeps re-learning. The panel must agree.
+    expect(feeIsSpent({ hasPass: false, canPlan: true })).toBe(false);
   });
 });
 

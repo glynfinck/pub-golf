@@ -41,7 +41,11 @@ import {
 } from "@/lib/actions/caddy";
 import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
 import { GreenFeeSheet } from "@/components/round/green-fee-sheet";
-import { CADDY_CREDITS_SPENT, freshCourseNotice } from "@/lib/caddy/credits";
+import {
+  CADDY_CREDITS_SPENT,
+  feeIsSpent,
+  freshCourseNotice,
+} from "@/lib/caddy/credits";
 import {
   decodeEvents,
   thinkingTail,
@@ -885,7 +889,15 @@ export function CaddyGroup({
   // thing they already own, and the two free ways on. The drafting table below
   // is untouched — the manual builder never cost anything and still does not,
   // which is the sentence this panel exists to make sure nobody misses.
-  if (allowance && !allowance.canPlan && !sessionId) {
+  //
+  // Through `feeIsSpent`, because the condition here used to be the allowance
+  // alone — and an empty allowance is what a spent fee and a fee nobody ever
+  // bought both look like. That put this panel, its "this green fee has
+  // planned all its courses" and its door to the top-up shelf in front of
+  // hosts who had never paid for anything. See `feeIsSpent` for the whole of
+  // it; with no pass the group falls through to the brief, where asking for a
+  // course is answered with the green fee.
+  if (allowance && feeIsSpent({ hasPass, canPlan: allowance.canPlan }) && !sessionId) {
     return (
       <div
         className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
@@ -1185,8 +1197,21 @@ export function CaddyGroup({
           setDrawOpen(false);
         }}
       />
+      {/* The confirmation is entirely about a fee: what a fresh card writes
+          over, how long the day has to run, how many goes are left after
+          this one. A host without one was being shown all three — "your
+          fee's day begins when you tee off" over a fee they had never
+          bought, and "this is the last whole card on it" counted off an
+          allowance of nothing. Same conflation as the spent panel, one
+          screen earlier and without the shelf.
+
+          So with no fee there is nothing to confirm: the ask goes straight
+          to the server, which answers it with the green fee. The price
+          still arrives with the refusal, which is the covenant's own
+          order. (The ask now goes via the open step — same gate, same
+          refusal, same sheet.) */}
       <Button
-        onClick={() => setConfirming(true)}
+        onClick={() => (hasPass ? setConfirming(true) : openMenu())}
         disabled={pending || !(where.trim() || stroke)}
       >
         <PendingLabel
