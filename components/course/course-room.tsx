@@ -76,8 +76,14 @@ export function CourseRoom({
 
       {/* The floor: the draw surface, edge to edge. Without a browser key
           there is no map and no apology — the panel's own fields still plan
-          a round, exactly as they always have. */}
-      <div className="relative min-h-0 flex-1">
+          a round, exactly as they always have.
+
+          **Flex column, and it has to be.** `DrawSurface` sizes itself as a
+          flex *child* (`flex-1`), which is how it fills the sheet it was
+          written for. Handed a plain block parent it has no height at all,
+          the `size-full` map inside it resolves to zero pixels, and the room
+          renders a map nobody can see — which is exactly what it did. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {MAPS_BROWSER_KEY ? (
           <APIProvider apiKey={MAPS_BROWSER_KEY}>
             <DrawSurface

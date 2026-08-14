@@ -121,7 +121,11 @@ interface Frozen {
 /**
  * The draw surface itself, exported because the Course Room's map *is* this
  * — there the pen is not a sheet you open, it is the screen you land on.
- * Must sit inside an `APIProvider`; it renders its own `<Map>`.
+ *
+ * Two things it needs from whoever mounts it: an `APIProvider` above it (it
+ * renders its own `<Map>`), and **a flex-column parent** — it takes its
+ * height as a flex child, so a plain block parent leaves it zero pixels tall
+ * and the map inside it invisible. The room learned that the hard way.
  */
 export function DrawSurface({
   centre,
