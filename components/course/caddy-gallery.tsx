@@ -16,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { RetractingPanel } from "@/components/course/retracting-panel";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
@@ -24,10 +25,7 @@ import {
   type MenuNode,
   type MenuRoute,
 } from "@/lib/caddy/menu";
-import {
-  HOLE_CHOICES,
-  STRETCH_CHOICES,
-} from "@/lib/caddy/brief";
+import { HOLE_CHOICES, STRETCH_CHOICES } from "@/lib/caddy/brief";
 import { WALK_MINUTES_PER_KM } from "@/lib/geo";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { cn } from "@/lib/utils";
@@ -189,7 +187,9 @@ export function CaddyGallery({
             tap to watch
           </span>
         </span>
-        <span className="shrink-0 text-[11px] font-bold text-fairway">Watch</span>
+        <span className="shrink-0 text-[11px] font-bold text-fairway">
+          Watch
+        </span>
       </button>,
       body,
     );
@@ -233,6 +233,13 @@ function GalleryBody({
   const [routeIndex, setRouteIndex] = useState(0);
   /** The pub the host tapped, if any. Null is the ordinary state. */
   const [tapped, setTapped] = useState<TappedPub | null>(null);
+  /**
+   * Whether the furniture is up. Up to begin with — the panel is where the
+   * whole act happens — and a host who pushes it down to watch the map keeps
+   * it down as the stages pass, because the tab tells them what is under it.
+   * Springing back open at every stage change would be arguing with them.
+   */
+  const [panelOpen, setPanelOpen] = useState(true);
 
   /**
    * The walks on offer: the server's menu as dealt, re-routed in the browser
@@ -241,14 +248,18 @@ function GalleryBody({
    */
   const routes: MenuRoute[] = useMemo(() => {
     if (!state.menu) return [];
-    if (dialHoles === holes && dialStretch === stretch) return state.menu.routes;
+    if (dialHoles === holes && dialStretch === stretch)
+      return state.menu.routes;
     return rerouteMenu(state.menu, { holes: dialHoles, stretch: dialStretch });
   }, [state.menu, dialHoles, dialStretch, holes, stretch]);
-  const route = routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
+  const route =
+    routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
 
   // The widening: the overlay grows from the middle of the screen unless
   // motion is reduced, in which case it is simply there.
-  const grow = reducedMotion ? "" : "animate-in fade-in zoom-in-95 duration-300";
+  const grow = reducedMotion
+    ? ""
+    : "animate-in fade-in zoom-in-95 duration-300";
 
   if (mapsFailed) return null;
 
@@ -279,6 +290,22 @@ function GalleryBody({
         )
       : [];
 
+  // Down, the tab is the whole panel, so it says what the panel is holding —
+  // and at the menu it names the walk on the map, which is the one fact worth
+  // a row when the controls that chose it are hidden.
+  const panelLabel =
+    state.stage === "opening"
+      ? "Walking the patch"
+      : state.stage === "dressing"
+        ? "Dressing the card"
+        : state.stage === "menu"
+          ? route
+            ? `The walks · ${route.character}`
+            : "The walks"
+          : state.stage === "done"
+            ? "The card"
+            : "The caddy lost the ball";
+
   const stats =
     route && state.stage === "menu"
       ? [
@@ -291,17 +318,19 @@ function GalleryBody({
 
   return (
     <div
-      className={cn(
-        "fixed inset-0 z-50 flex flex-col bg-background",
-        grow,
-      )}
+      className={cn("fixed inset-0 z-50 flex flex-col bg-background", grow)}
       role="dialog"
       aria-label="The gallery — the caddy planning your round"
       data-testid="caddy-gallery"
     >
-      {/* The map is the screen. Everything else floats over it. */}
-      <div className="relative flex-1">
-        <APIProvider apiKey={MAPS_BROWSER_KEY} onError={() => setMapsFailed(true)}>
+      {/* The map is the screen. Everything else floats over it. `min-h-0` so
+          a panel standing at its full height squeezes the map rather than
+          pushing the bottom of it off the glass. */}
+      <div className="relative min-h-0 flex-1">
+        <APIProvider
+          apiKey={MAPS_BROWSER_KEY}
+          onError={() => setMapsFailed(true)}
+        >
           <Map
             className="size-full"
             mapId={mapId()}
@@ -343,7 +372,9 @@ function GalleryBody({
               </AdvancedMarker>
             ))}
             {/* The walk under consideration — dotted, the house's own line. */}
-            {walkPath.length > 1 ? <DottedWalk path={walkPath} dark={dark} /> : null}
+            {walkPath.length > 1 ? (
+              <DottedWalk path={walkPath} dark={dark} />
+            ) : null}
             {state.stage === "menu" && route
               ? route.stops.map((id, index) => {
                   const node = byId[id];
@@ -368,7 +399,9 @@ function GalleryBody({
                       <div
                         className={cn(
                           "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                          index === route.stops.length - 1 ? "bg-marker" : "bg-fairway",
+                          index === route.stops.length - 1
+                            ? "bg-marker"
+                            : "bg-fairway",
                         )}
                       >
                         {index + 1}
@@ -417,7 +450,9 @@ function GalleryBody({
                   ) : null,
                 )
               : null}
-            {donePath.length > 1 ? <DottedWalk path={donePath} dark={dark} /> : null}
+            {donePath.length > 1 ? (
+              <DottedWalk path={donePath} dark={dark} />
+            ) : null}
           </Map>
         </APIProvider>
 
@@ -457,7 +492,9 @@ function GalleryBody({
                         className="size-3 fill-marker text-marker"
                         aria-hidden
                       />
-                      <span className="tabular">{tapped.rating.toFixed(1)}</span>
+                      <span className="tabular">
+                        {tapped.rating.toFixed(1)}
+                      </span>
                       {tapped.reviewCount ? (
                         <span className="tabular">
                           ({tapped.reviewCount.toLocaleString()})
@@ -513,148 +550,190 @@ function GalleryBody({
         </button>
       </div>
 
-      {/* Below the map: the act's own furniture, in the app's column. */}
-      <div className="mx-auto w-full max-w-md px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3">
-        {state.stage === "menu" && state.menu ? (
-          <div className="flex flex-col gap-2.5">
-            <div
-              className="flex flex-wrap gap-1.5"
-              role="radiogroup"
-              aria-label="The walks on offer"
-            >
-              {routes.map((entry, index) => (
-                <Chip
-                  key={`${entry.character}-${index}`}
-                  role="radio"
-                  aria-checked={index === routeIndex}
-                  active={index === routeIndex}
-                  onClick={() => setRouteIndex(index)}
-                >
-                  {entry.character}
-                </Chip>
-              ))}
-            </div>
-            {stats ? (
-              <p className="text-center text-[11px] text-muted-foreground tabular">{stats}</p>
-            ) : null}
-            {/* The patch's shape, where it is remarkable: two pockets with a
+      {/* Below the map: the act's own furniture, on the same tab the course
+          room's brief uses. The menu is the reason it retracts — chips, stats,
+          two dial rows and two buttons is most of a phone, and the walk those
+          controls are steering is drawn on the half of the screen they were
+          covering. A refusal is the one thing pinned open. */}
+      <RetractingPanel
+        open={panelOpen}
+        onToggle={
+          state.stage === "failed" ? undefined : () => setPanelOpen((up) => !up)
+        }
+        label={panelLabel}
+      >
+        {/* The panel itself already clears the home indicator; this is only
+            the furniture's own breathing room. */}
+        <div className="px-4 pt-1 pb-3">
+          {state.stage === "menu" && state.menu ? (
+            <div className="flex flex-col gap-2.5">
+              <div
+                className="flex flex-wrap gap-1.5"
+                role="radiogroup"
+                aria-label="The walks on offer"
+              >
+                {routes.map((entry, index) => (
+                  <Chip
+                    key={`${entry.character}-${index}`}
+                    role="radio"
+                    aria-checked={index === routeIndex}
+                    active={index === routeIndex}
+                    onClick={() => setRouteIndex(index)}
+                  >
+                    {entry.character}
+                  </Chip>
+                ))}
+              </div>
+              {stats ? (
+                <p className="text-center text-[11px] text-muted-foreground tabular">
+                  {stats}
+                </p>
+              ) : null}
+              {/* The patch's shape, where it is remarkable: two pockets with a
                 march between them, or one street. A note on every patch
                 would be a note nobody reads. */}
-            {state.menu.note ? (
-              <p className="text-center font-serif text-[11px] italic text-muted-foreground">
-                {state.menu.note}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-1.5" aria-label="Holes">
-              {HOLE_CHOICES.map((count) => (
-                <Chip
-                  key={count}
-                  active={dialHoles === count}
-                  onClick={() => {
-                    setDialHoles(count);
-                    setRouteIndex(0);
-                  }}
-                >
-                  {count}
-                </Chip>
-              ))}
-              <span className="mx-1 text-[10px] text-muted-foreground">·</span>
-              {STRETCH_CHOICES.map((entry) => (
-                <Chip
-                  key={entry.id}
-                  active={dialStretch === entry.id}
-                  onClick={() => {
-                    setDialStretch(entry.id);
-                    setRouteIndex(0);
-                  }}
-                >
-                  {entry.label}
-                </Chip>
-              ))}
-            </div>
-            <p className="text-center text-[10px] text-muted-foreground">
-              Every tap re-routes on the spot — choosing is free.
-            </p>
-            <Button
-              className="w-full"
-              onClick={() =>
-                onDress({
-                  route: route?.stops ?? null,
-                  holes: dialHoles,
-                  stretch: dialStretch,
-                })
-              }
-              data-testid="dress-this-walk"
-            >
-              Dress this walk
-            </Button>
-            <Button
-              variant="outline"
-              size="compact"
-              className="h-11 w-full"
-              onClick={() =>
-                onDress({ route: null, holes: dialHoles, stretch: dialStretch })
-              }
-            >
-              Caddy&rsquo;s choice
-            </Button>
-          </div>
-        ) : null}
-
-        {state.stage === "opening" || state.stage === "dressing" ? (
-          <div className="flex min-h-16 flex-col items-center gap-1 rounded-xl border border-border bg-card px-4 py-3">
-            {state.doing ? (
-              <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
-                {state.doing}
-              </p>
-            ) : (
-              <p className="text-[11px] font-semibold text-fairway">
-                {state.stage === "opening" ? "Walking the patch" : "Dressing the card"}
-              </p>
-            )}
-            {state.thinking ? (
-              <p
-                aria-live="off"
-                className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+              {state.menu.note ? (
+                <p className="text-center font-serif text-[11px] italic text-muted-foreground">
+                  {state.menu.note}
+                </p>
+              ) : null}
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                aria-label="Holes"
               >
-                {state.thinking}
+                {HOLE_CHOICES.map((count) => (
+                  <Chip
+                    key={count}
+                    active={dialHoles === count}
+                    onClick={() => {
+                      setDialHoles(count);
+                      setRouteIndex(0);
+                    }}
+                  >
+                    {count}
+                  </Chip>
+                ))}
+                <span className="mx-1 text-[10px] text-muted-foreground">
+                  ·
+                </span>
+                {STRETCH_CHOICES.map((entry) => (
+                  <Chip
+                    key={entry.id}
+                    active={dialStretch === entry.id}
+                    onClick={() => {
+                      setDialStretch(entry.id);
+                      setRouteIndex(0);
+                    }}
+                  >
+                    {entry.label}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-center text-[10px] text-muted-foreground">
+                Every tap re-routes on the spot — choosing is free.
               </p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground">
-                {state.stage === "opening" ? "About ten seconds." : "Won’t be long."}
-              </p>
-            )}
-          </div>
-        ) : null}
+              <Button
+                className="w-full"
+                onClick={() =>
+                  onDress({
+                    route: route?.stops ?? null,
+                    holes: dialHoles,
+                    stretch: dialStretch,
+                  })
+                }
+                data-testid="dress-this-walk"
+              >
+                Dress this walk
+              </Button>
+              <Button
+                variant="outline"
+                size="compact"
+                className="h-11 w-full"
+                onClick={() =>
+                  onDress({
+                    route: null,
+                    holes: dialHoles,
+                    stretch: dialStretch,
+                  })
+                }
+              >
+                Caddy&rsquo;s choice
+              </Button>
+            </div>
+          ) : null}
 
-        {state.stage === "done" ? (
-          <div className="flex flex-col gap-2">
-            {/* Street truth, where the streets answered for every leg. */}
-            {state.course?.legMinutes?.length &&
-            state.course.legMinutes.every((leg) => leg !== null) ? (
-              <p className="text-center text-[11px] text-muted-foreground tabular">
-                Walks checked against the streets —{" "}
-                {state.course.legMinutes.reduce((sum, leg) => sum + (leg ?? 0), 0)}{" "}
-                min all told.
-              </p>
-            ) : null}
-            <Button className="w-full" onClick={onClose} data-testid="gallery-done">
-              Back to the table
-            </Button>
-          </div>
-        ) : null}
+          {state.stage === "opening" || state.stage === "dressing" ? (
+            <div className="flex min-h-16 flex-col items-center gap-1 rounded-xl border border-border bg-card px-4 py-3">
+              {state.doing ? (
+                <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
+                  {state.doing}
+                </p>
+              ) : (
+                <p className="text-[11px] font-semibold text-fairway">
+                  {state.stage === "opening"
+                    ? "Walking the patch"
+                    : "Dressing the card"}
+                </p>
+              )}
+              {state.thinking ? (
+                <p
+                  aria-live="off"
+                  className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+                >
+                  {state.thinking}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  {state.stage === "opening"
+                    ? "About ten seconds."
+                    : "Won’t be long."}
+                </p>
+              )}
+            </div>
+          ) : null}
 
-        {state.stage === "failed" ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-center text-xs text-hazard">
-              {state.error ?? "The caddy lost the ball. Ask again — this one's free."}
-            </p>
-            <Button variant="outline" size="compact" className="h-11 w-full" onClick={onClose}>
-              Back to the table
-            </Button>
-          </div>
-        ) : null}
-      </div>
+          {state.stage === "done" ? (
+            <div className="flex flex-col gap-2">
+              {/* Street truth, where the streets answered for every leg. */}
+              {state.course?.legMinutes?.length &&
+              state.course.legMinutes.every((leg) => leg !== null) ? (
+                <p className="text-center text-[11px] text-muted-foreground tabular">
+                  Walks checked against the streets —{" "}
+                  {state.course.legMinutes.reduce(
+                    (sum, leg) => sum + (leg ?? 0),
+                    0,
+                  )}{" "}
+                  min all told.
+                </p>
+              ) : null}
+              <Button
+                className="w-full"
+                onClick={onClose}
+                data-testid="gallery-done"
+              >
+                Back to the table
+              </Button>
+            </div>
+          ) : null}
+
+          {state.stage === "failed" ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-center text-xs text-hazard">
+                {state.error ??
+                  "The caddy lost the ball. Ask again — this one's free."}
+              </p>
+              <Button
+                variant="outline"
+                size="compact"
+                className="h-11 w-full"
+                onClick={onClose}
+              >
+                Back to the table
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      </RetractingPanel>
     </div>
   );
 }
@@ -704,7 +783,9 @@ function FrameNodes({
           : [],
       )
     : nodes;
-  const key = points.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join("|");
+  const key = points
+    .map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`)
+    .join("|");
   useEffect(() => {
     if (!map || points.length === 0) return;
     const bounds = points.reduce(
