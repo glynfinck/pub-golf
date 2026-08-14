@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
-import { ExternalLink, Star, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowLeftRight,
+  ArrowRight,
+  ExternalLink,
+  RotateCcw,
+  Star,
+  X,
+} from "lucide-react";
 import {
   AdvancedMarker,
   AdvancedMarkerAnchorPoint,
@@ -17,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { RetractingPanel } from "@/components/course/retracting-panel";
+import { swapOptions, walkStats, withMove, withSwap } from "@/lib/caddy/swap";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
@@ -94,6 +103,10 @@ interface TappedPub {
   lng: number;
   /** Set only once the card exists — its dressing, in the house's words. */
   hole?: { number: number; drink: string; par: number; hazard: string | null };
+  /** Where this pub stands in the walk being chosen, when it stands in one.
+   * Null for a candidate pin nobody has picked and for the finished card,
+   * which is the drafting table's to edit rather than the menu's. */
+  stopIndex?: number | null;
 }
 
 /** Google's own page for the place. A link out rather than a fetch: their
@@ -113,6 +126,10 @@ const STAGE_LINES: Record<GalleryStage, string> = {
 };
 
 const noSubscription = () => () => {};
+
+/** The swap row's buttons: small, but still a 36px target apiece. */
+const swapButton =
+  "flex min-h-9 items-center justify-center gap-1 rounded-lg border border-border px-2.5 text-[11px] font-bold hover:bg-secondary disabled:opacity-30";
 
 /** What the pill says for each stage it can be minimised in. */
 const PILL_LINES: Partial<Record<GalleryStage, string>> = {
@@ -234,6 +251,16 @@ function GalleryBody({
   /** The pub the host tapped, if any. Null is the ordinary state. */
   const [tapped, setTapped] = useState<TappedPub | null>(null);
   /**
+   * The host's own version of the chosen walk, once they have changed one.
+   *
+   * Null means "the caddy's, as offered" — so the menu is unchanged until
+   * somebody touches it, and every dial that re-routes clears this rather than
+   * silently keeping a hand-edit on top of a different walk.
+   */
+  const [edited, setEdited] = useState<string[] | null>(null);
+  /** Whether the tapped stop is showing its alternatives. */
+  const [swapping, setSwapping] = useState(false);
+  /**
    * Whether the furniture is up. Up to begin with — the panel is where the
    * whole act happens — and a host who pushes it down to watch the map keeps
    * it down as the stages pass, because the tab tells them what is under it.
@@ -254,6 +281,14 @@ function GalleryBody({
   }, [state.menu, dialHoles, dialStretch, holes, stretch]);
   const route =
     routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
+  /**
+   * The walk actually on the map: the host's edit where they have made one,
+   * the caddy's offer otherwise. Everything downstream — the line drawn, the
+   * numbers under it, and what gets dressed — reads this rather than
+   * `route.stops`, so a swapped stop is the walk in every sense and not just
+   * on the pins.
+   */
+  const stops = edited ?? route?.stops ?? [];
 
   // The widening: the overlay grows from the middle of the screen unless
   // motion is reduced, in which case it is simply there.
@@ -275,7 +310,7 @@ function GalleryBody({
     state.stage === "dressing"
       ? state.picked.filter((id) => byId[id] != null)
       : state.stage === "menu" && route
-        ? route.stops
+        ? stops
         : [];
   const walkPath = walkIds.flatMap((id) => {
     const node = byId[id];
@@ -306,13 +341,67 @@ function GalleryBody({
             ? "The card"
             : "The caddy lost the ball";
 
+  // Recomputed from the walk on screen rather than read off the route the
+  // caddy offered — the moment a stop is swapped those two are different
+  // walks, and a stat line describing the wrong one is worse than none.
+  const shown = walkStats(stops, state.menu?.nodes ?? []);
+
+  /** What else could stand where the tapped stop stands. Recomputed per
+   * render because it is a handful of distances over nodes already in hand —
+   * memoising it would cost more than it saves and could go stale on a swap. */
+  const alternatives =
+    tapped?.stopIndex != null && state.stage === "menu"
+      ? swapOptions(stops, tapped.stopIndex, state.menu?.nodes ?? [])
+      : [];
+
+  /**
+   * The three edits, each of which leaves the card open on the pub it now
+   * concerns rather than closing under the thumb that made the change.
+   * Event handlers, not effects — the strict hooks rules stay satisfied and
+   * the walk only ever changes because somebody asked it to.
+   */
+  function retap(next: string[], index: number) {
+    setEdited(next);
+    const node = state.menu?.nodes.find((entry) => entry.id === next[index]);
+    if (!node) return;
+    setTapped({
+      stopIndex: index,
+      name: node.name,
+      address: node.address,
+      rating: node.rating,
+      reviewCount: node.reviewCount,
+      lat: node.lat,
+      lng: node.lng,
+    });
+  }
+
+  function swapStop(index: number, id: string) {
+    retap(withSwap(stops, index, id), index);
+    setSwapping(false);
+  }
+
+  function moveStop(index: number, delta: number) {
+    const next = withMove(stops, index, delta);
+    // Follow the pub, not the position: the host moved *this* pub, so the
+    // card should still be about it once it has moved.
+    retap(next, Math.min(Math.max(index + delta, 0), next.length - 1));
+  }
+
+  function restoreWalk() {
+    setEdited(null);
+    setSwapping(false);
+    setTapped(null);
+  }
   const stats =
     route && state.stage === "menu"
       ? [
-          `${route.totalKm.toFixed(1)} km`,
-          `longest leg ${Math.max(1, Math.round(route.worstLegKm * WALK_MINUTES_PER_KM))} min`,
-          `${route.stops.length} pubs`,
-          `${route.variety} kinds`,
+          `${shown.totalKm.toFixed(1)} km`,
+          `longest leg ${Math.max(1, Math.round(shown.worstLegKm * WALK_MINUTES_PER_KM))} min`,
+          `${stops.length} pubs`,
+          // Variety counts kinds of place, which lives on the router's own
+          // nodes rather than the lean ones — so it is offered for the walk
+          // the router described and withheld for one the host has rewritten.
+          ...(edited ? [] : [`${route.variety} kinds`]),
         ].join(" · ")
       : null;
 
@@ -376,7 +465,7 @@ function GalleryBody({
               <DottedWalk path={walkPath} dark={dark} />
             ) : null}
             {state.stage === "menu" && route
-              ? route.stops.map((id, index) => {
+              ? stops.map((id, index) => {
                   const node = byId[id];
                   if (!node) return null;
                   return (
@@ -385,21 +474,23 @@ function GalleryBody({
                       position={{ lat: node.lat, lng: node.lng }}
                       anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                       title={`Hole ${index + 1} — ${node.name}`}
-                      onClick={() =>
+                      onClick={() => {
+                        setSwapping(false);
                         setTapped({
+                          stopIndex: index,
                           name: node.name,
                           address: node.address,
                           rating: node.rating,
                           reviewCount: node.reviewCount,
                           lat: node.lat,
                           lng: node.lng,
-                        })
-                      }
+                        });
+                      }}
                     >
                       <div
                         className={cn(
                           "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                          index === route.stops.length - 1
+                          index === stops.length - 1
                             ? "bg-marker"
                             : "bg-fairway",
                         )}
@@ -534,6 +625,114 @@ function GalleryBody({
               Hours, photos and reviews on Google
               <ExternalLink className="size-3" aria-hidden />
             </a>
+
+            {/* Changing the walk, in the browser, for nothing.
+                "Not that pub" is the commonest note a host has and its only
+                answers were re-roll the whole card — a paid go — or edit it by
+                hand afterwards. This is neither: the nodes are already here,
+                so a stop can be exchanged or moved as many times as it takes
+                before a credit is spent on dressing the result. */}
+            {tapped.stopIndex != null && state.stage === "menu" ? (
+              <div
+                className="mt-2 border-t border-border pt-2"
+                data-testid="swap-controls"
+              >
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    aria-label="Move this pub earlier in the walk"
+                    disabled={tapped.stopIndex === 0}
+                    onClick={() => moveStop(tapped.stopIndex!, -1)}
+                    className={swapButton}
+                  >
+                    <ArrowLeft className="size-3" aria-hidden />
+                    Earlier
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Move this pub later in the walk"
+                    disabled={tapped.stopIndex === stops.length - 1}
+                    onClick={() => moveStop(tapped.stopIndex!, 1)}
+                    className={swapButton}
+                  >
+                    Later
+                    <ArrowRight className="size-3" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    aria-expanded={swapping}
+                    onClick={() => setSwapping((open) => !open)}
+                    className={cn(swapButton, "flex-1 text-fairway")}
+                    data-testid="swap-open"
+                  >
+                    <ArrowLeftRight className="size-3" aria-hidden />
+                    {swapping ? "Keep this one" : "Swap this pub"}
+                  </button>
+                </div>
+
+                {swapping ? (
+                  <div className="mt-2 max-h-44 overflow-y-auto">
+                    {alternatives.length === 0 ? (
+                      <p className="py-2 text-center text-[11px] text-muted-foreground">
+                        Nothing else round here — every other pub the caddy
+                        found is already on the walk.
+                      </p>
+                    ) : (
+                      <ul className="flex flex-col">
+                        {alternatives.map((option) => (
+                          <li key={option.id}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                swapStop(tapped.stopIndex!, option.id)
+                              }
+                              className="flex min-h-11 w-full items-center gap-2 border-b border-border/60 px-0.5 text-left last:border-0"
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[12px] font-semibold">
+                                  {option.name}
+                                </span>
+                                <span className="tabular block text-[10px] text-muted-foreground">
+                                  {option.rating != null
+                                    ? `${option.rating.toFixed(1)}★ · `
+                                    : ""}
+                                  {Math.round(option.awayKm * 1000)} m away
+                                </span>
+                              </span>
+                              {/* What it does to the night, said plainly: a
+                                  tempting pub that adds a mile has to admit
+                                  to adding a mile. */}
+                              <span
+                                className={cn(
+                                  "tabular shrink-0 text-[10px] font-bold",
+                                  option.deltaKm > 0.05
+                                    ? "text-hazard"
+                                    : "text-fairway",
+                                )}
+                              >
+                                {option.deltaKm >= 0 ? "+" : "−"}
+                                {Math.abs(Math.round(option.deltaKm * 1000))} m
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+
+                {edited ? (
+                  <button
+                    type="button"
+                    onClick={restoreWalk}
+                    className="mt-1.5 flex min-h-9 w-full items-center justify-center gap-1.5 text-[10px] font-bold text-muted-foreground hover:text-fairway"
+                  >
+                    <RotateCcw className="size-3" aria-hidden />
+                    Back to the caddy&rsquo;s walk
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -578,7 +777,10 @@ function GalleryBody({
                     role="radio"
                     aria-checked={index === routeIndex}
                     active={index === routeIndex}
-                    onClick={() => setRouteIndex(index)}
+                    onClick={() => {
+                      setRouteIndex(index);
+                      setEdited(null);
+                    }}
                   >
                     {entry.character}
                   </Chip>
@@ -608,6 +810,7 @@ function GalleryBody({
                     onClick={() => {
                       setDialHoles(count);
                       setRouteIndex(0);
+                      setEdited(null);
                     }}
                   >
                     {count}
@@ -623,6 +826,7 @@ function GalleryBody({
                     onClick={() => {
                       setDialStretch(entry.id);
                       setRouteIndex(0);
+                      setEdited(null);
                     }}
                   >
                     {entry.label}
@@ -636,7 +840,7 @@ function GalleryBody({
                 className="w-full"
                 onClick={() =>
                   onDress({
-                    route: route?.stops ?? null,
+                    route: stops.length ? stops : null,
                     holes: dialHoles,
                     stretch: dialStretch,
                   })

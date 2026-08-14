@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   AdvancedMarker,
@@ -96,16 +96,24 @@ export function DrawWalkSheet({
       >
         <SheetTitle className="sr-only">Draw the walk</SheetTitle>
         <SheetDescription className="sr-only">
-          Frame the map on your patch, hold it still, and draw the walk with
-          one finger. The swath around your line is where the caddy will look.
+          Frame the map on your patch, hold it still, and draw the walk with one
+          finger. The swath around your line is where the caddy will look.
         </SheetDescription>
         {mapsFailed ? (
           <div className="flex flex-1 items-center justify-center px-8 text-center text-xs text-muted-foreground">
             The map would not load — the brief&apos;s own fields still work.
           </div>
         ) : (
-          <APIProvider apiKey={MAPS_BROWSER_KEY} onError={() => setMapsFailed(true)}>
-            <DrawSurface centre={centre} pins={pins} dark={dark} onUse={onUse} />
+          <APIProvider
+            apiKey={MAPS_BROWSER_KEY}
+            onError={() => setMapsFailed(true)}
+          >
+            <DrawSurface
+              centre={centre}
+              pins={pins}
+              dark={dark}
+              onUse={onUse}
+            />
           </APIProvider>
         )}
       </SheetContent>
@@ -128,17 +136,41 @@ interface Frozen {
  * height as a flex child, so a plain block parent leaves it zero pixels tall
  * and the map inside it invisible. The room learned that the hard way.
  */
+/**
+ * What the surface will do when something outside it asks.
+ *
+ * The stage rail lives in the room's header and has to be able to send the
+ * host back into an act this component owns — releasing the frame, or keeping
+ * it and dropping the line. Imperative rather than a prop the child reacts to,
+ * because reacting would mean an effect that calls setState, which the house's
+ * hooks rules forbid and which would fight the gesture that is already driving
+ * this surface.
+ */
+export interface DrawControls {
+  /** Let the map move again — back to choosing an area. */
+  release(): void;
+  /** Keep the frame the host lined up, drop the line — back to drawing. */
+  redraw(): void;
+}
+
 export function DrawSurface({
   centre,
   pins,
   dark,
   onUse,
+  onLockChange,
+  ref,
   useLabel = "Use this walk",
 }: {
   centre: { lat: number; lng: number } | null;
   pins: { id: string; lat: number; lng: number }[];
   dark: boolean;
   onUse: (stroke: StrokePoint[]) => void;
+  /** Whether the map is held still. Reported from the two event handlers that
+   * change it, never from an effect — so the room's stage rail can never
+   * disagree with the surface about which act is on. */
+  onLockChange?: (locked: boolean) => void;
+  ref?: React.Ref<DrawControls>;
   /** What the commit button says. The sheet hands the walk back to a form;
    * the room plans with it there and then. */
   useLabel?: string;
@@ -214,7 +246,12 @@ export function DrawSurface({
     const sw = bounds.getSouthWest();
     const rect = container.getBoundingClientRect();
     return {
-      bounds: { north: ne.lat(), south: sw.lat(), east: ne.lng(), west: sw.lng() },
+      bounds: {
+        north: ne.lat(),
+        south: sw.lat(),
+        east: ne.lng(),
+        west: sw.lng(),
+      },
       width: rect.width,
       height: rect.height,
     };
@@ -230,7 +267,9 @@ export function DrawSurface({
   function toScreen(f: Frozen, p: StrokePoint): { x: number; y: number } {
     return {
       x: ((p.lng - f.bounds.west) / (f.bounds.east - f.bounds.west)) * f.width,
-      y: ((f.bounds.north - p.lat) / (f.bounds.north - f.bounds.south)) * f.height,
+      y:
+        ((f.bounds.north - p.lat) / (f.bounds.north - f.bounds.south)) *
+        f.height,
     };
   }
 
@@ -256,13 +295,12 @@ export function DrawSurface({
     (reading
       ? "Reading the patch…"
       : drawing
-      ? stroke
-        ? `${inSwath.length} pubs on this walk`
-        : viewPubs
-          ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
-          : "One finger draws the walk"
-      : null);
-
+        ? stroke
+          ? `${inSwath.length} pubs on this walk`
+          : viewPubs
+            ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
+            : "One finger draws the walk"
+        : null);
 
   /** Kilometres across the frozen frame, corner to corner-ish. */
   function acrossKm(f: Frozen): number {
@@ -273,18 +311,41 @@ export function DrawSurface({
     );
   }
 
+  /** Let the map move again, and say so. Shared by the hand button and the
+   * stage rail, so both mean exactly the same thing. */
+  function releaseLock() {
+    setDrawing(false);
+    setStroke(null);
+    setRaw([]);
+    onLockChange?.(false);
+  }
+
+  useImperativeHandle(ref, () => ({
+    release: releaseLock,
+    // The frame stays: it is the answer to a question the host has already
+    // settled, and making them line the map up again to fix a wobbly line is
+    // the sort of thing that stops people redrawing at all.
+    redraw: () => {
+      setStroke(null);
+      setRaw([]);
+    },
+  }));
+
   function begin() {
     const f = freeze();
     if (!f) return;
     // Within reason: a locked view is a fetch and a density read, and past a
     // night's walking both are meaningless. Zoom in, then lock.
     if (acrossKm(f) > MAX_LOCK_KM) {
-      setLockNote("Zoom in a little — that view is more than a night's walking.");
+      setLockNote(
+        "Zoom in a little — that view is more than a night's walking.",
+      );
       return;
     }
     setLockNote(null);
     setFrozen(f);
     setDrawing(true);
+    onLockChange?.(true);
     setStroke(null);
     setRaw([]);
     setViewPubs(null);
@@ -307,10 +368,30 @@ export function DrawSurface({
     const tiles =
       acrossKm(f) > 1.6
         ? [
-            { north, south: (north + south) / 2, east: (east + west) / 2, west },
-            { north, south: (north + south) / 2, east, west: (east + west) / 2 },
-            { north: (north + south) / 2, south, east: (east + west) / 2, west },
-            { north: (north + south) / 2, south, east, west: (east + west) / 2 },
+            {
+              north,
+              south: (north + south) / 2,
+              east: (east + west) / 2,
+              west,
+            },
+            {
+              north,
+              south: (north + south) / 2,
+              east,
+              west: (east + west) / 2,
+            },
+            {
+              north: (north + south) / 2,
+              south,
+              east: (east + west) / 2,
+              west,
+            },
+            {
+              north: (north + south) / 2,
+              south,
+              east,
+              west: (east + west) / 2,
+            },
           ]
         : [f.bounds];
 
@@ -325,7 +406,11 @@ export function DrawSurface({
           .then((response) => response.json())
           .then(
             (data: {
-              results?: { id: string; lat: number | null; lng: number | null }[];
+              results?: {
+                id: string;
+                lat: number | null;
+                lng: number | null;
+              }[];
             }) => data.results ?? [],
           )
           // One tile failing is a thinner field, never a broken one.
@@ -386,7 +471,11 @@ export function DrawSurface({
   const strokePx =
     frozen && stroke ? stroke.map((p) => toScreen(frozen, p)) : null;
   const path = (pts: { x: number; y: number }[]) =>
-    pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    pts
+      .map(
+        (p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`,
+      )
+      .join(" ");
 
   return (
     <div className="relative min-h-0 flex-1" ref={surfaceRef}>
@@ -463,11 +552,7 @@ export function DrawSurface({
       {drawing ? (
         <button
           type="button"
-          onClick={() => {
-            setDrawing(false);
-            setStroke(null);
-            setRaw([]);
-          }}
+          onClick={releaseLock}
           aria-label="Pan the map again"
           className="absolute top-3 left-3 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-md"
         >
@@ -494,7 +579,9 @@ export function DrawSurface({
             pointerDown.current = true;
             event.currentTarget.setPointerCapture(event.pointerId);
             const rect = event.currentTarget.getBoundingClientRect();
-            setRaw([{ x: event.clientX - rect.left, y: event.clientY - rect.top }]);
+            setRaw([
+              { x: event.clientX - rect.left, y: event.clientY - rect.top },
+            ]);
             setStroke(null);
           }}
           onPointerMove={(event) => {

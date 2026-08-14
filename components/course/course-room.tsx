@@ -1,14 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { APIProvider } from "@vis.gl/react-google-maps";
 import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { CaddyGroup } from "@/components/course/caddy-group";
-import { DrawSurface } from "@/components/course/draw-walk-sheet";
+import {
+  DrawSurface,
+  type DrawControls,
+} from "@/components/course/draw-walk-sheet";
+import { StageRail } from "@/components/course/stage-rail";
+import { undoFor, type PlanStage } from "@/lib/caddy/stages";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
@@ -65,6 +70,42 @@ export function CourseRoom({
    * and the tab itself belong to `RetractingPanel`, which the gallery wears
    * too — one panel behaviour under both maps. */
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Whether the map is held still — reported by the surface's own handlers,
+   * so the rail and the pen can never disagree about which act is on. */
+  const [locked, setLocked] = useState(false);
+  /** What the caddy is doing, if anything. The rail closes the road back
+   * while a plan is in flight: there is nothing to go back to until it lands,
+   * and the fee is already spent. */
+  const [job, setJob] = useState<string | null>(null);
+  const draw = useRef<DrawControls | null>(null);
+
+  const progress = {
+    locked,
+    aimed: Boolean(stroke),
+    planning: job != null,
+    carded: landed != null,
+  };
+
+  /**
+   * Stepping back an act, undoing exactly what that act owns and no more.
+   *
+   * The rule is in `undoFor`, not here: back to Draw keeps the frame the host
+   * lined up, back to Tune keeps the line they drew, and only Area drops both.
+   * Getting that wrong is how a "back" button becomes a thing nobody presses.
+   */
+  function goToStage(stage: PlanStage) {
+    const undo = undoFor(stage);
+    if (undo.release) {
+      draw.current?.release();
+      setLocked(false);
+    } else if (undo.clearStroke) {
+      draw.current?.redraw();
+    }
+    if (undo.clearStroke) setStroke(null);
+    if (stage === "tune") setPanelOpen(true);
+    if (stage === "area" || stage === "draw") setPanelOpen(false);
+    if (stage !== "enrich") setLanded(null);
+  }
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col bg-background">
@@ -77,7 +118,7 @@ export function CourseRoom({
         >
           <ArrowLeft className="size-4" aria-hidden />
         </button>
-        <span className="eyebrow text-fairway">The course room</span>
+        <StageRail progress={progress} onGo={goToStage} />
       </header>
 
       {/* The floor: the draw surface, edge to edge. Without a browser key
@@ -93,10 +134,17 @@ export function CourseRoom({
         {MAPS_BROWSER_KEY ? (
           <APIProvider apiKey={MAPS_BROWSER_KEY}>
             <DrawSurface
+              ref={draw}
               centre={reach?.centre ?? null}
               pins={reach?.preview?.pins ?? []}
               dark={resolvedTheme === "dark"}
-              onUse={setStroke}
+              onLockChange={setLocked}
+              onUse={(drawn) => {
+                setStroke(drawn);
+                // The line is drawn, so the next question is the brief's —
+                // open it rather than making the host find the tab.
+                setPanelOpen(true);
+              }}
               useLabel="Take this walk to the brief"
             />
           </APIProvider>
@@ -172,6 +220,7 @@ export function CourseRoom({
               reach={reach}
               onReach={setReach}
               onSession={() => {}}
+              onStage={setJob}
               // A card landing opens the panel — an event, not an effect, so
               // the strict hooks rules stay satisfied and the host can push
               // it straight back down.
