@@ -136,6 +136,9 @@ function PubMapBody({
 
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<VenueResult[]>([]);
+  /** The list drawer's height: peek (map takes the sheet), half (the old
+   * split), full (reading the list). The grabber cycles them. */
+  const [drawer, setDrawer] = useState<"peek" | "half" | "full">("half");
   const [degraded, setDegraded] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | undefined>(undefined);
@@ -556,13 +559,42 @@ function PubMapBody({
         ) : null}
       </div>
 
-      <div className="flex h-[42%] min-h-44 shrink-0 flex-col border-t border-border bg-card">
-        <div className="px-4 pt-2.5 pb-1">
+      {/* The list, in a drawer. The map is the star of this sheet and the
+          list is on call: a grabber cycles peek → half → full, so a host
+          working the map keeps the whole screen and a host working the list
+          pulls it up. Heights are explicit because a transition needs two
+          ends to travel between. */}
+      <div
+        className={cn(
+          "flex shrink-0 flex-col border-t border-border bg-card",
+          "transition-[height] duration-300 motion-reduce:transition-none",
+          drawer === "peek"
+            ? "h-14"
+            : drawer === "half"
+              ? "h-[42%] min-h-44"
+              : "h-[75%] min-h-44",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() =>
+            setDrawer((current) =>
+              current === "peek" ? "half" : current === "half" ? "full" : "peek",
+            )
+          }
+          aria-label={
+            drawer === "full" ? "Collapse the pub list" : "Expand the pub list"
+          }
+          className="flex w-full flex-col items-center gap-1 px-4 pt-2"
+        >
+          <span aria-hidden className="h-1 w-9 rounded-full bg-border" />
           <p className="eyebrow">
             {searching
               ? "Scouting the patch…"
               : `${results.length} ${results.length === 1 ? "pub" : "pubs"} on this patch`}
           </p>
+        </button>
+        <div className="px-4 pb-1">
           {locateNote ? (
             <p className="text-[11px] text-muted-foreground">{locateNote}</p>
           ) : null}
