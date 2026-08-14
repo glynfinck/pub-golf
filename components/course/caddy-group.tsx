@@ -63,7 +63,6 @@ import type { CaddyMenu } from "@/lib/caddy/menu";
 import { DrawWalkSheet } from "@/components/course/draw-walk-sheet";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
-import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { formatTimeLeft } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -219,7 +218,6 @@ export function CaddyGroup({
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
   const [vibe, setVibe] = useState<VibeId>("traditional");
   const [particulars, setParticulars] = useState<ParticularId[]>([]);
-  const [whereTo, setWhereTo] = useState("");
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
   /** The walk, drawn — the brief's last escalation. Null is most rounds.
@@ -277,17 +275,10 @@ export function CaddyGroup({
   }
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
-  // Once a finish is named the pace stops being a choice and becomes a
-  // reading: the destination and the hole count decide it between them, and
-  // the chips would otherwise sit there claiming otherwise. Nothing is
-  // disabled — a host who changes their mind about the pace is really telling
-  // us to change the hole count, and seeing both move says so better than a
-  // greyed-out control would.
-  const derivedPace = reach && whereTo.trim() ? paceForReach(reach.km, holes) : null;
-  const stretchNote =
-    derivedPace === null
-      ? stretchMeaning(stretch)
-      : `${paceNote(derivedPace)} Set by finishing in ${whereTo.trim()}.`;
+  // One patch, one pace: the spacing chips mean exactly what they say now
+  // that nothing else sets the walk's length. A drawn walk overrides them
+  // with its own arc length, server-side, where it can be measured.
+  const stretchNote = stretchMeaning(stretch);
 
   /**
    * Where the caddy is about to look, resolved as the host types.
@@ -333,9 +324,9 @@ export function CaddyGroup({
       }
     };
     const timer = setTimeout(async () => {
-      const [from, to] = await Promise.all([lookup(where), lookup(whereTo)]);
+      const from = await lookup(where);
       if (cancelled) return;
-      const reach = reachOf(from?.centre ?? null, to?.centre ?? null, holes);
+      const reach = reachOf(from?.centre ?? null, null, holes);
       // The pre-flight rides on the reach: the same results that placed the
       // ring become the pins, the count and the echo, so the host sees what
       // the caddy is about to look at before anything is spent.
@@ -347,7 +338,7 @@ export function CaddyGroup({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [where, whereTo, holes, onReach]);
+  }, [where, holes, onReach]);
 
   /**
    * The brief, as the wire reads it. One assembly, because the straight plan
@@ -356,22 +347,20 @@ export function CaddyGroup({
   function briefBody(): Record<string, unknown> {
     return {
       where,
-      whereTo,
+      // Kept on the wire, never asked for: a drawn walk says where the night
+      // finishes, and a typed patch is one patch.
+      whereTo: "",
       /**
-       * The reach, but **only when a finish was actually named.**
+       * Always zero from here.
        *
-       * `reachOf` answers `{ km: 1.2 }` for a single patch — that is the
-       * ring's *radius*, not a distance to walk — and `targetKmFor`
-       * short-circuits on any `reachKm > 0`, returning `reachKm * 1.15`
-       * and never reaching the stretch arm. So every single-patch round
-       * was routed at a 1.38km target whatever the host picked, and the
-       * spacing chips did nothing at all: at 9 holes on Stretch the
-       * honest target is 6km.
-       *
-       * The same guard already exists for the on-screen pace note, which is
-       * how the screen could say "steady" while the router ignored it.
+       * `reachOf` answers `{ km: 1.2 }` for a single patch — the ring's
+       * *radius*, not a distance to walk — and `targetKmFor` short-circuits
+       * on any `reachKm > 0`, so sending it routed every round at a 1.38km
+       * target whatever the spacing chips said. With no destination to name,
+       * the only honest reach is a drawn walk's own arc length, and
+       * `readBrief` measures that server-side from the stroke.
        */
-      reachKm: whereTo.trim() ? (reach?.km ?? 0) : 0,
+      reachKm: 0,
       holes,
       vibe,
       particulars,
@@ -1071,33 +1060,15 @@ export function CaddyGroup({
         </p>
       </div>
 
-      {/* Optional, and quiet about it. Most rounds stay in one patch, so this
-          is a second line rather than a second decision — but a crawl is not
-          always nine doors off one street, and Finsbury Park to Broadway
-          Market is a real round somebody walked. Typing the same place twice
-          folds back to one patch in `readBrief`. */}
-      <div>
-        <FieldLabel htmlFor="caddy-where-to">
-          Finishing somewhere else?
-        </FieldLabel>
-        <Input
-          id="caddy-where-to"
-          value={whereTo}
-          onChange={(event) => setWhereTo(event.target.value.slice(0, WHERE_MAX))}
-          placeholder="Optional — Broadway Market"
-        />
-        <p className="mt-1 text-[10px] text-muted-foreground">
-          Leave it empty to stay in one patch.
-        </p>
-
-        {/* The same fact the ring shows, in words. It appears only when there
-            is something worth saying — a warning on every plan is a warning
-            nobody reads — and it appears *before* the fee is spent, which is
-            the whole point of doing the arithmetic on the brief screen. */}
-        {reach && whereTo.trim() ? (
-          <StretchNote km={reach.km} holes={holes} />
-        ) : null}
-      </div>
+      {/* **The destination field is gone.**
+          It asked the host to name where the night finishes — which the walk
+          they drew has already said, twice over: `gatherPubs` takes the
+          stroke's own ends as the corridor's, and `readBrief` measures its
+          arc length for the reach. Asking again was asking for something
+          already answered, and it brought a whole second pace control with
+          it. A typed patch is one patch now, paced by the spacing chips; a
+          drawn walk is paced by its own length. `whereTo` stays on the wire
+          and in `readBrief` so sessions written before this still read. */}
 
       <div>
         <FieldLabel htmlFor="caddy-holes">Holes</FieldLabel>
@@ -1318,26 +1289,5 @@ function CoveredBadge() {
     <span className="rounded-md border border-fairway px-1.5 py-0.5 text-[9px] font-bold tracking-[0.14em] text-fairway uppercase">
       Covered
     </span>
-  );
-}
-
-/**
- * What the destination does to the pace, and the warning if it is a lot.
- *
- * Both lines, because they are the same fact at two volumes. The first always
- * shows once a finish is named — the host has just handed over the number that
- * sets the pace, and watching it change is how they learn the two controls are
- * one control. The second only shows when the walk is long enough to be worth
- * a second thought.
- */
-function StretchNote({ km, holes }: { km: number; holes: number }) {
-  const warning = stretchWarning(km, holes);
-  return (
-    <>
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        Finishing there sets the pace: {paceNote(paceForReach(km, holes)).toLowerCase()}
-      </p>
-      {warning ? <p className="mt-1 text-[10px] text-hazard">{warning}</p> : null}
-    </>
   );
 }

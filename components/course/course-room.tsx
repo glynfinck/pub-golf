@@ -63,12 +63,13 @@ export function CourseRoom({
    * than a form. */
   const [landed, setLanded] = useState<PlannedCourse | null>(null);
   /**
-   * How much of the screen the brief is allowed.
+   * Whether the brief is up.
    *
-   * Compact by default, because the map is the work and half a phone of
-   * form left it a letterbox. Expanded is for actually filling the brief in;
-   * the grabber is the switch, and it is a real button so a thumb and a
-   * keyboard both reach it.
+   * **All the way down or all the way up**, never a slice of both. Peeked at
+   * a quarter of the screen it was neither: too small to fill in, big enough
+   * to take the map's bottom third for a form nobody was reading. Down it is
+   * a single tab; up it is the whole brief. The tab is a real button so a
+   * thumb and a keyboard both reach it.
    */
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -119,9 +120,14 @@ export function CourseRoom({
           to lose — the panel *is* the room's furniture. */}
       <div
         className={cn(
-          "shrink-0 overflow-y-auto rounded-t-2xl border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
+          "shrink-0 rounded-t-2xl border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
           "transition-[max-height] duration-300 motion-reduce:transition-none",
-          landed || panelOpen ? "max-h-[62dvh]" : "max-h-[26dvh]",
+          landed || panelOpen
+            ? "max-h-[82dvh] overflow-y-auto"
+            : // Down to the tab itself: the map gets everything else. Hidden
+              // rather than scrollable, so a collapsed brief cannot be
+              // scrolled inside a two-line window.
+              "max-h-[2.75rem] overflow-hidden",
         )}
       >
         <div className="mx-auto w-full max-w-md">
@@ -133,14 +139,14 @@ export function CourseRoom({
               onClick={() => setPanelOpen((open) => !open)}
               aria-expanded={panelOpen}
               aria-label={panelOpen ? "Give the map the screen" : "Open the brief"}
-              className="flex w-full items-center justify-center gap-1.5 pt-2 pb-0.5 text-[10px] font-bold tracking-[0.14em] text-muted-foreground uppercase"
+              className="flex min-h-11 w-full items-center justify-center gap-1.5 text-[10px] font-bold tracking-[0.14em] text-muted-foreground uppercase"
             >
               {panelOpen ? (
                 <ChevronDown size={13} aria-hidden />
               ) : (
                 <ChevronUp size={13} aria-hidden />
               )}
-              {panelOpen ? "The map" : "The brief"}
+              {panelOpen ? "The map" : stroke ? "The brief · walk drawn" : "The brief"}
             </button>
           )}
           {landed ? (
