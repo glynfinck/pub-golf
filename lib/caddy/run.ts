@@ -21,6 +21,7 @@ import {
   type PubSource,
 } from "@/lib/caddy/dossier";
 import { gatherPubs, type GatheredPub } from "@/lib/caddy/places";
+import { checkCard, contractRecord } from "@/lib/caddy/contract";
 import { planFailureNote, type PlannedCourse } from "@/lib/caddy/plan";
 import type { CaddyOffer } from "@/lib/caddy/stream";
 import { ipBiasFrom } from "@/lib/pub-search";
@@ -887,7 +888,7 @@ export async function runTurn(input: {
   /** The ledger line. Written for a failure too — the vendor billed us for it
    * either way — but marked `failed`, which is what keeps the host's promise
    * honest: the money counts, the card does not. */
-  const record = (failed: boolean, result: unknown) =>
+  const record = (failed: boolean, result: unknown, contract: unknown = null) =>
     input.supabase.from("caddy_turns").insert({
       session_id: input.sessionId,
       host: input.userId,
@@ -905,6 +906,9 @@ export async function runTurn(input: {
       // tools" and "the tools did nothing" stay different facts — see
       // lib/caddy/trace.ts for why it holds inputs and never replies.
       trace: (outcome.trace ?? null) as never,
+      // The Card Contract's findings on this card, for the clean-card rate.
+      // Null on a failure: there is no card to hold to anything.
+      contract: contract as never,
     });
 
   if (!outcome.ok) {
@@ -936,9 +940,23 @@ export async function runTurn(input: {
   // rather than the conversation it happened in: a session runs to sixty-five
   // turns, and by the time anyone triages "the caddy put a Wetherspoons on
   // hole four" the card they meant may have been rolled over twice.
-  const { data: filed, error } = await record(false, outcome.course)
+  // Scored before it is filed, so the turn row carries its own verdict. The
+  // contract is telemetry rather than a gate: a card with findings still
+  // lands — a hole with a note beats no card — and the findings are what
+  // price the next fix.
+  const contract = contractRecord(
+    checkCard(outcome.course.holes, input.brief, input.candidates),
+  );
+  let { data: filed, error } = await record(false, outcome.course, contract)
     .select("id")
     .maybeSingle();
+  if (error?.code === "42703") {
+    // The ledger predates the contract column for the minute a deploy takes.
+    // The card matters more than its score, so file it without one.
+    ({ data: filed, error } = await record(false, outcome.course)
+      .select("id")
+      .maybeSingle());
+  }
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
     if (error.code === "42501") return { error: FULL_SHIFT, offer: "more" };

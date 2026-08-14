@@ -529,6 +529,15 @@ export function parsePlan(
     walked[walked.length - 1] = { ...final, hazard: null, hazard_note: null };
   }
 
+  // The first hole is the router's decision for the same reason, so the
+  // no-hazard-on-the-first rule is applied here too. It was prompt-only, and
+  // a prompt-only rule is a hope: the club wants the group settled in before
+  // anything is taken away from them.
+  const opener = walked[0];
+  if (opener.hazard) {
+    walked[0] = { ...opener, hazard: null, hazard_note: null };
+  }
+
   // The caddy is asked to name the course and usually does. When it does not,
   // this is what a host reads, so it should at least be about *their* night:
   // "Shoreditch, nine holes" beats "The caddy's round", which is the same

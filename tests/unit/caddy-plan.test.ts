@@ -517,8 +517,26 @@ describe("the last hole", () => {
     const holes = result.course.holes;
     expect(holes[holes.length - 1].hazard).toBeNull();
     expect(holes[holes.length - 1].hazard_note).toBeNull();
-    // And only the last one — the earlier water hazards are untouched.
-    expect(holes.slice(0, -1).every((hole) => hole.hazard === "water")).toBe(true);
+    // The middle holes keep their water — only the ends carry rules. The
+    // first hole loses its hazard too, to the first-hole rule below.
+    expect(holes.slice(1, -1).every((hole) => hole.hazard === "water")).toBe(true);
+  });
+
+  it("never opens on a hazard, whatever kind it is", () => {
+    // The group settles in before anything is taken away from them. This was
+    // prompt-only, and a prompt-only rule is a hope — now it is stripped
+    // exactly as water-on-last is.
+    HAZARDS.forEach((hazard) => {
+      const result = parsePlan(
+        planWithHazard(["p1", "p2", "p3"], hazard.id),
+        CANDIDATES,
+        BRIEF,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.course.holes[0].hazard).toBeNull();
+      expect(result.course.holes[0].hazard_note).toBeNull();
+    });
   });
 
   it("lets a hazard that resolves on the drink finish the round", () => {

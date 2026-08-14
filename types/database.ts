@@ -293,6 +293,7 @@ export type Database = {
           ask: string | null
           cache_read_tokens: number
           cache_write_tokens: number
+          contract: Json | null
           cost_micropence: number
           created_at: string
           failed: boolean
@@ -310,6 +311,7 @@ export type Database = {
           ask?: string | null
           cache_read_tokens?: number
           cache_write_tokens?: number
+          contract?: Json | null
           cost_micropence?: number
           created_at?: string
           failed?: boolean
@@ -327,6 +329,7 @@ export type Database = {
           ask?: string | null
           cache_read_tokens?: number
           cache_write_tokens?: number
+          contract?: Json | null
           cost_micropence?: number
           created_at?: string
           failed?: boolean
