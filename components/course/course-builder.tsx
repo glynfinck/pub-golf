@@ -182,6 +182,8 @@ export function CourseBuilder({
   /** How far the round reaches, resolved from the brief's two areas. Held
    * here rather than in the group so the map and the form read one value. */
   const [reach, setReach] = useState<Reach | null>(null);
+  /** The caddy job's stage label, worn by the minimap while a plan runs. */
+  const [caddyStage, setCaddyStage] = useState<string | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -538,6 +540,7 @@ export function CourseBuilder({
             : null)
         }
         chip={patch ? null : reach?.preview ? echoLine(reach.preview) : null}
+        badge={caddyStage}
         drawKey={drawKey}
         ring={
           reach
@@ -585,6 +588,7 @@ export function CourseBuilder({
           filed={savedId !== null}
           allowance={allowance}
           onPatch={(pins) => setPatch({ pins, picked: [] })}
+          onStage={setCaddyStage}
           onReach={setReach}
           reach={reach}
           onPicked={(ids) =>

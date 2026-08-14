@@ -88,16 +88,30 @@ const STAGE_LINES: Record<GalleryStage, string> = {
 
 const noSubscription = () => () => {};
 
+/** What the pill says for each stage it can be minimised in. */
+const PILL_LINES: Partial<Record<GalleryStage, string>> = {
+  opening: "The caddy’s walking the patch",
+  menu: "Walks ready — come pick one",
+  dressing: "The caddy’s dressing the card",
+  failed: "The caddy lost the ball — take a look",
+};
+
 export function CaddyGallery({
   open,
+  active,
   nonce,
   state,
   holes,
   stretch,
   onDress,
   onClose,
+  onReopen,
 }: {
   open: boolean;
+  /** A plan is in flight (or failed unseen). This is what makes the job
+   * visible from every screen: closed-but-active renders the pill, because
+   * a running plan is visible everywhere or it is lost from everywhere. */
+  active: boolean;
   /** Bumped per plan. The body remounts on it, which is what re-seeds the
    * dials and the selection without a single state-syncing effect. */
   nonce: number;
@@ -107,6 +121,7 @@ export function CaddyGallery({
   stretch: number;
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
+  onReopen: () => void;
 }) {
   // Mounted portals only: the overlay renders into <body>, so no ancestor
   // transform can trap the fixed positioning. `useSyncExternalStore` is the
@@ -116,8 +131,42 @@ export function CaddyGallery({
     () => document.body,
     () => null,
   );
-  if (!open || !body) return null;
-  if (!MAPS_BROWSER_KEY) return null;
+  if (!body || !MAPS_BROWSER_KEY) return null;
+
+  // Minimised: the job wears the pill. Same component, second window — the
+  // Uber posture: closing the view never hides the work.
+  if (!open) {
+    const line = active ? PILL_LINES[state.stage] : undefined;
+    if (!line) return null;
+    return createPortal(
+      <button
+        type="button"
+        onClick={onReopen}
+        data-testid="caddy-pill"
+        aria-label={`${line} — reopen the caddy's plan`}
+        className="fixed bottom-20 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-2.5 rounded-full border border-fairway bg-card px-4 py-2.5 text-left shadow-lg"
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "size-2 shrink-0 rounded-full motion-reduce:animate-none",
+            state.stage === "failed" ? "bg-hazard" : "animate-pulse bg-marker",
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12px] font-bold">
+            {state.stage === "dressing" && state.doing ? state.doing : line}
+          </span>
+          <span className="block text-[10px] font-semibold text-muted-foreground">
+            tap to watch
+          </span>
+        </span>
+        <span className="shrink-0 text-[11px] font-bold text-fairway">Watch</span>
+      </button>,
+      body,
+    );
+  }
+
   return createPortal(
     <GalleryBody
       key={nonce}

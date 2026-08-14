@@ -88,6 +88,7 @@ export function RoutePreview({
   onOpen,
   ring,
   chip,
+  badge,
   drawKey = 0,
   className,
 }: {
@@ -117,6 +118,9 @@ export function RoutePreview({
    * short line on the map — the host's two-second catch for a wrong Camden.
    * Null when there is nothing worth echoing. */
   chip?: string | null;
+  /** The plan's stage, worn top-left while the caddy works — the minimap is
+   * one of the job's windows, so the walk on it always says what it is. */
+  badge?: string | null;
   drawKey?: number;
   className?: string;
 }) {
@@ -179,6 +183,12 @@ export function RoutePreview({
           )}
         </Map>
       </APIProvider>
+      {/* The job's stage, worn while the caddy works. */}
+      {badge ? (
+        <span className="pointer-events-none absolute top-2 left-2 rounded-full border border-fairway bg-card/90 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-fairway uppercase">
+          {badge}
+        </span>
+      ) : null}
       {/* The echo, floated over the map: what the typed name resolved to and
           how much is there. Inert on purpose — it is a fact, not a control. */}
       {chip ? (

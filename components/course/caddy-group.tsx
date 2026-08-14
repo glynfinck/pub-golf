@@ -91,6 +91,7 @@ export function CaddyGroup({
   onSession,
   onReach,
   reach,
+  onStage,
   session = null,
   reopen = null,
   passExpiresAt = null,
@@ -149,6 +150,9 @@ export function CaddyGroup({
   /** The reach as the builder currently holds it, so the warning under the
    * form and the ring on the map are read from one value. */
   reach?: Reach | null;
+  /** The job's stage, as a label the minimap wears — null when no plan is
+   * live. One of the three windows on the job (gallery, pill, badge). */
+  onStage?: (label: string | null) => void;
   className?: string;
 }) {
   const router = useRouter();
@@ -229,9 +233,32 @@ export function CaddyGroup({
   const [galleryError, setGalleryError] = useState<string | null>(null);
   /** Bumped per plan so the gallery's body remounts and re-seeds its dials. */
   const [galleryNonce, setGalleryNonce] = useState(0);
+  /** A plan is in flight or failed unseen — what keeps the pill honest. */
+  const [jobActive, setJobActive] = useState(false);
   /** The session the open step created, spent by the dress step. A ref: the
    * stream closure needs it without racing a state update. */
   const menuSession = useRef<string | null>(null);
+
+  /**
+   * One door for every stage change, so the three things that mirror the job
+   * — the gallery, the pill, and the minimap's badge — can never disagree
+   * about where the plan is.
+   */
+  function advance(next: GalleryStage) {
+    setGalleryStage(next);
+    if (next === "done") setJobActive(false);
+    onStage?.(
+      next === "opening"
+        ? "Walking the patch"
+        : next === "menu"
+          ? "Walks ready"
+          : next === "dressing"
+            ? "Dressing the card"
+            : next === "failed"
+              ? "The caddy lost the ball"
+              : null,
+    );
+  }
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
   // Once a finish is named the pace stops being a choice and becomes a
@@ -364,7 +391,7 @@ export function CaddyGroup({
       setThinking("");
       setDoing("");
       setPicked([]);
-      setGalleryStage("dressing");
+      advance("dressing");
       refusedRef.current = false;
       const lost = "The caddy lost the ball. Ask again — this one's free.";
       let failure: { error: string; detail?: string } | null = null;
@@ -378,7 +405,7 @@ export function CaddyGroup({
           body: JSON.stringify(request),
         });
       } catch {
-        setGalleryStage("failed");
+        advance("failed");
         setGalleryError(lost);
         return { error: lost };
       }
@@ -422,7 +449,7 @@ export function CaddyGroup({
           onTurn?.(event.turnId ?? null);
           await onCourse(event.course, []);
           setGalleryCourse(event.course);
-          setGalleryStage("done");
+          advance("done");
           landed = true;
         } else if (event.offer) {
           refusedRef.current = true;
@@ -458,7 +485,7 @@ export function CaddyGroup({
         if (!landed) {
           const rescued = await collect(failed.error, failed.detail);
           if (!("error" in rescued) || !rescued.error) return rescued;
-          setGalleryStage("failed");
+          advance("failed");
           setGalleryError(failed.error);
           return rescued;
         }
@@ -468,7 +495,7 @@ export function CaddyGroup({
       if (landed || refusedRef.current) return {};
       const rescued = await collect(lost);
       if ("error" in rescued && rescued.error) {
-        setGalleryStage("failed");
+        advance("failed");
         setGalleryError(lost);
       }
       return rescued;
@@ -495,7 +522,8 @@ export function CaddyGroup({
       setDoing("");
       setGalleryCourse(null);
       setGalleryError(null);
-      setGalleryStage("opening");
+      advance("opening");
+      setJobActive(true);
       setGalleryNonce((current) => current + 1);
       setGallery(true);
       const lost = "The caddy lost the ball. Ask again — this one's free.";
@@ -526,7 +554,7 @@ export function CaddyGroup({
       }
       menuSession.current = body.sessionId;
       setMenu(body.menu);
-      setGalleryStage("menu");
+      advance("menu");
       // The patch frames the drafting table's own map too, so leaving the
       // gallery lands on a view that already knows the neighbourhood.
       onPatch?.(
@@ -688,6 +716,8 @@ export function CaddyGroup({
   const galleryEl = (
     <CaddyGallery
       open={gallery}
+      active={jobActive}
+      onReopen={() => setGallery(true)}
       nonce={galleryNonce}
       state={{
         stage: galleryStage,
