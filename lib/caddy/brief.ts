@@ -205,6 +205,10 @@ export interface CaddyBrief {
   teeOffDay: number | null;
   /** Tee-off, minutes from midnight. */
   teeOffMinutes: number;
+  /** Venues struck from the patch by the host — someone's ex runs it, they
+   * were barred in 2019. Dropped before the dossier is built; the caddy
+   * never knows they existed, which is the amount it needs to know. */
+  excludedVenueIds: string[];
   /**
    * The walk, drawn: a simplified polyline in the host's own hand
    * (`lib/caddy/stroke.ts`). When present it outranks the named areas'
@@ -240,6 +244,13 @@ export function readBrief(raw: unknown): CaddyBrief | null {
       : 0;
   const startVenueId = readId(input.startVenueId);
   const finishVenueId = readId(input.finishVenueId);
+  const excludedVenueIds = (Array.isArray(input.excludedVenueIds)
+    ? input.excludedVenueIds
+    : []
+  )
+    .map((entry) => readId(entry))
+    .filter((id): id is string => id !== null)
+    .slice(0, 20);
   const stroke = readStroke(input.stroke);
   // Nothing to aim at: no patch named, no pin dropped, no walk drawn.
   if (!where && !startVenueId && !finishVenueId && !stroke) return null;
@@ -259,6 +270,7 @@ export function readBrief(raw: unknown): CaddyBrief | null {
   return {
     where,
     stroke,
+    excludedVenueIds,
     // The same patch twice is one patch: a host who picks their own area
     // for both ends wants a tight round, not a walk back to where they began.
     whereTo: whereTo.toLowerCase() === where.toLowerCase() ? "" : whereTo,

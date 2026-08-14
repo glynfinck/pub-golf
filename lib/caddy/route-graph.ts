@@ -7,6 +7,7 @@ import {
   type OpenWindow,
   type TeeOff,
 } from "@/lib/caddy/hours";
+import { walkCrossings, type Barrier } from "@/lib/caddy/barriers";
 import { alongStrokeKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
@@ -145,6 +146,10 @@ export interface RouteRequest {
    * along a *curve*, and "forward" means the way the stroke was drawn.
    */
   stroke?: StrokePoint[] | null;
+  /** Geography a straight line cannot see: rivers and rail with their
+   * bridges (`lib/caddy/barriers.ts`). Walks that cross one anywhere but a
+   * gate are offered only when nothing better exists. */
+  barriers?: Barrier[] | null;
 }
 
 const DEFAULT_NEIGHBOURS = 5;
@@ -675,6 +680,43 @@ function swapIn(
   return route;
 }
 
+/**
+ * The non-dominated set: every route no other route beats on *all* the
+ * arguments at once. Sequential objective-winners had accidental coverage —
+ * an objective whose best was taken contributed nothing — where a Pareto
+ * front makes "these walks are genuinely different arguments" a theorem
+ * about the output rather than a hope about the process. The named
+ * objectives still pick and label the menu; they just pick from here.
+ */
+export function paretoFront(
+  routes: PlannedRoute[],
+  nodes: Map<string, RouteNode>,
+  targetKm: number | null,
+): PlannedRoute[] {
+  // Every objective is an axis, and it has to be: an objective missing from
+  // the axes can have its own best route dominated away before it ever gets
+  // to pick, which quietly deletes a character from the menu. With the full
+  // set, each objective's winner is on the front or tied with something that
+  // beats it elsewhere — either way the menu keeps the argument.
+  const axes = ROUTE_OBJECTIVES;
+  const scored = routes.map((route) =>
+    axes.map((axis) => axis.score(route, nodes, targetKm)),
+  );
+  return routes.filter((_, i) => {
+    for (let j = 0; j < routes.length; j += 1) {
+      if (i === j) continue;
+      let allLeq = true;
+      let oneLess = false;
+      for (let k = 0; k < scored[i].length; k += 1) {
+        if (scored[j][k] > scored[i][k] + 1e-9) allLeq = false;
+        if (scored[j][k] < scored[i][k] - 1e-9) oneLess = true;
+      }
+      if (allLeq && oneLess) return false;
+    }
+    return true;
+  });
+}
+
 /** How much two routes overlap, 0 (nothing shared) to 1 (identical set). */
 export function overlap(a: string[], b: string[]): number {
   const left = new Set(a);
@@ -988,7 +1030,28 @@ export function buildRouteGraph(
   const feasible = teeOff
     ? described.filter((route) => walkFeasible(table, byId, route.stops, teeOff))
     : described;
-  const pool2 = feasible.length > 0 ? feasible : described;
+  const timed = feasible.length > 0 ? feasible : described;
+
+  // Geography next: walks that swim stand only when every walk swims.
+  const barriers = request.barriers ?? null;
+  const dry = barriers?.length
+    ? timed.filter(
+        (route) =>
+          walkCrossings(
+            route.stops.flatMap((id) => {
+            const node = byId.get(id);
+            return node ? [{ lat: node.lat, lng: node.lng }] : [];
+            }),
+            barriers,
+          ) === 0,
+      )
+    : timed;
+  const grounded = dry.length > 0 ? dry : timed;
+
+  // And the menu chooses from the non-dominated set: nothing on it is beaten
+  // on every argument at once by something off it.
+  const front = paretoFront(grounded, byId, target);
+  const pool2 = front.length > 0 ? front : grounded;
 
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they

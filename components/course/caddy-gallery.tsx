@@ -350,6 +350,14 @@ function GalleryBody({
             {stats ? (
               <p className="text-center text-[11px] text-muted-foreground tabular">{stats}</p>
             ) : null}
+            {/* The patch's shape, where it is remarkable: two pockets with a
+                march between them, or one street. A note on every patch
+                would be a note nobody reads. */}
+            {state.menu.note ? (
+              <p className="text-center font-serif text-[11px] italic text-muted-foreground">
+                {state.menu.note}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-1.5" aria-label="Holes">
               {HOLE_CHOICES.map((count) => (
                 <Chip

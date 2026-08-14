@@ -59,6 +59,7 @@ const BRIEF = {
   teeOffDay: null,
   teeOffMinutes: 1140,
   stroke: null,
+  excludedVenueIds: [] as string[],
 };
 
 function plan(ids: string[], over: Record<string, unknown> = {}) {

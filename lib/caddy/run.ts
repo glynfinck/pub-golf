@@ -405,10 +405,16 @@ async function gatherFor(
   });
 
   const cached = await cachePubs(supabase, gather.pubs);
+  // Struck pubs go before the dossier is built — the caddy never knows they
+  // existed. Pins are exempt: a host who strikes their own tee has changed
+  // their mind about the strike, not the tee.
+  const kept = cached.filter(
+    (pub) => !brief.excludedVenueIds.includes(pub.venueId),
+  );
   // Pinned tees always join the table, whatever the gather returned.
   const withPins = [
     ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
-    ...cached,
+    ...kept,
   ];
   const candidates = buildCandidates(
     withPins,

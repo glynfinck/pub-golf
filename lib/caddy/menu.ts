@@ -4,6 +4,7 @@ import {
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
 import type { TeeOff } from "@/lib/caddy/hours";
+import { classifyPatch, shapeNote } from "@/lib/caddy/shape";
 import {
   buildRouteGraph,
   targetKmFor,
@@ -62,6 +63,9 @@ export interface CaddyMenu {
   teeOff: TeeOff | null;
   /** The drawn walk, so a browser re-route keeps the same axis. */
   stroke: { lat: number; lng: number }[] | null;
+  /** The patch's shape, said out loud where it is remarkable — two pockets
+   * with a march between, one street. Null for the ordinary blob. */
+  note: string | null;
 }
 
 /** A pinned tee arrives as a `venues` row id; the graph speaks candidate
@@ -121,6 +125,7 @@ export function menuOf(
     reachKm: brief.reachKm,
     teeOff,
     stroke: brief.stroke,
+    note: shapeNote(classifyPatch(graph.nodes)),
   };
 }
 
