@@ -11,7 +11,7 @@ import {
   useMap,
 } from "@vis.gl/react-google-maps";
 
-import { LocateFixed } from "lucide-react";
+import { Hand, LocateFixed } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -25,7 +25,6 @@ import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
 import {
   distanceToStrokeKm,
   simplifyStroke,
-  strokeLengthKm,
   type StrokePoint,
 } from "@/lib/caddy/stroke";
 import { cn } from "@/lib/utils";
@@ -158,6 +157,8 @@ export function DrawSurface({
     { id: string; lat: number; lng: number }[] | null
   >(null);
   const [lockNote, setLockNote] = useState<string | null>(null);
+  /** Reading the patch: several requests are in the air. */
+  const [reading, setReading] = useState(false);
   /**
    * Where the host is, once they have said we may know.
    *
@@ -248,6 +249,20 @@ export function DrawSurface({
     ? activePins.filter((pin) => distanceToStrokeKm(pin, stroke) <= widthKm)
     : [];
   const inIds = new Set(inSwath.map((pin) => pin.id));
+  /** What the map says about itself, or nothing at all. */
+  const statusLine =
+    locateNote ??
+    lockNote ??
+    (reading
+      ? "Reading the patch…"
+      : drawing
+      ? stroke
+        ? `${inSwath.length} pubs on this walk`
+        : viewPubs
+          ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
+          : "One finger draws the walk"
+      : null);
+
 
   /** Kilometres across the frozen frame, corner to corner-ish. */
   function acrossKm(f: Frozen): number {
@@ -273,25 +288,61 @@ export function DrawSurface({
     setStroke(null);
     setRaw([]);
     setViewPubs(null);
-    // Every pub and bar in the locked view. The same free search the builder
-    // makes, aimed by bounds — the answer is the density field.
-    void fetch("/api/places/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bounds: f.bounds }),
-    })
-      .then((response) => response.json())
-      .then((data: { results?: { id: string; lat: number | null; lng: number | null }[] }) => {
-        setViewPubs(
-          (data.results ?? [])
-            .filter(
-              (row): row is { id: string; lat: number; lng: number } =>
-                row.lat != null && row.lng != null,
-            )
-            .map((row) => ({ id: row.id, lat: row.lat, lng: row.lng })),
-        );
+    /**
+     * Every pub and bar in the locked view.
+     *
+     * **Tiled, because Places answers twenty at a time.** `maxResultCount`
+     * is capped at 20 per request, so one call over a locked view returns
+     * twenty pubs however many are really there — which reads as a thin
+     * patch rather than as a truncated answer, and a density field drawn
+     * from it is a lie about where the night can live. So a view wider than
+     * a few streets is quartered and each quarter asked separately, exactly
+     * as the corridor gather already fans out, and the answers merge on id.
+     *
+     * Four requests is the ceiling. This is the free lean search, but it is
+     * still somebody's quota — and past four the extra pubs are beyond the
+     * edge of the patch anyway, because the lock itself is bounded.
+     */
+    const { north, south, east, west } = f.bounds;
+    const tiles =
+      acrossKm(f) > 1.6
+        ? [
+            { north, south: (north + south) / 2, east: (east + west) / 2, west },
+            { north, south: (north + south) / 2, east, west: (east + west) / 2 },
+            { north: (north + south) / 2, south, east: (east + west) / 2, west },
+            { north: (north + south) / 2, south, east, west: (east + west) / 2 },
+          ]
+        : [f.bounds];
+
+    setReading(true);
+    void Promise.all(
+      tiles.map((bounds) =>
+        fetch("/api/places/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bounds }),
+        })
+          .then((response) => response.json())
+          .then(
+            (data: {
+              results?: { id: string; lat: number | null; lng: number | null }[];
+            }) => data.results ?? [],
+          )
+          // One tile failing is a thinner field, never a broken one.
+          .catch(() => []),
+      ),
+    )
+      .then((answers) => {
+        const seen = new Set<string>();
+        const found: { id: string; lat: number; lng: number }[] = [];
+        for (const row of answers.flat()) {
+          if (row.lat == null || row.lng == null || seen.has(row.id)) continue;
+          seen.add(row.id);
+          found.push({ id: row.id, lat: row.lat, lng: row.lng });
+        }
+        setViewPubs(found);
       })
-      .catch(() => setViewPubs(null));
+      .finally(() => setReading(false));
   }
 
   function finish(points: { x: number; y: number }[]) {
@@ -358,7 +409,7 @@ export function DrawSurface({
           >
             <div
               className={cn(
-                "rounded-full transition-all duration-300",
+                "animate-in fade-in rounded-full transition-all duration-300",
                 inIds.has(pin.id)
                   ? "size-3.5 bg-fairway ring-2 ring-background"
                   : "size-1.5 bg-muted-foreground/40",
@@ -381,42 +432,47 @@ export function DrawSurface({
         ) : null}
       </Map>
 
-      {/* Where you are, if you will have it.
-          A full pill while it is still an offer, because the commonest brief
-          of all is "we're here now" and a host framing a map by thumb should
-          not have to find a 44-pixel target to say so. Once we have a fix it
-          shrinks to the house's own locate button — the offer has been taken,
-          so what is left is a way back to yourself. It goes entirely once a
-          refusal comes back: asking twice is how a site gets muted for good. */}
-      {!drawing && !locateNote ? (
-        here ? (
-          <button
-            type="button"
-            onClick={locate}
-            aria-label="Back to where I am"
-            className="absolute top-3 right-3 z-20 flex size-11 items-center justify-center rounded-full border border-border bg-card text-fairway shadow-md"
-          >
-            <LocateFixed
-              size={18}
-              aria-hidden
-              className={cn(locating && "animate-pulse")}
-            />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={locate}
-            className="absolute top-3 left-1/2 z-20 flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-fairway bg-card px-4 text-xs font-bold whitespace-nowrap text-fairway shadow-md"
-            data-testid="start-where-i-am"
-          >
-            <LocateFixed
-              size={15}
-              aria-hidden
-              className={cn(locating && "animate-pulse")}
-            />
-            {locating ? "Finding you" : "Start where I am"}
-          </button>
-        )
+      {/* **Minimal furniture.** The map is the work here, and everything
+          laid over it is something the host cannot see through. So: one
+          icon for where you are, one for letting go of the lock, a status
+          line only when there is something to say, and the controls the
+          drawing actually needs — nothing else.
+
+          Where you are, if you will have it. Asked on a tap and never on
+          mount: an uninvited permission prompt is the fastest way to be
+          refused for ever. A refusal takes the offer away entirely and says
+          why on the line below — the map was always pannable by hand. */}
+      {!locateNote ? (
+        <button
+          type="button"
+          onClick={locate}
+          aria-label={here ? "Back to where I am" : "Start where I am"}
+          className="absolute top-3 right-3 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card/95 text-fairway shadow-md"
+          data-testid="start-where-i-am"
+        >
+          <LocateFixed
+            size={17}
+            aria-hidden
+            className={cn(locating && "animate-pulse")}
+          />
+        </button>
+      ) : null}
+
+      {/* Letting go of the lock, opposite its twin. Only while the map is
+          held still, because that is the only time it means anything. */}
+      {drawing ? (
+        <button
+          type="button"
+          onClick={() => {
+            setDrawing(false);
+            setStroke(null);
+            setRaw([]);
+          }}
+          aria-label="Pan the map again"
+          className="absolute top-3 left-3 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-md"
+        >
+          <Hand size={17} aria-hidden />
+        </button>
       ) : null}
 
       {/* The density field, under the pen: bright is busy, dark is dead
@@ -504,63 +560,55 @@ export function DrawSurface({
         </div>
       ) : null}
 
-      <span className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold whitespace-nowrap shadow-sm">
-        {locateNote
-          ? locateNote
-          : lockNote
-          ? lockNote
-          : drawing
-            ? stroke
-              ? `${inSwath.length} pubs in the swath · ${strokeLengthKm(stroke).toFixed(1)} km drawn`
-              : viewPubs
-                ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
-                : "One finger draws the walk"
-            : "Frame your patch, then hold it still"}
-      </span>
+      {/* One line, and only when it earns one. Idle it said "frame your
+          patch, then hold it still" — which the button underneath already
+          says, in a place the eye is already going. */}
+      {statusLine ? (
+        <span className="pointer-events-none absolute inset-x-12 top-3 z-10 mx-auto w-fit max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-center text-[11px] font-semibold shadow-sm">
+          {statusLine}
+        </span>
+      ) : null}
 
-      {/* The controls: the mode switch, the width dial, the two ways out. */}
-      <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 bg-gradient-to-t from-background via-background/85 to-transparent px-4 pt-8 pb-[max(env(safe-area-inset-bottom),12px)]">
-        {drawing ? (
-          <>
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
-              {WIDTH_CHOICES.map((choice) => (
-                <Chip
-                  key={choice.m}
-                  active={widthM === choice.m}
-                  onClick={() => setWidthM(choice.m)}
-                >
-                  {choice.label}
-                </Chip>
-              ))}
+      {/* The controls, with no scrim behind them: a gradient tall enough to
+          sit a button on was covering a third of a map that is already small
+          in the room. The chips carry their own grounds; that is enough. */}
+      <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-3 pb-[max(env(safe-area-inset-bottom),10px)]">
+        {drawing && stroke ? (
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
+            {WIDTH_CHOICES.map((choice) => (
               <Chip
-                onClick={() => {
-                  setStroke(null);
-                  setRaw([]);
-                }}
+                key={choice.m}
+                active={widthM === choice.m}
+                onClick={() => setWidthM(choice.m)}
               >
-                Redraw
+                {choice.label}
               </Chip>
-              <Chip
-                onClick={() => {
-                  setDrawing(false);
-                  setStroke(null);
-                  setRaw([]);
-                }}
-              >
-                Pan the map
-              </Chip>
-            </div>
-            <Button
-              className="w-full"
-              disabled={!stroke}
-              onClick={() => stroke && onUse(stroke)}
-              data-testid="use-drawn-walk"
+            ))}
+            <Chip
+              onClick={() => {
+                setStroke(null);
+                setRaw([]);
+              }}
             >
-              {useLabel}
-            </Button>
-          </>
+              Redraw
+            </Chip>
+          </div>
+        ) : null}
+        {drawing ? (
+          <Button
+            className="w-full max-w-sm"
+            disabled={!stroke}
+            onClick={() => stroke && onUse(stroke)}
+            data-testid="use-drawn-walk"
+          >
+            {useLabel}
+          </Button>
         ) : (
-          <Button className="w-full" onClick={begin} data-testid="hold-and-draw">
+          <Button
+            className="w-full max-w-sm"
+            onClick={begin}
+            data-testid="hold-and-draw"
+          >
             Hold still &amp; draw
           </Button>
         )}

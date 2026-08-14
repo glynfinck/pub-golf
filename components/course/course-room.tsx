@@ -6,6 +6,8 @@ import { ArrowLeft } from "lucide-react";
 import { APIProvider } from "@vis.gl/react-google-maps";
 import { useTheme } from "next-themes";
 
+import { ChevronDown, ChevronUp } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { CaddyGroup } from "@/components/course/caddy-group";
 import { DrawSurface } from "@/components/course/draw-walk-sheet";
@@ -14,6 +16,7 @@ import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import type { CaddyAllowance } from "@/lib/data/caddy";
 import type { Reach } from "@/lib/caddy/reach";
 import type { PlannedCourse } from "@/lib/caddy/plan";
+import { cn } from "@/lib/utils";
 
 /**
  * The Course Room: the caddy's own place, and the map is the floor of it.
@@ -59,6 +62,15 @@ export function CourseRoom({
    * table owns editing, as it owns every course — so this is a door rather
    * than a form. */
   const [landed, setLanded] = useState<PlannedCourse | null>(null);
+  /**
+   * How much of the screen the brief is allowed.
+   *
+   * Compact by default, because the map is the work and half a phone of
+   * form left it a letterbox. Expanded is for actually filling the brief in;
+   * the grabber is the switch, and it is a real button so a thumb and a
+   * keyboard both reach it.
+   */
+  const [panelOpen, setPanelOpen] = useState(false);
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col bg-background">
@@ -105,9 +117,32 @@ export function CourseRoom({
       {/* The panel: peeked, scrollable, and never dismissed. The brief lives
           here through every stage, so there is nothing to close and no state
           to lose — the panel *is* the room's furniture. */}
-      <div className="max-h-[52dvh] shrink-0 overflow-y-auto rounded-t-2xl border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-6px_24px_rgba(0,0,0,0.12)]">
+      <div
+        className={cn(
+          "shrink-0 overflow-y-auto rounded-t-2xl border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
+          "transition-[max-height] duration-300 motion-reduce:transition-none",
+          landed || panelOpen ? "max-h-[62dvh]" : "max-h-[26dvh]",
+        )}
+      >
         <div className="mx-auto w-full max-w-md">
-          <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-border" />
+          {landed ? (
+            <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-border" />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPanelOpen((open) => !open)}
+              aria-expanded={panelOpen}
+              aria-label={panelOpen ? "Give the map the screen" : "Open the brief"}
+              className="flex w-full items-center justify-center gap-1.5 pt-2 pb-0.5 text-[10px] font-bold tracking-[0.14em] text-muted-foreground uppercase"
+            >
+              {panelOpen ? (
+                <ChevronDown size={13} aria-hidden />
+              ) : (
+                <ChevronUp size={13} aria-hidden />
+              )}
+              {panelOpen ? "The map" : "The brief"}
+            </button>
+          )}
           {landed ? (
             <div className="flex flex-col gap-2.5 px-4 py-4">
               <span className="eyebrow text-fairway">On the table</span>

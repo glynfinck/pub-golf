@@ -31,6 +31,17 @@ const STOPS = [
   { x: 276, y: 32 },
 ];
 
+/**
+ * **Padded, because `engraved` is an inset shadow.** The frame paints on the
+ * card's own background layer, so any child with something to draw paints
+ * straight over it — the art covered the ring across its half of the card and
+ * the border appeared to stop halfway down, reading as two cards stacked. I
+ * then added a fade to disguise that seam, which washed out the first stops
+ * of the walk: a second wrong thing hiding the first. Holding the content a
+ * pixel inside the ring makes the frame continuous, turns the art into a
+ * plate the frame goes round, and needs no fade at all — the art has no
+ * background of its own, so it was always already part of the card.
+ */
 export function StartCards({ caddy }: { caddy: boolean }) {
   return (
     <div className="flex flex-col gap-3">
@@ -38,27 +49,21 @@ export function StartCards({ caddy }: { caddy: boolean }) {
         <Link
           href="/plan"
           data-testid="door-caddy"
-          className="engraved block overflow-hidden rounded-2xl bg-card"
+          className="engraved block rounded-2xl bg-card p-1.5"
         >
-          <div className="relative">
+          <div className="overflow-hidden rounded-[12px]">
             <TheWalk />
-            {/* The art fades into the card rather than stopping at a hard
-                edge — the join is the only place a picture and a page meet. */}
-            <div
-              aria-hidden
-              className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card to-transparent"
-            />
-          </div>
-          <div className="flex flex-col gap-1 px-4 pt-1 pb-4">
-            <span className="eyebrow text-fairway">Members</span>
-            <span className="font-serif text-2xl leading-tight">
-              Plan it with the caddy
-            </span>
-            <span className="text-[13px] text-muted-foreground">
-              Draw where you&rsquo;re drinking on the map. The caddy walks the
-              patch, routes the night and dresses every hole — pubs, pars,
-              drinks and hazards.
-            </span>
+            <div className="flex flex-col gap-1 px-3 pt-1 pb-3">
+              <span className="eyebrow text-fairway">Members</span>
+              <span className="font-serif text-2xl leading-tight">
+                Plan it with the caddy
+              </span>
+              <span className="text-[13px] text-muted-foreground">
+                Draw where you&rsquo;re drinking on the map. The caddy walks
+                the patch, routes the night and dresses every hole — pubs,
+                pars, drinks and hazards.
+              </span>
+            </div>
           </div>
         </Link>
       ) : null}
@@ -66,24 +71,20 @@ export function StartCards({ caddy }: { caddy: boolean }) {
       <Link
         href="/courses/new"
         data-testid="door-manual"
-        className="engraved block overflow-hidden rounded-2xl bg-card"
+        className="engraved block rounded-2xl bg-card p-1.5"
       >
-        <div className="relative">
+        <div className="overflow-hidden rounded-[12px]">
           <TheCard />
-          <div
-            aria-hidden
-            className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card to-transparent"
-          />
-        </div>
-        <div className="flex flex-col gap-1 px-4 pt-1 pb-4">
-          <span className="eyebrow">Free, always</span>
-          <span className="font-serif text-2xl leading-tight">
-            Plot it by hand
-          </span>
-          <span className="text-[13px] text-muted-foreground">
-            Search the pubs yourself and set every par, drink and hazard the
-            way your lot play it.
-          </span>
+          <div className="flex flex-col gap-1 px-3 pt-1 pb-3">
+            <span className="eyebrow">Free, always</span>
+            <span className="font-serif text-2xl leading-tight">
+              Plot it by hand
+            </span>
+            <span className="text-[13px] text-muted-foreground">
+              Search the pubs yourself and set every par, drink and hazard
+              the way your lot play it.
+            </span>
+          </div>
         </div>
       </Link>
     </div>
