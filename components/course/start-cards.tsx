@@ -189,79 +189,122 @@ function TheWalk() {
 }
 
 /**
- * The manual card's art: the printed scorecard itself.
+ * The manual card's art: the card being written.
  *
- * It was four grey bars, which said "a list" and nothing else — and being
- * `slice`-scaled, half of them were cut off the card anyway. This draws the
- * thing the drafting table actually makes: the engraved double rule, holes
- * in their numbered rings, a dot leader out to a par box, and a last row
- * left blank, because what the free table gives you is the blank one.
+ * It was four grey bars — which is the universal shape of a *skeleton
+ * loader*, so the card read as unfinished rather than as a thing anyone
+ * would choose. It also copied the caddy card's strategy (diagram what you
+ * get) and lost, because a map with a walk on it beats a list every time.
+ * So this one sells the *act* the door is named for instead: a scorecard
+ * mid-fill, the pen still on the third line.
+ *
+ * **Everything sits on one baseline per row**, which is the whole of why an
+ * earlier attempt at this looked wrong. The handwriting is written on it,
+ * the dot leader continues it exactly, and the hole numeral and the par are
+ * optically centred against it — so the eye reads three ruled rows rather
+ * than three drawings that happen to be near each other.
  */
+
+/** The grid, named once so the rows cannot drift apart. */
+const CARD_LEFT = 24;
+const CARD_RIGHT = 296;
+/** Row baselines, evenly spaced; everything in a row hangs off one of these. */
+const CARD_ROWS = [48, 74, 100];
+/** Where the writing starts, where the leader stops, where the par box sits. */
+const WRITE_X = 48;
+const LEADER_END = 254;
+const PAR_X = 262;
+const PAR_W = 20;
+/** Cap height of the serif numerals at 12px, halved — what "optically
+ * centred on the baseline" actually means for this face. */
+const NUMERAL_RISE = 4;
+
+/**
+ * A run of handwriting, as a chain of upward bumps on a common baseline.
+ *
+ * Deterministic: the bump heights come from a fixed table rather than a
+ * random source, because render must not read anything it cannot repeat —
+ * the house rule that keeps `Date.now()` and `Math.random()` out of a
+ * component in the first place.
+ */
+const BUMPS = [-8, -6, -14, -5, -7, -10, -6, -13, -5, -9, -7, -6];
+
+function scribble(from: number, to: number, base: number, offset = 0): string {
+  const step = 9;
+  let path = `M${from},${base}`;
+  let index = 0;
+  for (let x = from; x + step <= to; x += step) {
+    const rise = BUMPS[(index + offset) % BUMPS.length];
+    path += ` q${step / 2},${rise} ${step},0`;
+    index += 1;
+  }
+  return path;
+}
+
 function TheCard() {
   const rows = [
-    { hole: 1, width: 104, par: "4" },
-    { hole: 2, width: 86, par: "3" },
-    { hole: 3, width: 0, par: "" },
+    { hole: 1, writtenTo: 158, par: "4", offset: 0 },
+    // Short on purpose: a pen tall enough to read as one is taller than the
+    // gap between two rows, so it *will* cross the row above. Better it
+    // crosses that row's leader dots than its words.
+    { hole: 2, writtenTo: 104, par: "3", offset: 5 },
+    // The third is being written now: no par yet, and the pen is still on it.
+    { hole: 3, writtenTo: 122, par: null, offset: 9 },
   ];
+  const penAt = rows[2].writtenTo;
+  const penBase = CARD_ROWS[2] + 1;
+
   return (
     <svg viewBox="0 0 320 120" aria-hidden className="block h-auto w-full">
       {/* The masthead's own engraving: a hairline over a double rule. */}
-      <g stroke="var(--color-border)">
-        <line x1="24" y1="18" x2="296" y2="18" strokeWidth="1" />
-        <line x1="24" y1="23" x2="296" y2="23" strokeWidth="1" />
-        <line x1="24" y1="25.5" x2="296" y2="25.5" strokeWidth="1" />
+      <g stroke="var(--color-border)" strokeWidth="1">
+        <line x1={CARD_LEFT} y1="18" x2={CARD_RIGHT} y2="18" />
+        <line x1={CARD_LEFT} y1="23" x2={CARD_RIGHT} y2="23" />
+        <line x1={CARD_LEFT} y1="25.5" x2={CARD_RIGHT} y2="25.5" />
       </g>
 
       {rows.map((row, index) => {
-        const y = 50 + index * 30;
+        const y = CARD_ROWS[index];
+        // The one line everything in this row is hung from.
+        const base = y + 1;
         return (
           <g key={row.hole}>
-            <circle
-              cx="38"
-              cy={y}
-              r="10"
-              fill="none"
-              stroke="var(--color-fairway)"
-              strokeWidth="1.5"
-            />
             <text
-              x="38"
-              y={y + 3.6}
+              x={CARD_LEFT + 8}
+              y={base + NUMERAL_RISE - 1}
               textAnchor="middle"
               fontFamily="Georgia, serif"
-              fontSize="11"
+              fontSize="12"
               fontWeight="700"
               fill="var(--color-fairway)"
             >
               {row.hole}
             </text>
-            {row.width > 0 ? (
-              <rect
-                x="58"
-                y={y - 5}
-                width={row.width}
-                height="10"
-                rx="3"
-                fill="var(--color-secondary)"
-              />
-            ) : null}
-            {/* The dot leader, menu style — the same fill the house's own
-                `leader` utility paints between a label and its value. */}
+            <path
+              d={scribble(WRITE_X, row.writtenTo, base, row.offset)}
+              fill="none"
+              stroke="var(--color-foreground)"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              opacity="0.72"
+            />
+            {/* The leader continues the writing's own baseline, which is what
+                makes the row read as one ruled line rather than two. */}
             <line
-              x1={58 + row.width + (row.width > 0 ? 10 : 0)}
-              y1={y + 1}
-              x2="252"
-              y2={y + 1}
+              x1={row.writtenTo + 8}
+              y1={base}
+              x2={LEADER_END}
+              y2={base}
               stroke="var(--color-border)"
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeDasharray="0.1 6"
             />
             <rect
-              x="264"
-              y={y - 10}
-              width="20"
-              height="20"
+              x={PAR_X}
+              y={base - PAR_W / 2 - 1}
+              width={PAR_W}
+              height={PAR_W}
               rx="4"
               fill="none"
               stroke="var(--color-border)"
@@ -269,13 +312,14 @@ function TheCard() {
             />
             {row.par ? (
               <text
-                x="274"
-                y={y + 3.6}
+                x={PAR_X + PAR_W / 2}
+                y={base + NUMERAL_RISE - 1}
                 textAnchor="middle"
                 fontFamily="Georgia, serif"
-                fontSize="11"
+                fontSize="12"
                 fontWeight="700"
-                fill="var(--color-muted-foreground)"
+                fill="var(--color-foreground)"
+                opacity="0.78"
               >
                 {row.par}
               </text>
@@ -283,6 +327,45 @@ function TheCard() {
           </g>
         );
       })}
+
+      {/* The pen, tip on the third line exactly where the writing stopped.
+          Drawn nib-first from the origin, so the tip lands on the baseline
+          however the barrel is leant.
+
+          **Haloed.** A pen tall enough to read as one is taller than the gap
+          between two rows, so it crosses the row above whatever we do — the
+          card-coloured outline underneath cuts a clean gap through what it
+          crosses, which is how an illustration says "in front" rather than
+          "muddled". */}
+      <g transform={`translate(${penAt}, ${penBase}) rotate(32)`}>
+        <g
+          stroke="var(--color-card)"
+          strokeWidth="3.5"
+          strokeLinejoin="round"
+          fill="var(--color-card)"
+        >
+          <rect x="-4" y="-40" width="8" height="27" rx="3" />
+          <path d="M0,0 L-3.4,-13 L3.4,-13 Z" />
+        </g>
+        <rect
+          x="-4"
+          y="-40"
+          width="8"
+          height="27"
+          rx="3"
+          fill="var(--color-fairway)"
+        />
+        <rect x="-4.4" y="-14.6" width="8.8" height="2.6" fill="var(--color-border)" />
+        <path d="M0,0 L-3.4,-13 L3.4,-13 Z" fill="var(--color-marker)" />
+        <line
+          x1="0"
+          y1="-3"
+          x2="0"
+          y2="-8.5"
+          stroke="var(--color-card)"
+          strokeWidth="1.1"
+        />
+      </g>
     </svg>
   );
 }
