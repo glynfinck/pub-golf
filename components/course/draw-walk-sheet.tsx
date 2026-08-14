@@ -271,7 +271,6 @@ function DrawSurface({
       ctx.fill();
     }
     // Painting only — no state is set here, so the effect cannot cascade.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewPubs, frozen, dark]);
 
   const strokePx =
