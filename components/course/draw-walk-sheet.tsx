@@ -11,6 +11,8 @@ import {
   useMap,
 } from "@vis.gl/react-google-maps";
 
+import { LocateFixed } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -156,7 +158,51 @@ export function DrawSurface({
     { id: string; lat: number; lng: number }[] | null
   >(null);
   const [lockNote, setLockNote] = useState<string | null>(null);
+  /**
+   * Where the host is, once they have said we may know.
+   *
+   * Asked for on a tap and never on mount: a permission prompt nobody
+   * invited is the fastest way to be refused for ever, and the browser
+   * remembers a refusal far longer than the host remembers the question.
+   * Null while unasked *and* while refused — the offer simply stops being
+   * made and the map is panned by hand, which always worked.
+   */
+  const [here, setHere] = useState<StrokePoint | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locateNote, setLocateNote] = useState<string | null>(null);
   const pointerDown = useRef(false);
+
+  /** The commonest brief there is: we are here now. */
+  function locate() {
+    if (locating) return;
+    if (!("geolocation" in navigator)) {
+      setLocateNote("No location on this phone — pan the map instead.");
+      return;
+    }
+    setLocating(true);
+    setLocateNote(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const at = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setLocating(false);
+        setHere(at);
+        map?.panTo(at);
+        map?.setZoom(15);
+      },
+      (geoError) => {
+        setLocating(false);
+        setLocateNote(
+          geoError.code === geoError.PERMISSION_DENIED
+            ? "Location is off for this site — pan the map instead."
+            : "No fix on you — pan the map instead.",
+        );
+      },
+      { timeout: 8_000, maximumAge: 60_000 },
+    );
+  }
 
   /** The viewport, held still: the whole conversion in one object. */
   function freeze(): Frozen | null {
@@ -320,7 +366,58 @@ export function DrawSurface({
             />
           </AdvancedMarker>
         ))}
+        {/* Where the host actually is, once they have said we may know: a
+            quiet mark, never a pin — it is not a pub and must not read as
+            one. Inside the map, because a marker outside one renders
+            nowhere at all. */}
+        {here ? (
+          <AdvancedMarker
+            position={here}
+            anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+            title="You are here"
+          >
+            <span className="block size-3.5 rounded-full border-2 border-background bg-marker shadow-sm" />
+          </AdvancedMarker>
+        ) : null}
       </Map>
+
+      {/* Where you are, if you will have it.
+          A full pill while it is still an offer, because the commonest brief
+          of all is "we're here now" and a host framing a map by thumb should
+          not have to find a 44-pixel target to say so. Once we have a fix it
+          shrinks to the house's own locate button — the offer has been taken,
+          so what is left is a way back to yourself. It goes entirely once a
+          refusal comes back: asking twice is how a site gets muted for good. */}
+      {!drawing && !locateNote ? (
+        here ? (
+          <button
+            type="button"
+            onClick={locate}
+            aria-label="Back to where I am"
+            className="absolute top-3 right-3 z-20 flex size-11 items-center justify-center rounded-full border border-border bg-card text-fairway shadow-md"
+          >
+            <LocateFixed
+              size={18}
+              aria-hidden
+              className={cn(locating && "animate-pulse")}
+            />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={locate}
+            className="absolute top-3 left-1/2 z-20 flex min-h-11 -translate-x-1/2 items-center gap-2 rounded-full border border-fairway bg-card px-4 text-xs font-bold whitespace-nowrap text-fairway shadow-md"
+            data-testid="start-where-i-am"
+          >
+            <LocateFixed
+              size={15}
+              aria-hidden
+              className={cn(locating && "animate-pulse")}
+            />
+            {locating ? "Finding you" : "Start where I am"}
+          </button>
+        )
+      ) : null}
 
       {/* The density field, under the pen: bright is busy, dark is dead
           ground. Locked-view only — it is a picture of the frozen frame. */}
@@ -408,7 +505,9 @@ export function DrawSurface({
       ) : null}
 
       <span className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold whitespace-nowrap shadow-sm">
-        {lockNote
+        {locateNote
+          ? locateNote
+          : lockNote
           ? lockNote
           : drawing
             ? stroke
