@@ -118,16 +118,25 @@ interface Frozen {
   height: number;
 }
 
-function DrawSurface({
+/**
+ * The draw surface itself, exported because the Course Room's map *is* this
+ * — there the pen is not a sheet you open, it is the screen you land on.
+ * Must sit inside an `APIProvider`; it renders its own `<Map>`.
+ */
+export function DrawSurface({
   centre,
   pins,
   dark,
   onUse,
+  useLabel = "Use this walk",
 }: {
   centre: { lat: number; lng: number } | null;
   pins: { id: string; lat: number; lng: number }[];
   dark: boolean;
   onUse: (stroke: StrokePoint[]) => void;
+  /** What the commit button says. The sheet hands the walk back to a form;
+   * the room plans with it there and then. */
+  useLabel?: string;
 }) {
   const map = useMap();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -444,7 +453,7 @@ function DrawSurface({
               onClick={() => stroke && onUse(stroke)}
               data-testid="use-drawn-walk"
             >
-              Use this walk
+              {useLabel}
             </Button>
           </>
         ) : (

@@ -6,6 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RuleDouble } from "@/components/ui/rule";
 import { CURATED_COURSES, coursePar } from "@/lib/course-templates";
+import { caddyStand } from "@/lib/data/caddy-gate";
 import { getMyCourses } from "@/lib/data/courses";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +16,7 @@ const courseRow =
   "flex min-h-13 items-center gap-2 hover:bg-secondary/40 -mx-4 px-4";
 
 export default async function CoursesPage() {
-  const courses = await getMyCourses();
+  const [courses, stand] = await Promise.all([getMyCourses(), caddyStand()]);
 
   return (
     <Screen withTabBar>
@@ -34,9 +35,37 @@ export default async function CoursesPage() {
         </Card>
       )}
 
-      <Link href="/courses/new" className={cn(buttonVariants(), "w-full")}>
-        Plot a new course
-      </Link>
+      {/* Two doors, because there are two ways to make a course and they are
+          genuinely different rooms. The caddy's is a map you draw a walk on;
+          the table is a list you fill in by hand. Naming both — rather than
+          hanging the caddy off the table's door as a widget — is what stops
+          the paid thing reading as a bolt-on to the free one. Off duty there
+          is only ever one door, and it is the one that has always been free. */}
+      {stand.ready ? (
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/plan"
+            className={cn(buttonVariants(), "w-full")}
+            data-testid="door-caddy"
+          >
+            Plan it with the caddy
+          </Link>
+          <Link
+            href="/courses/new"
+            className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+          >
+            Plot it by hand
+          </Link>
+          <p className="text-center text-[10px] text-muted-foreground">
+            The caddy draws and routes the night; the table is yours to fill
+            in, free as ever.
+          </p>
+        </div>
+      ) : (
+        <Link href="/courses/new" className={cn(buttonVariants(), "w-full")}>
+          Plot a new course
+        </Link>
+      )}
 
       <section>
         <h3 className="eyebrow mb-2">Curated · the house cards</h3>

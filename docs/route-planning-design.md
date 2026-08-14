@@ -111,14 +111,14 @@ offers the other candidate resolutions (the Places text results already
 carry enough to offer "Camden, Bath" beneath). The count comes with it — see
 3.3.
 
-**3.2 — The ring grows a handle.** The reach ring becomes draggable at its
-edge: drag out for "anywhere round here is fine", in for "this street,
-please". Bounded 400m–2,500m, snapped to 100m, default the current 1,200m.
-`PATCH_RADIUS_M` stops being a constant and joins `CaddyBrief` as `patchKm`
-(clamped in `readBrief` like everything else). The ring the host sized is the
-circle the gather searches — the drawing and the request become the same
-fact, which is the same rule `reachOf` already keeps for the warning
-threshold.
+**3.2 — The locked view is the patch.** *(Revised: this was a draggable
+ring — drag the edge to size the search circle. Retired before it was
+built, deliberately: the primary method is now reposition → lock → draw
+(§3.8), and the locked viewport is a better patch primitive than any
+circle — it is literally the area the host framed, at the zoom they chose,
+bounded to a night's walking before it will lock. The passive ring survives
+only as a read-out on the typed-name path, showing where the gather will
+look; it is never an instrument.)*
 
 **3.3 — Candidates appear before the fee.** The moment an area resolves, the
 *lean* search (the builder's existing free-tier `PLACES_FIELD_MASK` — no
@@ -522,6 +522,48 @@ Every repair is logged on the turn (which clause, which rung). The clean-card
 rate from §2 splits into *clean-as-dealt* and *clean-after-repair* — the
 first measures the model and the menu, the second measures what the host
 actually receives, and the gap between them prices each rung of the ladder.
+
+---
+
+## 6b. The Course Room — the caddy's own place
+
+*(Added after the first build shipped. The complaint it answers: everything
+felt mashed together, because a map-shaped paid product was bolted above a
+list-shaped free one and shared its scrolling column.)*
+
+**The room is `/plan`, and the map is the floor of it.** Full-bleed draw
+surface on top, a panel beneath that never dismisses. The panel carries the
+brief through every stage, so there is nothing to close and no state to lose
+— the persistent-sheet posture NN/g documents from Google Maps, and the
+planner-as-its-own-room posture Komoot keeps.
+
+Three rules hold it together:
+
+- **The pen is the screen.** Not a picture with a draw button on it: the room
+  lands on the draw surface. Reposition → hold still → draw, with the density
+  field (§3.8) painted the moment the view locks, so dead ground is visible
+  before a stroke is committed. The typed patch stays in the panel for the
+  host who would rather name a place.
+- **The job belongs to the group, not the room.** `CaddyGroup` stands in the
+  room in `room` mode — same fee gate, same open step, same menu, same
+  stream, same gallery and pill, different furniture. One implementation of
+  the path to a charge, two rooms to stand it in; a second would be a second
+  place to spend money nobody counted.
+- **The room produces drafts; the table owns them.** A landed card offers
+  *Open on the drafting table* and hands over through the session the server
+  already resumes. Editing never moves into the paid room, which is the
+  covenant expressed as navigation.
+
+**Two doors** on the course book — *Plan it with the caddy* and *Plot it by
+hand* — because there are two genuinely different rooms and naming both is
+what stops the paid one reading as a bolt-on. Off duty there is one door, and
+it is the free one.
+
+**The job is never invisible.** Closing the gallery mid-plan leaves a pill
+above the tab bar (stage, pulse, tap to watch) and a stage badge on the
+drafting table's minimap. One `advance()` moves the stage, so the three
+windows on the job cannot disagree. Closing a view has never cancelled the
+work; now it does not hide it either.
 
 ---
 

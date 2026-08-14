@@ -92,6 +92,8 @@ export function CaddyGroup({
   onReach,
   reach,
   onStage,
+  room = false,
+  strokeOverride,
   session = null,
   reopen = null,
   passExpiresAt = null,
@@ -153,6 +155,18 @@ export function CaddyGroup({
   /** The job's stage, as a label the minimap wears — null when no plan is
    * live. One of the three windows on the job (gallery, pill, badge). */
   onStage?: (label: string | null) => void;
+  /**
+   * Rendered inside the Course Room rather than on the drafting table.
+   *
+   * Same group, same job, different furniture: the room owns the map — the
+   * draw surface *is* the screen there — so the brief drops its card chrome,
+   * its collapse and its own draw button, and keeps only the fields and the
+   * plan. One implementation of the job, two rooms to stand it in.
+   */
+  room?: boolean;
+  /** The room's own stroke, drawn on its map. Undefined leaves the group
+   * owning one internally, which is what the drafting table does. */
+  strokeOverride?: StrokePoint[] | null;
   className?: string;
 }) {
   const router = useRouter();
@@ -208,8 +222,10 @@ export function CaddyGroup({
   const [whereTo, setWhereTo] = useState("");
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
-  /** The walk, drawn — the brief's last escalation. Null is most rounds. */
-  const [stroke, setStroke] = useState<StrokePoint[] | null>(null);
+  /** The walk, drawn — the brief's last escalation. Null is most rounds.
+   * In the room the map owns it and hands it down through `strokeOverride`. */
+  const [ownStroke, setStroke] = useState<StrokePoint[] | null>(null);
+  const stroke = strokeOverride !== undefined ? strokeOverride : ownStroke;
   const [drawOpen, setDrawOpen] = useState(false);
   /** When the round happens. The weekday is resolved in `briefBody`, inside
    * the submit handler — the one place this component may read a clock. */
@@ -879,7 +895,7 @@ export function CaddyGroup({
   // refusal; it does not greet you. What the card still says is that the
   // caddy is a members' thing and that everything under it is free — the
   // disclosure without the pitch.
-  if (!open) {
+  if (!open && !room) {
     return (
       <div
         className={cn("engraved flex flex-col gap-2 rounded-xl bg-card px-4 py-3.5", className)}
@@ -975,10 +991,18 @@ export function CaddyGroup({
   // ——— The brief. One screen, defaults everywhere a default is honest.
   return (
     <div
-      className={cn("engraved flex flex-col gap-3 rounded-xl bg-card px-4 py-3.5", className)}
+      className={cn(
+        "flex flex-col gap-3",
+        room
+          ? "px-4 pt-2 pb-4"
+          : "engraved rounded-xl bg-card px-4 py-3.5",
+        className,
+      )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="eyebrow text-fairway">Let the caddy plan it</span>
+        <span className="eyebrow text-fairway">
+          {room ? "The brief" : "Let the caddy plan it"}
+        </span>
         {/* "Covered" was the whole of what a host could see, and it went on
             saying Covered after the last course had been planned. A pass has
             two dimensions and this badge only ever showed one — so once there
@@ -988,9 +1012,11 @@ export function CaddyGroup({
           allowance ? <CaddyUsage left={allowance.left} /> : <CoveredBadge />
         ) : null}
       </div>
-      <div className="font-serif text-lg leading-tight text-balance">
-        Your round, planned in twenty seconds
-      </div>
+      {room ? null : (
+        <div className="font-serif text-lg leading-tight text-balance">
+          Your round, planned in twenty seconds
+        </div>
+      )}
       {galleryEl}
       {moreSheet}
       {feeSheet}
@@ -1000,7 +1026,7 @@ export function CaddyGroup({
           night can live, the stroke is the axis, and the swath is the
           gather. The typed patch below stays for the host who would rather
           name a place than draw one. */}
-      {MAPS_BROWSER_KEY ? (
+      {MAPS_BROWSER_KEY && !room ? (
         <div>
           {stroke ? (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -1265,13 +1291,15 @@ export function CaddyGroup({
           pendingLabel="Walking the patch"
         />
       </Button>
-      <button
-        type="button"
-        onClick={() => setOpen(false)}
-        className="min-h-11 text-xs font-semibold text-muted-foreground hover:text-fairway"
-      >
-        Not this round
-      </button>
+      {room ? null : (
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="min-h-11 text-xs font-semibold text-muted-foreground hover:text-fairway"
+        >
+          Not this round
+        </button>
+      )}
     </div>
   );
 }
