@@ -630,6 +630,63 @@ export async function openPlan(rawBrief: unknown): Promise<
   };
 }
 
+/**
+ * Pick a plan back up at the menu: the session is open, the patch is
+ * gathered, and the host has just chosen — or declined to choose — a walk.
+ *
+ * The other half of the open/dress split. `openPlan` gathers and answers
+ * with the menu; this loads the same session back for the turn that spends,
+ * with the same checks a re-opened conversation gets (`askTheCaddy`): the
+ * session must be theirs (RLS decides), the patch must still be open, and
+ * the fee must still be running. Dials ride the merge through `readBrief`,
+ * so a re-dialled hole count or spacing is clamped exactly as a fresh
+ * brief's would be — the wire never writes a number the menu could not.
+ */
+export async function continuePlan(
+  sessionId: string,
+  dials?: { holes?: unknown; stretch?: unknown },
+): Promise<
+  | { error: string; offer?: CaddyOffer; detail?: string }
+  | {
+      supabase: Awaited<ReturnType<typeof createClient>>;
+      userId: string;
+      sessionId: string;
+      brief: CaddyBrief;
+      candidates: CandidateDossier[];
+    }
+> {
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+
+  const session = await host();
+  if (!session) return { error: "Planning a course takes a sign-in." };
+  const { supabase, user } = session;
+
+  const { data: row } = await supabase
+    .from("caddy_sessions")
+    .select("id, brief, dossier")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!row) return { error: "That patch isn't on your table." };
+
+  const stored = (row.brief ?? {}) as Record<string, unknown>;
+  const brief = readBrief({
+    ...stored,
+    ...(dials?.holes !== undefined ? { holes: dials.holes } : {}),
+    ...(dials?.stretch !== undefined ? { stretch: dials.stretch } : {}),
+  });
+  const candidates = (row.dossier ?? []) as unknown as CandidateDossier[];
+  if (!brief || !patchIsOpen(candidates)) {
+    return { error: "That patch has been put away. Plan a fresh one." };
+  }
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: user.id,
+  });
+  if (covered !== true) return { error: PASS_RAN_OUT, offer: "more" };
+
+  return { supabase, userId: user.id, sessionId, brief, candidates };
+}
+
 /** Roll a fresh card, or answer something the host said. Both re-read the
  * patch from the session — no Google, warm cache, short answer. */
 export async function askTheCaddy(input: {
@@ -827,6 +884,9 @@ export async function runTurn(input: {
   kind: "plan" | "roll" | "tweak";
   ask?: string;
   holeNumber?: number | null;
+  /** The walk the host chose off the menu, validated against the dossier
+   * before it gets here (`chosenWalkFrom`). Null is the caddy's own choice. */
+  chosenRoute?: string[] | null;
   /** Present on a streamed plan: the caddy's reasoning, the tool it is
    * reaching for, and the pubs it has settled on. Narration only — nothing
    * here reaches the card, and a run where none of it arrives looks exactly
@@ -863,6 +923,7 @@ export async function runTurn(input: {
     ask: input.ask,
     holeNumber: input.holeNumber,
     roll: input.kind === "roll",
+    chosenRoute: input.chosenRoute ?? null,
   };
   /**
    * Which caddy answers.

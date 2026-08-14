@@ -1,0 +1,519 @@
+"use client";
+
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+import { useTheme } from "next-themes";
+import { X } from "lucide-react";
+import {
+  AdvancedMarker,
+  AdvancedMarkerAnchorPoint,
+  APIProvider,
+  ColorScheme,
+  Map,
+  Polyline,
+  useMap,
+} from "@vis.gl/react-google-maps";
+
+import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
+import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
+import {
+  rerouteMenu,
+  type CaddyMenu,
+  type MenuNode,
+  type MenuRoute,
+} from "@/lib/caddy/menu";
+import {
+  HOLE_CHOICES,
+  STRETCH_CHOICES,
+} from "@/lib/caddy/brief";
+import { WALK_MINUTES_PER_KM } from "@/lib/geo";
+import type { PlannedCourse } from "@/lib/caddy/plan";
+import { cn } from "@/lib/utils";
+
+/**
+ * The gallery: golf's word for the crowd that follows a shot, and what the
+ * plan's twenty seconds become.
+ *
+ * Tapping *Plan the round* opens this over everything — the patch on a live
+ * map, the route menu as the middle act, and the dressing narrated on a
+ * ticker — then hands back to the drafting table when the card lands.
+ *
+ * Three rules keep it honest:
+ *
+ *   **Leaving never cancels.** The X hides the overlay and nothing else. The
+ *   plan's stream belongs to the group behind this, the card is written
+ *   before it is streamed, and `collectCaddyCard` already rescues a broken
+ *   connection — the gallery is optional viewing of work that does not need
+ *   watching.
+ *
+ *   **The menu is arithmetic.** Flipping walks and re-dialling spacing or
+ *   holes re-runs the pure router over the lean nodes, in the browser, for
+ *   nothing. Only *Dress this walk* spends.
+ *
+ *   **No key, no gallery.** Without a browser maps key the plan runs exactly
+ *   as it always did on the inline panel — the same graceful absence the
+ *   builder keeps everywhere else.
+ */
+
+export type GalleryStage = "opening" | "menu" | "dressing" | "done" | "failed";
+
+export interface GalleryState {
+  stage: GalleryStage;
+  menu: CaddyMenu | null;
+  /** Pubs the caddy has named so far, in its own order, while dressing. */
+  picked: string[];
+  doing: string;
+  thinking: string;
+  course: PlannedCourse | null;
+  error: string | null;
+}
+
+/** The dials as the gallery hands them back: what to dress, and at what
+ * shape. Null route means the caddy chooses. */
+export interface DressChoice {
+  route: string[] | null;
+  holes: number;
+  stretch: number;
+}
+
+const STAGE_LINES: Record<GalleryStage, string> = {
+  opening: "The caddy’s walking the patch",
+  menu: "Pick the walk — or let the caddy",
+  dressing: "The caddy’s dressing the card",
+  done: "On the table",
+  failed: "The caddy lost the ball",
+};
+
+const noSubscription = () => () => {};
+
+export function CaddyGallery({
+  open,
+  nonce,
+  state,
+  holes,
+  stretch,
+  onDress,
+  onClose,
+}: {
+  open: boolean;
+  /** Bumped per plan. The body remounts on it, which is what re-seeds the
+   * dials and the selection without a single state-syncing effect. */
+  nonce: number;
+  state: GalleryState;
+  /** The brief's dials, seeding the menu's own. */
+  holes: number;
+  stretch: number;
+  onDress: (choice: DressChoice) => void;
+  onClose: () => void;
+}) {
+  // Mounted portals only: the overlay renders into <body>, so no ancestor
+  // transform can trap the fixed positioning. `useSyncExternalStore` is the
+  // house's hydration guard — never a mounted-flag effect.
+  const body = useSyncExternalStore(
+    noSubscription,
+    () => document.body,
+    () => null,
+  );
+  if (!open || !body) return null;
+  if (!MAPS_BROWSER_KEY) return null;
+  return createPortal(
+    <GalleryBody
+      key={nonce}
+      state={state}
+      holes={holes}
+      stretch={stretch}
+      onDress={onDress}
+      onClose={onClose}
+    />,
+    body,
+  );
+}
+
+function GalleryBody({
+  state,
+  holes,
+  stretch,
+  onDress,
+  onClose,
+}: {
+  state: GalleryState;
+  holes: number;
+  stretch: number;
+  onDress: (choice: DressChoice) => void;
+  onClose: () => void;
+}) {
+  const { resolvedTheme } = useTheme();
+  const reducedMotion = usePrefersReducedMotion();
+  const [mapsFailed, setMapsFailed] = useState(false);
+
+  // The menu's own dials, seeded from the brief. Initial-value only, on
+  // purpose: a fresh plan remounts this body (the `key` above), which is
+  // what re-seeds them.
+  const [dialHoles, setDialHoles] = useState(holes);
+  const [dialStretch, setDialStretch] = useState(stretch);
+  const [routeIndex, setRouteIndex] = useState(0);
+
+  /**
+   * The walks on offer: the server's menu as dealt, re-routed in the browser
+   * the moment a dial moves. Pure arithmetic over the lean nodes — the whole
+   * reason iterating here is free.
+   */
+  const routes: MenuRoute[] = useMemo(() => {
+    if (!state.menu) return [];
+    if (dialHoles === holes && dialStretch === stretch) return state.menu.routes;
+    return rerouteMenu(state.menu, { holes: dialHoles, stretch: dialStretch });
+  }, [state.menu, dialHoles, dialStretch, holes, stretch]);
+  const route = routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
+
+  // The widening: the overlay grows from the middle of the screen unless
+  // motion is reduced, in which case it is simply there.
+  const grow = reducedMotion ? "" : "animate-in fade-in zoom-in-95 duration-300";
+
+  if (mapsFailed) return null;
+
+  const dark = resolvedTheme === "dark";
+  // A record rather than a `Map`: the component import shadows the global
+  // constructor in this file, exactly as route-preview.tsx already notes.
+  const byId: Record<string, MenuNode> = {};
+  for (const node of state.menu?.nodes ?? []) byId[node.id] = node;
+
+  // What the map draws depends on the act. While dressing, the caddy's own
+  // picks; at the menu, the selected walk; when done, the finished card.
+  const walkIds =
+    state.stage === "dressing"
+      ? state.picked.filter((id) => byId[id] != null)
+      : state.stage === "menu" && route
+        ? route.stops
+        : [];
+  const walkPath = walkIds.flatMap((id) => {
+    const node = byId[id];
+    return node ? [{ lat: node.lat, lng: node.lng }] : [];
+  });
+  const donePath =
+    state.stage === "done" && state.course
+      ? state.course.holes.flatMap((hole) =>
+          hole.lat != null && hole.lng != null
+            ? [{ lat: hole.lat, lng: hole.lng }]
+            : [],
+        )
+      : [];
+
+  const stats =
+    route && state.stage === "menu"
+      ? [
+          `${route.totalKm.toFixed(1)} km`,
+          `longest leg ${Math.max(1, Math.round(route.worstLegKm * WALK_MINUTES_PER_KM))} min`,
+          `${route.stops.length} pubs`,
+          `${route.variety} kinds`,
+        ].join(" · ")
+      : null;
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex flex-col bg-background",
+        grow,
+      )}
+      role="dialog"
+      aria-label="The gallery — the caddy planning your round"
+      data-testid="caddy-gallery"
+    >
+      {/* The map is the screen. Everything else floats over it. */}
+      <div className="relative flex-1">
+        <APIProvider apiKey={MAPS_BROWSER_KEY} onError={() => setMapsFailed(true)}>
+          <Map
+            className="size-full"
+            mapId={mapId()}
+            colorScheme={dark ? ColorScheme.DARK : ColorScheme.LIGHT}
+            defaultCenter={{ lat: 51.5, lng: -0.08 }}
+            defaultZoom={13}
+            gestureHandling="greedy"
+            disableDefaultUI
+            keyboardShortcuts={false}
+            clickableIcons={false}
+          >
+            <FrameNodes nodes={state.menu?.nodes ?? []} course={state.course} />
+            {/* Every candidate, faint; the walk's stops light up over them. */}
+            {(state.menu?.nodes ?? []).map((node) => (
+              <AdvancedMarker
+                key={node.id}
+                position={{ lat: node.lat, lng: node.lng }}
+                anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                title={node.name}
+              >
+                <div
+                  className={cn(
+                    "rounded-full transition-all duration-300",
+                    walkIds.includes(node.id)
+                      ? "size-3.5 bg-fairway ring-2 ring-background"
+                      : "size-1.5 bg-muted-foreground/40",
+                  )}
+                />
+              </AdvancedMarker>
+            ))}
+            {/* The walk under consideration — dotted, the house's own line. */}
+            {walkPath.length > 1 ? <DottedWalk path={walkPath} dark={dark} /> : null}
+            {state.stage === "menu" && route
+              ? route.stops.map((id, index) => {
+                  const node = byId[id];
+                  if (!node) return null;
+                  return (
+                    <AdvancedMarker
+                      key={`stop-${id}`}
+                      position={{ lat: node.lat, lng: node.lng }}
+                      anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                      title={`Hole ${index + 1} — ${node.name}`}
+                    >
+                      <div
+                        className={cn(
+                          "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                          index === route.stops.length - 1 ? "bg-marker" : "bg-fairway",
+                        )}
+                      >
+                        {index + 1}
+                      </div>
+                    </AdvancedMarker>
+                  );
+                })
+              : null}
+            {/* The finished card, numbered in walking order. */}
+            {state.stage === "done" && state.course
+              ? state.course.holes.map((hole, index) =>
+                  hole.lat != null && hole.lng != null ? (
+                    <AdvancedMarker
+                      key={`done-${index}`}
+                      position={{ lat: hole.lat, lng: hole.lng }}
+                      anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                      title={`Hole ${index + 1} — ${hole.venue_name}`}
+                    >
+                      <div
+                        className={cn(
+                          "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                          index === state.course!.holes.length - 1
+                            ? "bg-marker"
+                            : "bg-fairway",
+                        )}
+                      >
+                        {index + 1}
+                      </div>
+                    </AdvancedMarker>
+                  ) : null,
+                )
+              : null}
+            {donePath.length > 1 ? <DottedWalk path={donePath} dark={dark} /> : null}
+          </Map>
+        </APIProvider>
+
+        {/* The stage, named. */}
+        <span className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
+          {state.stage === "done" && state.course
+            ? `On the table — ${state.course.name}`
+            : STAGE_LINES[state.stage]}
+        </span>
+
+        {/* The way out. Leaving never cancels: the plan carries on and the
+            card lands on the drafting table exactly as it always has. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Leave the gallery — the plan carries on"
+          className="absolute top-2 right-2 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm hover:text-foreground"
+          data-testid="gallery-close"
+        >
+          <X className="size-4" aria-hidden />
+        </button>
+      </div>
+
+      {/* Below the map: the act's own furniture, in the app's column. */}
+      <div className="mx-auto w-full max-w-md px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3">
+        {state.stage === "menu" && state.menu ? (
+          <div className="flex flex-col gap-2.5">
+            <div
+              className="flex flex-wrap gap-1.5"
+              role="radiogroup"
+              aria-label="The walks on offer"
+            >
+              {routes.map((entry, index) => (
+                <Chip
+                  key={`${entry.character}-${index}`}
+                  role="radio"
+                  aria-checked={index === routeIndex}
+                  active={index === routeIndex}
+                  onClick={() => setRouteIndex(index)}
+                >
+                  {entry.character}
+                </Chip>
+              ))}
+            </div>
+            {stats ? (
+              <p className="text-center text-[11px] text-muted-foreground tabular">{stats}</p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-1.5" aria-label="Holes">
+              {HOLE_CHOICES.map((count) => (
+                <Chip
+                  key={count}
+                  active={dialHoles === count}
+                  onClick={() => {
+                    setDialHoles(count);
+                    setRouteIndex(0);
+                  }}
+                >
+                  {count}
+                </Chip>
+              ))}
+              <span className="mx-1 text-[10px] text-muted-foreground">·</span>
+              {STRETCH_CHOICES.map((entry) => (
+                <Chip
+                  key={entry.id}
+                  active={dialStretch === entry.id}
+                  onClick={() => {
+                    setDialStretch(entry.id);
+                    setRouteIndex(0);
+                  }}
+                >
+                  {entry.label}
+                </Chip>
+              ))}
+            </div>
+            <p className="text-center text-[10px] text-muted-foreground">
+              Every tap re-routes on the spot — choosing is free.
+            </p>
+            <Button
+              className="w-full"
+              onClick={() =>
+                onDress({
+                  route: route?.stops ?? null,
+                  holes: dialHoles,
+                  stretch: dialStretch,
+                })
+              }
+              data-testid="dress-this-walk"
+            >
+              Dress this walk
+            </Button>
+            <Button
+              variant="outline"
+              size="compact"
+              className="h-11 w-full"
+              onClick={() =>
+                onDress({ route: null, holes: dialHoles, stretch: dialStretch })
+              }
+            >
+              Caddy&rsquo;s choice
+            </Button>
+          </div>
+        ) : null}
+
+        {state.stage === "opening" || state.stage === "dressing" ? (
+          <div className="flex min-h-16 flex-col items-center gap-1 rounded-xl border border-border bg-card px-4 py-3">
+            {state.doing ? (
+              <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
+                {state.doing}
+              </p>
+            ) : (
+              <p className="text-[11px] font-semibold text-fairway">
+                {state.stage === "opening" ? "Walking the patch" : "Dressing the card"}
+              </p>
+            )}
+            {state.thinking ? (
+              <p
+                aria-live="off"
+                className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+              >
+                {state.thinking}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                {state.stage === "opening" ? "About ten seconds." : "Won’t be long."}
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {state.stage === "done" ? (
+          <Button className="w-full" onClick={onClose} data-testid="gallery-done">
+            Back to the table
+          </Button>
+        ) : null}
+
+        {state.stage === "failed" ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-center text-xs text-hazard">
+              {state.error ?? "The caddy lost the ball. Ask again — this one's free."}
+            </p>
+            <Button variant="outline" size="compact" className="h-11 w-full" onClick={onClose}>
+              Back to the table
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** The dotted walking line, exactly as the preview draws it. */
+function DottedWalk({
+  path,
+  dark,
+}: {
+  path: { lat: number; lng: number }[];
+  dark: boolean;
+}) {
+  return (
+    <Polyline
+      path={path}
+      strokeOpacity={0}
+      icons={[
+        {
+          icon: {
+            path: "M0,0m-1,0a1,1 0 1,0 2,0a1,1 0 1,0 -2,0",
+            fillColor: dark ? "#e9e2d0" : "#1e4630",
+            fillOpacity: 1,
+            strokeOpacity: 0,
+            scale: 2,
+          },
+          offset: "0",
+          repeat: "12px",
+        },
+      ]}
+    />
+  );
+}
+
+/** Keep the map on the patch — or on the finished card once there is one. */
+function FrameNodes({
+  nodes,
+  course,
+}: {
+  nodes: { lat: number; lng: number }[];
+  course: PlannedCourse | null;
+}) {
+  const map = useMap();
+  const points = course
+    ? course.holes.flatMap((hole) =>
+        hole.lat != null && hole.lng != null
+          ? [{ lat: hole.lat, lng: hole.lng }]
+          : [],
+      )
+    : nodes;
+  const key = points.map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join("|");
+  useEffect(() => {
+    if (!map || points.length === 0) return;
+    const bounds = points.reduce(
+      (acc, p) => ({
+        north: Math.max(acc.north, p.lat),
+        south: Math.min(acc.south, p.lat),
+        east: Math.max(acc.east, p.lng),
+        west: Math.min(acc.west, p.lng),
+      }),
+      { north: -90, south: 90, east: -180, west: 180 },
+    );
+    map.fitBounds(bounds, 64);
+    // Depending on the serialised points rather than the array identity —
+    // the array is rebuilt every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
+  return null;
+}

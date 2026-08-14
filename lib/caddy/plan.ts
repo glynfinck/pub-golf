@@ -255,6 +255,25 @@ export function briefBlock(
   return lines.join("\n");
 }
 
+/**
+ * The walk the host chose off the menu, as the caddy reads it.
+ *
+ * The chosen walk outranks the caddy's own choosing — that is the whole of
+ * what the menu means — but it does not outrank the brief: a stop that cannot
+ * meet what was asked may be swapped, said so, and nothing else may move.
+ * The ids are already validated against the dossier (`chosenWalkFrom`), so
+ * everything here is a real candidate by construction.
+ */
+export function chosenWalkBlock(stops: string[]): string {
+  return [
+    "THE HOST CHOSE THE WALK",
+    `Set this walk first, in this order: ${stops.join(" > ")}.`,
+    "The host picked it off the menu, so it is the card. Swap a stop only if",
+    "it cannot meet the brief — use <swaps>, keep the order, and say why in",
+    "that hole's fitNote. Do not re-plan the route.",
+  ].join("\n");
+}
+
 /** A follow-up turn: the host asking for a change to the card in hand. */
 export function askBlock(ask: string, holeNumber: number | null): string {
   return [

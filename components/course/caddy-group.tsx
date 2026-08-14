@@ -48,6 +48,13 @@ import {
 } from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
 import { previewOf, thinPatchNote } from "@/lib/caddy/preflight";
+import {
+  CaddyGallery,
+  type DressChoice,
+  type GalleryStage,
+} from "@/components/course/caddy-gallery";
+import type { CaddyMenu } from "@/lib/caddy/menu";
+import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import { paceForReach, paceNote, stretchWarning } from "@/lib/caddy/brief";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { formatTimeLeft } from "@/lib/time";
@@ -190,6 +197,25 @@ export function CaddyGroup({
   const [note, setNote] = useState("");
   const [stretch, setStretch] = useState<number>(DEFAULT_STRETCH);
 
+  /**
+   * The gallery: the fullscreen view the plan performs on.
+   *
+   * All of its state lives here rather than in the overlay, because the
+   * overlay is optional viewing — closing it must change nothing about the
+   * plan, so the plan can own none of its state.
+   */
+  const [gallery, setGallery] = useState(false);
+  const [galleryStage, setGalleryStage] = useState<GalleryStage>("opening");
+  const [menu, setMenu] = useState<CaddyMenu | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [galleryCourse, setGalleryCourse] = useState<PlannedCourse | null>(null);
+  const [galleryError, setGalleryError] = useState<string | null>(null);
+  /** Bumped per plan so the gallery's body remounts and re-seeds its dials. */
+  const [galleryNonce, setGalleryNonce] = useState(0);
+  /** The session the open step created, spent by the dress step. A ref: the
+   * stream closure needs it without racing a state update. */
+  const menuSession = useRef<string | null>(null);
+
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
   // Once a finish is named the pace stops being a choice and becomes a
   // reading: the destination and the hole count decide it between them, and
@@ -264,7 +290,40 @@ export function CaddyGroup({
   }, [where, whereTo, holes, onReach]);
 
   /**
-   * The first card, over a stream.
+   * The brief, as the wire reads it. One assembly, because the straight plan
+   * and the open step must never disagree about what was asked.
+   */
+  function briefBody(): Record<string, unknown> {
+    return {
+      where,
+      whereTo,
+      /**
+       * The reach, but **only when a finish was actually named.**
+       *
+       * `reachOf` answers `{ km: 1.2 }` for a single patch — that is the
+       * ring's *radius*, not a distance to walk — and `targetKmFor`
+       * short-circuits on any `reachKm > 0`, returning `reachKm * 1.15`
+       * and never reaching the stretch arm. So every single-patch round
+       * was routed at a 1.38km target whatever the host picked, and the
+       * spacing chips did nothing at all: at 9 holes on Stretch the
+       * honest target is 6km.
+       *
+       * The same guard already exists for the on-screen pace note, which is
+       * how the screen could say "steady" while the router ignored it.
+       */
+      reachKm: whereTo.trim() ? (reach?.km ?? 0) : 0,
+      holes,
+      vibe,
+      particulars,
+      note,
+      stretch,
+      startVenueId: null,
+      finishVenueId: null,
+    };
+  }
+
+  /**
+   * The dress step, over a stream.
    *
    * A route rather than the action, because an action resolves once and the
    * interesting part of a plan is the twenty seconds before it does: the patch
@@ -274,12 +333,15 @@ export function CaddyGroup({
    *
    * Everything the stream says is optional. A run where every middle event
    * went missing still ends in a card or an honest failure, which is what
-   * makes it safe to treat the narration as decoration.
+   * makes it safe to treat the narration as decoration — and it is why the
+   * gallery's X can close the view without touching the work.
    */
-  function plan() {
+  function stream(request: Record<string, unknown>) {
     run(async () => {
       setThinking("");
       setDoing("");
+      setPicked([]);
+      setGalleryStage("dressing");
       refusedRef.current = false;
       const lost = "The caddy lost the ball. Ask again — this one's free.";
       let failure: { error: string; detail?: string } | null = null;
@@ -290,35 +352,11 @@ export function CaddyGroup({
         response = await fetch("/api/caddy/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            where,
-            whereTo,
-            /**
-             * The reach, but **only when a finish was actually named.**
-             *
-             * `reachOf` answers `{ km: 1.2 }` for a single patch — that is the
-             * ring's *radius*, not a distance to walk — and `targetKmFor`
-             * short-circuits on any `reachKm > 0`, returning `reachKm * 1.15`
-             * and never reaching the stretch arm. So every single-patch round
-             * was routed at a 1.38km target whatever the host picked, and the
-             * spacing chips did nothing at all: at 9 holes on Stretch the
-             * honest target is 6km.
-             *
-             * The same guard already exists ten lines up for the on-screen
-             * pace note, which is how the screen could say "steady" while the
-             * router ignored it.
-             */
-            reachKm: whereTo.trim() ? (reach?.km ?? 0) : 0,
-            holes,
-            vibe,
-            particulars,
-            note,
-            stretch,
-            startVenueId: null,
-            finishVenueId: null,
-          }),
+          body: JSON.stringify(request),
         });
       } catch {
+        setGalleryStage("failed");
+        setGalleryError(lost);
         return { error: lost };
       }
 
@@ -329,6 +367,7 @@ export function CaddyGroup({
         const body = (await response.json().catch(() => null)) as
           | { error?: string; offer?: CaddyOffer }
           | null;
+        setGallery(false);
         if (body?.offer && body.error) {
           refusedRef.current = true;
           setRefusal({ text: body.error, offer: body.offer });
@@ -352,15 +391,19 @@ export function CaddyGroup({
         } else if (event.type === "patch") {
           onPatch?.(event.pins);
         } else if (event.type === "picked") {
+          setPicked((current) => [...current, ...event.ids]);
           onPicked?.(event.ids);
         } else if (event.type === "card") {
           setSessionId(event.sessionId);
           onSession(event.sessionId);
           onTurn?.(event.turnId ?? null);
           await onCourse(event.course, []);
+          setGalleryCourse(event.course);
+          setGalleryStage("done");
           landed = true;
         } else if (event.offer) {
           refusedRef.current = true;
+          setGallery(false);
           setRefusal({ text: event.error, offer: event.offer });
         } else {
           failure = { error: event.error, detail: event.detail };
@@ -388,9 +431,96 @@ export function CaddyGroup({
       // old code got away with returning it because `never` is assignable to
       // anything; reading a property off it does not.
       const failed = failure as { error: string; detail?: string } | null;
-      if (failed) return landed ? failed : await collect(failed.error, failed.detail);
+      if (failed) {
+        if (!landed) {
+          const rescued = await collect(failed.error, failed.detail);
+          if (!("error" in rescued) || !rescued.error) return rescued;
+          setGalleryStage("failed");
+          setGalleryError(failed.error);
+          return rescued;
+        }
+        return failed;
+      }
       // A money refusal is a finished run, not a failed one — the sheet says so.
-      return landed || refusedRef.current ? {} : await collect(lost);
+      if (landed || refusedRef.current) return {};
+      const rescued = await collect(lost);
+      if ("error" in rescued && rescued.error) {
+        setGalleryStage("failed");
+        setGalleryError(lost);
+      }
+      return rescued;
+    });
+  }
+
+  /**
+   * The open step: gather the patch, get the menu, spend nothing.
+   *
+   * The gallery opens on the tap and the walks arrive a few seconds later.
+   * Without a browser maps key there is nowhere to show a menu, so the plan
+   * runs straight through exactly as it always did — the same graceful
+   * absence the builder keeps for every map.
+   */
+  function openMenu() {
+    if (!MAPS_BROWSER_KEY) {
+      stream(briefBody());
+      return;
+    }
+    run(async () => {
+      setMenu(null);
+      setPicked([]);
+      setThinking("");
+      setDoing("");
+      setGalleryCourse(null);
+      setGalleryError(null);
+      setGalleryStage("opening");
+      setGalleryNonce((current) => current + 1);
+      setGallery(true);
+      const lost = "The caddy lost the ball. Ask again — this one's free.";
+      type OpenAnswer = {
+        sessionId?: string;
+        menu?: CaddyMenu;
+        error?: string;
+        offer?: CaddyOffer;
+      };
+      let body: OpenAnswer | null = null;
+      try {
+        const response = await fetch("/api/caddy/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(briefBody()),
+        });
+        body = (await response.json().catch(() => null)) as OpenAnswer | null;
+      } catch {
+        body = null;
+      }
+      if (!body || body.error || !body.sessionId || !body.menu) {
+        setGallery(false);
+        if (body?.offer && body.error) {
+          setRefusal({ text: body.error, offer: body.offer });
+          return {};
+        }
+        return { error: body?.error ?? lost };
+      }
+      menuSession.current = body.sessionId;
+      setMenu(body.menu);
+      setGalleryStage("menu");
+      // The patch frames the drafting table's own map too, so leaving the
+      // gallery lands on a view that already knows the neighbourhood.
+      onPatch?.(
+        body.menu.nodes.map((node) => ({ id: node.id, lat: node.lat, lng: node.lng })),
+      );
+      return {};
+    });
+  }
+
+  /** The host chose — or declined to choose — and the turn that spends runs. */
+  function dress(choice: DressChoice) {
+    if (!menuSession.current) return;
+    stream({
+      sessionId: menuSession.current,
+      route: choice.route,
+      holes: choice.holes,
+      stretch: choice.stretch,
     });
   }
 
@@ -477,7 +607,7 @@ export function CaddyGroup({
             className="mt-1 w-full"
             onClick={() => {
               setConfirming(false);
-              plan();
+              openMenu();
             }}
             data-testid="confirm-fresh-course"
           >
@@ -527,6 +657,31 @@ export function CaddyGroup({
     />
   );
 
+  /**
+   * The gallery overlay, rendered from every face the group can wear: the
+   * plan crosses several of them (form → wait → ask box) and the overlay must
+   * survive each transition. A portal, so it costs the layout nothing.
+   */
+  const galleryEl = (
+    <CaddyGallery
+      open={gallery}
+      nonce={galleryNonce}
+      state={{
+        stage: galleryStage,
+        menu,
+        picked,
+        doing,
+        thinking,
+        course: galleryCourse,
+        error: galleryError,
+      }}
+      holes={holes}
+      stretch={stretch}
+      onDress={dress}
+      onClose={() => setGallery(false)}
+    />
+  );
+
   // ——— The wait. Narrated, never spun: the line names the stage the
   // pipeline is actually in, and the Putt is the house's own busy animation.
   if (pending) {
@@ -538,6 +693,7 @@ export function CaddyGroup({
         )}
         aria-live="polite"
       >
+        {galleryEl}
         <Putt />
         {/* Three fixed rows, and the heading never moves.
             It used to be replaced by whatever tool the caddy had reached for,
@@ -621,6 +777,7 @@ export function CaddyGroup({
       <div
         className={cn("engraved flex flex-col gap-2.5 rounded-xl bg-card px-4 py-3.5", className)}
       >
+        {galleryEl}
         {moreSheet}
         {feeSheet}
         <span className="eyebrow text-fairway">The caddy</span>
@@ -773,6 +930,7 @@ export function CaddyGroup({
       <div className="font-serif text-lg leading-tight text-balance">
         Your round, planned in twenty seconds
       </div>
+      {galleryEl}
       {moreSheet}
       {feeSheet}
 
