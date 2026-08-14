@@ -8,7 +8,13 @@ import {
   type TeeOff,
 } from "@/lib/caddy/hours";
 import { walkCrossings, type Barrier } from "@/lib/caddy/barriers";
-import { alongStrokeKm, type StrokePoint } from "@/lib/caddy/stroke";
+import {
+  alongStrokeKm,
+  distanceToStrokeKm,
+  strokeFit,
+  strokeLengthKm,
+  type StrokePoint,
+} from "@/lib/caddy/stroke";
 import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
@@ -226,7 +232,10 @@ export function kindOf(name: string): string {
 export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
   const nodes: RouteNode[] = [];
   for (const candidate of candidates) {
-    if (typeof candidate.lat !== "number" || typeof candidate.lng !== "number") {
+    if (
+      typeof candidate.lat !== "number" ||
+      typeof candidate.lng !== "number"
+    ) {
       continue;
     }
     nodes.push({
@@ -251,7 +260,12 @@ function distances(nodes: RouteNode[]): Map<string, Map<string, number>> {
   for (const from of nodes) table.set(from.id, new Map());
   for (let i = 0; i < nodes.length; i += 1) {
     for (let j = i + 1; j < nodes.length; j += 1) {
-      const km = haversineKm(nodes[i].lat, nodes[i].lng, nodes[j].lat, nodes[j].lng);
+      const km = haversineKm(
+        nodes[i].lat,
+        nodes[i].lng,
+        nodes[j].lat,
+        nodes[j].lng,
+      );
       table.get(nodes[i].id)!.set(nodes[j].id, km);
       table.get(nodes[j].id)!.set(nodes[i].id, km);
     }
@@ -263,7 +277,8 @@ const gap = (
   table: Map<string, Map<string, number>>,
   from: string,
   to: string,
-): number => (from === to ? 0 : (table.get(from)?.get(to) ?? Number.POSITIVE_INFINITY));
+): number =>
+  from === to ? 0 : (table.get(from)?.get(to) ?? Number.POSITIVE_INFINITY);
 
 /** The k nearest others to each node. */
 export function nearestNeighbours(
@@ -282,9 +297,13 @@ export function nearestNeighbours(
   return out;
 }
 
-function walk(table: Map<string, Map<string, number>>, stops: string[]): number {
+function walk(
+  table: Map<string, Map<string, number>>,
+  stops: string[],
+): number {
   let km = 0;
-  for (let i = 1; i < stops.length; i += 1) km += gap(table, stops[i - 1], stops[i]);
+  for (let i = 1; i < stops.length; i += 1)
+    km += gap(table, stops[i - 1], stops[i]);
   return km;
 }
 
@@ -329,7 +348,11 @@ export function principalAxis(
 }
 
 /** How far along the direction of travel a pub sits, in kilometres. */
-function along(node: RouteNode, axis: { x: number; y: number }, origin: RouteNode): number {
+function along(
+  node: RouteNode,
+  axis: { x: number; y: number },
+  origin: RouteNode,
+): number {
   const scale = Math.cos(origin.lat * (Math.PI / 180));
   const dx = (node.lng - origin.lng) * scale * 111.32;
   const dy = (node.lat - origin.lat) * 111.32;
@@ -354,7 +377,8 @@ export function walkFeasible(
   if (!teeOff) return true;
   let walked = 0;
   for (let i = 0; i < stops.length; i += 1) {
-    if (i > 0) walked += gap(table, stops[i - 1], stops[i]) * WALK_MINUTES_PER_KM;
+    if (i > 0)
+      walked += gap(table, stops[i - 1], stops[i]) * WALK_MINUTES_PER_KM;
     const node = byId.get(stops[i]);
     if (!node) return false;
     const arrival = teeOff.minutes + Math.round(walked) + i * DWELL_MINUTES;
@@ -404,7 +428,11 @@ function bestForwardWalk(
 ): string[] | null {
   const origin = (startId ? byId.get(startId) : null) ?? nodes[0];
   if (!origin) return null;
-  const axis = principalAxis(nodes, origin, finishId ? byId.get(finishId) : null);
+  const axis = principalAxis(
+    nodes,
+    origin,
+    finishId ? byId.get(finishId) : null,
+  );
   const position = alongFn ?? ((node: RouteNode) => along(node, axis, origin));
 
   const order = nodes
@@ -414,7 +442,9 @@ function bestForwardWalk(
   if (n < holes) return null;
 
   const startAt = startId ? order.findIndex((e) => e.node.id === startId) : -1;
-  const finishAt = finishId ? order.findIndex((e) => e.node.id === finishId) : -1;
+  const finishAt = finishId
+    ? order.findIndex((e) => e.node.id === finishId)
+    : -1;
   // A pinned tee that is not at the end of the line it was asked to travel
   // cannot be honoured by a forward-only walk. Rather than quietly bending the
   // rule, this hands back nothing and another seed answers.
@@ -422,7 +452,8 @@ function bestForwardWalk(
   if (finishId && (finishAt === -1 || finishAt <= startAt)) return null;
 
   const step = (i: number, j: number) =>
-    gap(table, order[i].node.id, order[j].node.id) - drift * (order[j].t - order[i].t);
+    gap(table, order[i].node.id, order[j].node.id) -
+    drift * (order[j].t - order[i].t);
 
   // best[k][j] — the cheapest k-stop walk ending at j. `from` remembers the
   // step that got there so the route can be read back out. `mins` rides
@@ -432,9 +463,15 @@ function bestForwardWalk(
   // (The cheapest path is treated as the earliest; with drift in the cost
   // that is an approximation, and `walkFeasible` still checks the whole.)
   const INF = Number.POSITIVE_INFINITY;
-  const best: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(INF));
-  const from: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(-1));
-  const mins: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(0));
+  const best: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(INF),
+  );
+  const from: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(-1),
+  );
+  const mins: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(0),
+  );
 
   const shutAt = (j: number, k: number, walked: number) =>
     teeOff
@@ -459,7 +496,8 @@ function bestForwardWalk(
         if (cost < best[k][j]) {
           const walked =
             mins[k - 1][i] +
-            gap(table, order[i].node.id, order[j].node.id) * WALK_MINUTES_PER_KM;
+            gap(table, order[i].node.id, order[j].node.id) *
+              WALK_MINUTES_PER_KM;
           if (shutAt(j, k, walked)) continue;
           best[k][j] = cost;
           from[k][j] = i;
@@ -472,7 +510,8 @@ function bestForwardWalk(
   let end = finishAt;
   if (end === -1) {
     end = 0;
-    for (let j = 1; j < n; j += 1) if (best[holes][j] < best[holes][end]) end = j;
+    for (let j = 1; j < n; j += 1)
+      if (best[holes][j] < best[holes][end]) end = j;
   }
   if (best[holes][end] === INF) return null;
 
@@ -555,6 +594,154 @@ function snakeWalk(
   }
 
   if (finishId) stops.push(finishId);
+  return stops.length === holes ? stops : null;
+}
+
+/**
+ * How much of a drawn line a walk has to span before it counts as following
+ * it, and how much doubling back it may do while it does.
+ *
+ * Read as shares of the stroke's own arc length, so they mean the same thing
+ * on a two-kilometre line and a ten-kilometre one. Seven tenths is deliberately
+ * short of the whole: the ends of a stroke are where a finger starts and stops
+ * rather than where the pubs are, and demanding the last two hundred metres
+ * would refuse good walks over the host's own overshoot.
+ */
+export const STROKE_COVERAGE_FLOOR = 0.7;
+export const STROKE_BACKTRACK_SHARE = 0.35;
+
+/** Whether a walk answers the line it was drawn on. */
+export function followsStroke(
+  points: StrokePoint[],
+  stroke: StrokePoint[],
+): boolean {
+  const length = strokeLengthKm(stroke);
+  if (length <= 0) return true;
+  const fit = strokeFit(points, stroke);
+  return (
+    fit.coverage >= STROKE_COVERAGE_FLOOR &&
+    fit.backtrackKm <= length * STROKE_BACKTRACK_SHARE
+  );
+}
+
+/**
+ * How a band's winner is chosen, and the three answers worth offering.
+ *
+ * Each is a different reading of "walk me down this line", which is what makes
+ * them a menu rather than three perturbations: trace it, pace it, or take the
+ * best of what stands beside it.
+ */
+const STROKE_PREFERENCES: {
+  key: string;
+  prefer: (node: RouteNode, offLineKm: number, offCentreKm: number) => number;
+}[] = [
+  { key: "hug", prefer: (_node, offLine) => offLine },
+  { key: "even", prefer: (_node, _offLine, offCentre) => offCentre },
+  // Rating leads, but not off the line entirely: half a kilometre of detour
+  // costs about what a whole star is worth, so a good pub round the corner
+  // wins and a great one two streets away does not.
+  {
+    key: "rated",
+    prefer: (node, offLine) => -(node.rating ?? 0) + offLine * 2,
+  },
+];
+
+/**
+ * A walk built to **span** the stroke, band by band.
+ *
+ * The forward walks above are monotone along the drawn line, and that was
+ * mistaken for following it. It is only half: monotone says a walk never goes
+ * backwards, and says nothing whatever about how far forwards it gets. Given a
+ * line drawn across town and a dense first street, the greedy forward walk
+ * spends every hole in that street — perfectly monotone, and not the round the
+ * host drew.
+ *
+ * So this constructs coverage instead of hoping for it. The line is cut into
+ * as many bands as there are free holes and each band contributes one stop, in
+ * band order, which is stroke order — the walk snakes down the drawn path
+ * because it was built along it rather than scored for it afterwards.
+ *
+ * An empty band is ordinary (a park, a river, a stretch of housing) and takes
+ * the nearest unused pub to where the band was, because the host asked for
+ * this many holes and a hole is not the thing to drop. Pins are honoured at
+ * the ends and shorten the reach the free stops share out; pins that disagree
+ * with the direction the stroke was drawn in are refused rather than bent,
+ * and another construction answers that patch.
+ */
+function strokeWalk(
+  nodes: RouteNode[],
+  byId: Map<string, RouteNode>,
+  holes: number,
+  stroke: StrokePoint[],
+  startId: string | null,
+  finishId: string | null,
+  prefer: (node: RouteNode, offLineKm: number, offCentreKm: number) => number,
+): string[] | null {
+  const length = strokeLengthKm(stroke);
+  if (length <= 0 || holes < 2 || nodes.length < holes) return null;
+
+  const along = new Map<string, number>();
+  const offLine = new Map<string, number>();
+  for (const node of nodes) {
+    const point = { lat: node.lat, lng: node.lng };
+    along.set(node.id, alongStrokeKm(point, stroke));
+    offLine.set(node.id, distanceToStrokeKm(point, stroke));
+  }
+
+  const used = new Set<string>();
+  const head = startId && byId.has(startId) ? startId : null;
+  const tail =
+    finishId && byId.has(finishId) && finishId !== head ? finishId : null;
+  if (head) used.add(head);
+  if (tail) used.add(tail);
+
+  const from = head ? (along.get(head) ?? 0) : 0;
+  const to = tail ? (along.get(tail) ?? length) : length;
+  if (to <= from) return null;
+
+  const free = holes - (head ? 1 : 0) - (tail ? 1 : 0);
+  if (free < 1) return null;
+
+  const picked: string[] = [];
+  const width = (to - from) / free;
+  for (let band = 0; band < free; band += 1) {
+    const low = from + width * band;
+    const high = from + width * (band + 1);
+    const centre = (low + high) / 2;
+    let best: string | null = null;
+    let bestCost = Number.POSITIVE_INFINITY;
+    let nearest: string | null = null;
+    let nearestGap = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+      if (used.has(node.id)) continue;
+      const at = along.get(node.id) ?? 0;
+      const offCentre = Math.abs(at - centre);
+      if (offCentre < nearestGap) {
+        nearestGap = offCentre;
+        nearest = node.id;
+      }
+      // Half-open bands so a pub on a boundary belongs to exactly one of
+      // them, with the last band closed so the far end of the line is
+      // reachable at all.
+      const inside =
+        at >= low && (band === free - 1 ? at <= high + 1e-9 : at < high);
+      if (!inside) continue;
+      const cost = prefer(node, offLine.get(node.id) ?? 0, offCentre);
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = node.id;
+      }
+    }
+    const chosen = best ?? nearest;
+    if (!chosen) return null;
+    used.add(chosen);
+    picked.push(chosen);
+  }
+
+  // Bands are walked in order, but a fallback pick can land out of turn, so
+  // the snake is guaranteed here rather than assumed.
+  picked.sort((a, b) => (along.get(a) ?? 0) - (along.get(b) ?? 0));
+  const stops = [...(head ? [head] : []), ...picked, ...(tail ? [tail] : [])];
   return stops.length === holes ? stops : null;
 }
 
@@ -666,7 +853,8 @@ function swapIn(
       for (const id of pool) {
         if (inRoute.has(id)) continue;
         const after =
-          gap(table, route[i - 1] ?? id, id) + gap(table, id, route[i + 1] ?? id);
+          gap(table, route[i - 1] ?? id, id) +
+          gap(table, id, route[i + 1] ?? id);
         if (after < before - 1e-9) {
           inRoute.delete(route[i]);
           inRoute.add(id);
@@ -801,7 +989,10 @@ function describe(
  * target rather than on the distance itself — otherwise every answer is nine
  * pubs on one street.
  */
-export function scoreRoute(route: PlannedRoute, targetKm: number | null): number {
+export function scoreRoute(
+  route: PlannedRoute,
+  targetKm: number | null,
+): number {
   const spread = targetKm
     ? Math.abs(route.totalKm - targetKm) / Math.max(targetKm, 0.1)
     : route.totalKm / 10;
@@ -810,7 +1001,8 @@ export function scoreRoute(route: PlannedRoute, targetKm: number | null): number
   const trek = Math.max(0, route.worstLegKm - 0.8);
   // Variety pulls the other way, so it subtracts. Capped: past a handful of
   // distinct kinds nobody notices another.
-  const sameness = (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
+  const sameness =
+    (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
   // A night should go somewhere. Two pubs on one street and back again can hit
   // the target distance exactly and still be the same corner all evening —
   // this is what separates a jaunt from a lap of the block, and nothing in the
@@ -851,7 +1043,11 @@ export interface RouteObjective {
   key: string;
   /** What the model reads, so it can choose between them. */
   character: string;
-  score: (route: PlannedRoute, nodes: Map<string, RouteNode>, targetKm: number | null) => number;
+  score: (
+    route: PlannedRoute,
+    nodes: Map<string, RouteNode>,
+    targetKm: number | null,
+  ) => number;
 }
 
 export const ROUTE_OBJECTIVES: RouteObjective[] = [
@@ -914,7 +1110,9 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
       const priced = route.stops
         .map((id) => nodes.get(id)?.priceLevel)
         .filter((level): level is number => typeof level === "number");
-      return priced.length === 0 ? 4 : priced.reduce((a, b) => a + b, 0) / priced.length;
+      return priced.length === 0
+        ? 4
+        : priced.reduce((a, b) => a + b, 0) / priced.length;
     },
   },
   {
@@ -930,7 +1128,8 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   {
     key: "sport",
     character: "somewhere with the match on",
-    score: (route, nodes) => -carrying(route.stops, nodes, "goodForWatchingSports"),
+    score: (route, nodes) =>
+      -carrying(route.stops, nodes, "goodForWatchingSports"),
   },
 ];
 
@@ -983,7 +1182,9 @@ export function buildRouteGraph(
     nearestTo(request.aimFrom);
   const aimedFinish = nearestTo(request.aimTo);
   const finishId =
-    (request.finishId && byId.has(request.finishId) && request.finishId !== startId
+    (request.finishId &&
+    byId.has(request.finishId) &&
+    request.finishId !== startId
       ? request.finishId
       : null) ?? (aimedFinish && aimedFinish !== startId ? aimedFinish : null);
 
@@ -1007,7 +1208,10 @@ export function buildRouteGraph(
   for (const origin of origins) {
     // Greedy: the short, clustered answer. Kept because for a genuinely dense
     // patch it is the right one, and because 2-opt over it is a good baseline.
-    for (const skip of [null, ...neighbours[origin].slice(0, 3).map((n) => n.id)]) {
+    for (const skip of [
+      null,
+      ...neighbours[origin].slice(0, 3).map((n) => n.id),
+    ]) {
       const seed = greedy(table, pool, holes, origin, finishId, skip);
       if (seed) seeds.push(seed);
     }
@@ -1046,6 +1250,24 @@ export function buildRouteGraph(
     }
   }
 
+  // And the walks built to *span* the drawn line rather than merely to be
+  // monotone along it. Origin-free — a band walk is decided by the stroke, not
+  // by where it happens to begin — so these stand outside the loop above.
+  if (strokeAxis) {
+    for (const { prefer } of STROKE_PREFERENCES) {
+      const walk = strokeWalk(
+        nodes,
+        byId,
+        holes,
+        strokeAxis,
+        startId,
+        finishId,
+        prefer,
+      );
+      if (walk) snakes.push(walk);
+    }
+  }
+
   const improved = seeds.map((seed) => {
     let route = twoOpt(table, seed, startId !== null, finishId !== null);
     route = swapIn(table, route, pool, startId !== null, finishId !== null);
@@ -1053,7 +1275,9 @@ export function buildRouteGraph(
     return twoOpt(table, route, startId !== null, finishId !== null);
   });
 
-  const described = [...improved, ...snakes].map((stops) => describe(table, byId, stops, ""));
+  const described = [...improved, ...snakes].map((stops) =>
+    describe(table, byId, stops, ""),
+  );
 
   // Closing time, applied to the whole pool. Walks that stay open outrank
   // walks that do not; only when *nothing* passes does the unchecked pool
@@ -1061,7 +1285,9 @@ export function buildRouteGraph(
   // contract will say what could not be proved.
   const teeOff = request.teeOff ?? null;
   const feasible = teeOff
-    ? described.filter((route) => walkFeasible(table, byId, route.stops, teeOff))
+    ? described.filter((route) =>
+        walkFeasible(table, byId, route.stops, teeOff),
+      )
     : described;
   const timed = feasible.length > 0 ? feasible : described;
 
@@ -1072,8 +1298,8 @@ export function buildRouteGraph(
         (route) =>
           walkCrossings(
             route.stops.flatMap((id) => {
-            const node = byId.get(id);
-            return node ? [{ lat: node.lat, lng: node.lng }] : [];
+              const node = byId.get(id);
+              return node ? [{ lat: node.lat, lng: node.lng }] : [];
             }),
             barriers,
           ) === 0,
@@ -1091,10 +1317,34 @@ export function buildRouteGraph(
   );
   const lit = populated.length > 0 ? populated : grounded;
 
+  // **A stroke is a route, not a region**, and this is the filter that says
+  // so. The drawn line reached construction (the forward walks are monotone
+  // along it) and reached the gather (the circles are sampled down it) but
+  // never reached selection — so a tight cluster sitting inside the swath was
+  // eligible for the menu and, being short and well-connected, usually won it.
+  // The host drew a walk across town and was offered one street of it.
+  //
+  // Same shape as the hours and barrier filters above, for the same reason:
+  // an honest fallback rather than an empty menu. Where no walk can follow the
+  // line — the pubs genuinely are all at one end — the unfiltered pool stands
+  // and the card says what it is.
+  const tracking = strokeAxis
+    ? lit.filter((route) =>
+        followsStroke(
+          route.stops.flatMap((id) => {
+            const node = byId.get(id);
+            return node ? [{ lat: node.lat, lng: node.lng }] : [];
+          }),
+          strokeAxis,
+        ),
+      )
+    : lit;
+  const onLine = tracking.length > 0 ? tracking : lit;
+
   // And the menu chooses from the non-dominated set: nothing on it is beaten
   // on every argument at once by something off it.
-  const front = paretoFront(lit, byId, target);
-  const pool2 = front.length > 0 ? front : lit;
+  const front = paretoFront(onLine, byId, target);
+  const pool2 = front.length > 0 ? front : onLine;
 
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they
@@ -1110,12 +1360,15 @@ export function buildRouteGraph(
   for (const objective of ROUTE_OBJECTIVES) {
     if (kept.length >= wanted) break;
     const ranked = [...pool2].sort(
-      (a, b) => objective.score(a, byId, target) - objective.score(b, byId, target),
+      (a, b) =>
+        objective.score(a, byId, target) - objective.score(b, byId, target),
     );
     const winner = ranked.find(
       (route) =>
         !kept.includes(route) &&
-        !kept.some((other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR),
+        !kept.some(
+          (other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR,
+        ),
     );
     if (!winner) continue;
     winner.character = objective.character;
@@ -1179,7 +1432,11 @@ export function routesBlock(graph: RouteGraph): string {
         ` | longest ${route.worstLegKm.toFixed(2)}km | ${route.variety} kinds`,
     );
   });
-  lines.push("", "<swaps>", "Nearest alternatives to each stop, with the walk to it.");
+  lines.push(
+    "",
+    "<swaps>",
+    "Nearest alternatives to each stop, with the walk to it.",
+  );
   for (const node of graph.nodes) {
     const near = graph.neighbours[node.id];
     if (!near?.length) continue;

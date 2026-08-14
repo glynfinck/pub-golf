@@ -1,7 +1,12 @@
 import "server-only";
 
-import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
+import {
+  EMPTY_FACTS,
+  type PubFacts,
+  type PubSource,
+} from "@/lib/caddy/dossier";
 import { windowsOf } from "@/lib/caddy/hours";
+import { interleaveRings } from "@/lib/caddy/rings";
 import { strokeCircles, type StrokePoint } from "@/lib/caddy/stroke";
 import { corridorSamples, haversineKm } from "@/lib/geo";
 import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
@@ -108,7 +113,8 @@ function priceOf(level: string | undefined): number | null {
 }
 
 function factsOf(place: GooglePlace): PubFacts {
-  const read = (value: boolean | undefined) => (value === undefined ? null : value);
+  const read = (value: boolean | undefined) =>
+    value === undefined ? null : value;
   return {
     outdoorSeating: read(place.outdoorSeating),
     allowsDogs: read(place.allowsDogs),
@@ -265,7 +271,10 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
    * So this leg locates the area and steps back. Filling the patch is Nearby's
    * job, under Nearby's restriction.
    */
-  const locate = async (query: string, bias: { lat: number; lng: number } | null) => {
+  const locate = async (
+    query: string,
+    bias: { lat: number; lng: number } | null,
+  ) => {
     if (!query.trim()) return null;
     const places = await call(
       key,
@@ -309,16 +318,11 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
         call(key, NEARBY_URL, nearbyBody(centre, CORRIDOR_RADIUS_M), language),
       ),
     );
-    const seen = new Set<string>();
-    const gathered: GatheredPub[] = [];
-    for (const place of rings.flat()) {
-      const pub = toGathered(place);
-      if (!pub || seen.has(pub.googlePlaceId)) continue;
-      seen.add(pub.googlePlaceId);
-      gathered.push(pub);
-    }
     return {
-      pubs: gathered,
+      // Rank-interleaved, not circle-concatenated: the candidate cap is a
+      // budget, and flattening in circle order spent all of it on the first
+      // few circles — the opening quarter of the host's own line.
+      pubs: dedupe(interleaveRings(rings)),
       from: input.stroke[0],
       to: input.stroke[input.stroke.length - 1],
     };
@@ -370,14 +374,21 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       ),
     ),
   );
+  // Same rule as the stroke's: a corridor is a line too, and concatenating
+  // its samples put the far end of the walk outside the cap.
+  return { pubs: dedupe(interleaveRings(rings)), from, to };
+}
+
+/** Places to pubs, first appearance wins. The interleave has already decided
+ * the order; this only drops what is not a pub and what is already in. */
+function dedupe(places: GooglePlace[]): GatheredPub[] {
   const seen = new Set<string>();
   const gathered: GatheredPub[] = [];
-  for (const place of rings.flat()) {
+  for (const place of places) {
     const pub = toGathered(place);
     if (!pub || seen.has(pub.googlePlaceId)) continue;
     seen.add(pub.googlePlaceId);
     gathered.push(pub);
   }
-  return { pubs: gathered, from, to };
+  return gathered;
 }
-

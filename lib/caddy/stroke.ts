@@ -51,7 +51,8 @@ function perpendicularKm(
   const px = (p.lng - a.lng) * kx;
   const py = (p.lat - a.lat) * ky;
   const len2 = bx * bx + by * by;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / len2));
+  const t =
+    len2 === 0 ? 0 : Math.max(0, Math.min(1, (px * bx + py * by) / len2));
   const cx = ax + t * bx;
   const cy = ay + t * by;
   return { km: Math.hypot(px - cx, py - cy), t };
@@ -203,6 +204,69 @@ export function alongStrokeKm(p: StrokePoint, points: StrokePoint[]): number {
     walked += seg;
   }
   return at;
+}
+
+/**
+ * How well a walk actually follows the line it was drawn on.
+ *
+ * `alongStrokeKm` gives the router an *order* to be monotone in, and that was
+ * taken for the whole of following a stroke. It is not: a walk can be
+ * perfectly monotone and still sit in the first two streets of a line drawn
+ * across town, because "never goes backwards" says nothing about how far
+ * forwards it ever gets. Coverage is the missing half, and it is the half the
+ * host is actually looking at — they drew a route and want the card walked
+ * down it.
+ *
+ * All three numbers are read against the stroke's own arc length, so they mean
+ * the same thing on a two-kilometre line and a ten-kilometre one:
+ *
+ *   `coverage` — the share of the line between the first stop and the last.
+ *   `backtrackKm` — how much of the walk is spent going back the way the
+ *     stroke came, which is what makes a snake read as a scribble.
+ *   `worstGapKm` — the longest stretch of drawn line with no stop on it, the
+ *     ends included, so a walk that ignores the last third says so.
+ */
+export interface StrokeFit {
+  coverage: number;
+  backtrackKm: number;
+  worstGapKm: number;
+}
+
+export function strokeFit(
+  points: StrokePoint[],
+  stroke: StrokePoint[],
+): StrokeFit {
+  const length = strokeLengthKm(stroke);
+  if (points.length === 0 || stroke.length < 2 || length <= 0) {
+    return { coverage: 0, backtrackKm: 0, worstGapKm: length };
+  }
+  const along = points.map((point) => alongStrokeKm(point, stroke));
+
+  // Walking order, so this counts the walk's own doubling back rather than
+  // the set's spread — the same stops in a different order are a different
+  // answer to the question "does this follow the line?".
+  let backtrackKm = 0;
+  for (let i = 1; i < along.length; i += 1) {
+    const step = along[i] - along[i - 1];
+    if (step < 0) backtrackKm -= step;
+  }
+
+  const sorted = [...along].sort((a, b) => a - b);
+  // The head of the line is a gap like any other: a walk starting a
+  // kilometre in has left a kilometre of drawn line unvisited, and saying so
+  // is the difference between "covers the line" and "covers some line".
+  let worstGapKm = sorted[0];
+  for (let i = 1; i < sorted.length; i += 1) {
+    worstGapKm = Math.max(worstGapKm, sorted[i] - sorted[i - 1]);
+  }
+  worstGapKm = Math.max(worstGapKm, length - sorted[sorted.length - 1]);
+
+  const spanKm = sorted[sorted.length - 1] - sorted[0];
+  return {
+    coverage: Math.max(0, Math.min(1, spanKm / length)),
+    backtrackKm,
+    worstGapKm,
+  };
 }
 
 /** A stroke off the wire: bounded, finite, and never trusted. Null for
