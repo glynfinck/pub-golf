@@ -568,15 +568,17 @@ export function CourseBuilder({
         />
       </div>
 
-      {/* The caddy: one group above the free search, and nothing at all when
-          it is off duty. Everything below it is the builder as it has always
-          been — the fee buys the planning, never the table.
-          Whether it is on duty is the page's call, not this table's. It used
-          to be `caddy && !editing`, which quietly meant a saved course could
-          never be tweaked — the door you came in by is not a fact about the
-          caddy. `/courses/[id]` passes `caddy` only when the conversation that
-          wrote that course is still open. */}
-      {caddy ? (
+      {/* The caddy **continues** here; it is never offered here.
+          Planning has its own room now (app/plan), so the table's job is the
+          conversation that already exists: a card handed over from the room,
+          or one resumed after a refresh, keeps its ask box and its tweaks.
+          With no session there is nothing to continue, and a host who came
+          to plot by hand meets a table with no caddy on it at all — which is
+          what "plot it by hand" has to mean to be worth choosing.
+          Whether the caddy is on duty is still the page's call, not this
+          table's: `/courses/[id]` passes `caddy` only when the conversation
+          that wrote that course is still open. */}
+      {caddy && (caddySession || reopen) ? (
         <CaddyGroup
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
