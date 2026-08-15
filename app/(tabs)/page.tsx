@@ -120,7 +120,9 @@ export default async function ClubhousePage() {
           data-testid="league-link"
         >
           <span>
-            <span className="eyebrow block text-fairway">Members&apos; league</span>
+            <span className="eyebrow block text-fairway">
+              Members&apos; league
+            </span>
             <span className="mt-0.5 block text-xs text-muted-foreground">
               The order of merit across {leagueRounds}{" "}
               {leagueRounds === 1 ? "round" : "rounds"}

@@ -58,7 +58,5 @@ export function Section({
 
 /** A bulleted list in the body voice — tighter and a size down, like the sheet. */
 export function Points({ children }: { children: React.ReactNode }) {
-  return (
-    <ul className="flex list-disc flex-col gap-1.5 pl-4">{children}</ul>
-  );
+  return <ul className="flex list-disc flex-col gap-1.5 pl-4">{children}</ul>;
 }

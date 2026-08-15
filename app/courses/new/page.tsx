@@ -47,7 +47,6 @@ export default async function NewCoursePage({
         hasPass={stand.hasPass}
         resumed={resumed}
         filedCourseId={filed}
-        passExpiresAt={stand.passExpiresAt}
         allowance={stand.allowance}
       />
       {/* Absence rather than apology stays the rule for players; this is for

@@ -6,12 +6,10 @@ import { Copy, Map as MapIcon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
-import { CaddyGroup } from "@/components/course/caddy-group";
+import { CaddyAsk } from "@/components/course/caddy-ask";
 import { CaddyGallery } from "@/components/course/caddy-gallery";
 import { useCaddyJob } from "@/hooks/use-caddy-job";
 import { JOB_BADGE } from "@/lib/caddy/stages";
-import type { Reach } from "@/lib/caddy/reach";
-import { echoLine } from "@/lib/caddy/preflight";
 import {
   RoutePreview,
   type LivePatch,
@@ -97,7 +95,6 @@ export function CourseBuilder({
   resumed = null,
   reopen = null,
   filedCourseId = null,
-  passExpiresAt = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -121,11 +118,6 @@ export function CourseBuilder({
    * session is on top.
    */
   filedCourseId?: string | null;
-  /** When the green fee's day runs out, for the confirmation before a fresh
-   * card. **Null is the ordinary case**: the day starts at tee-off, so a host
-   * planning on Wednesday for Saturday has a fee with no clock on it at all.
-   * `freshCourseNotice` says which of those two a host is looking at. */
-  passExpiresAt?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -180,7 +172,6 @@ export function CourseBuilder({
   const [drawKey, setDrawKey] = useState(0);
   /** How far the round reaches, resolved from the brief's two areas. Held
    * here rather than in the group so the map and the form read one value. */
-  const [reach, setReach] = useState<Reach | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -512,25 +503,11 @@ export function CourseBuilder({
         // pre-flight's pins do: the free lean search's results, faint on the
         // ring, so the host sees what the caddy is about to look at before
         // anything is spent.
-        live={
-          patch ??
-          (reach?.preview?.pins.length
-            ? { pins: reach.preview.pins, picked: [] }
-            : null)
-        }
-        chip={patch ? null : reach?.preview ? echoLine(reach.preview) : null}
+        live={patch}
+        chip={null}
         badge={JOB_BADGE[caddyJob.stage]}
         drawKey={drawKey}
-        ring={
-          reach
-            ? {
-                lat: reach.centre.lat,
-                lng: reach.centre.lng,
-                km: reach.km,
-                warn: reach.warn,
-              }
-            : null
-        }
+        ring={null}
         onOpen={
           MAPS_BROWSER_KEY
             ? () => {
@@ -563,16 +540,12 @@ export function CourseBuilder({
           table's: `/courses/[id]` passes `caddy` only when the conversation
           that wrote that course is still open. */}
       {caddy && (caddySession || reopen) ? (
-        <CaddyGroup
+        <CaddyAsk
           job={caddyJob}
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
           reopen={reopen}
-          passExpiresAt={passExpiresAt}
-          filed={savedId !== null}
           allowance={allowance}
-          onReach={setReach}
-          reach={reach}
         />
       ) : null}
 

@@ -7,7 +7,7 @@ import { APIProvider } from "@vis.gl/react-google-maps";
 import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
-import { CaddyGroup } from "@/components/course/caddy-group";
+import { BriefForm } from "@/components/course/brief-form";
 import { CaddyGallery } from "@/components/course/caddy-gallery";
 import { useCaddyJob } from "@/hooks/use-caddy-job";
 import {
@@ -52,14 +52,12 @@ export function CourseRoom({
   allowance,
   passExpiresAt = null,
   session: sessionProp = null,
-  reopen = null,
   filed = false,
 }: {
   hasPass: boolean;
   allowance?: CaddyAllowance;
   passExpiresAt?: string | null;
   session?: string | null;
-  reopen?: string | null;
   filed?: boolean;
 }) {
   const router = useRouter();
@@ -295,18 +293,14 @@ export function CourseRoom({
               will look along it.
             </p>
           ) : null}
-          <CaddyGroup
+          <BriefForm
             job={job}
-            room
-            strokeOverride={stroke}
+            stroke={stroke}
             hasPass={hasPass}
             allowance={allowance}
             passExpiresAt={passExpiresAt}
-            reopen={reopen}
             filed={filed}
-            reach={reach}
             onReach={setReach}
-            onCourse={() => {}}
           />
         </div>
       </RetractingPanel>

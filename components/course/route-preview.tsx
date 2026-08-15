@@ -130,7 +130,7 @@ export function RoutePreview({
   const route = previewFrame(stops);
   // The card wins the moment there is one: a route is what the host came for,
   // and the patch behind it has done its job.
-  const patch = route ? null : (live?.pins.length ? patchFrame(live.pins) : null);
+  const patch = route ? null : live?.pins.length ? patchFrame(live.pins) : null;
   const frame = route ?? patch;
 
   // Nothing to frame is not a map, and neither is no key.
@@ -144,7 +144,10 @@ export function RoutePreview({
       style={{ aspectRatio: `${frame.aspect}` }}
       data-testid="route-preview"
     >
-      <APIProvider apiKey={MAPS_BROWSER_KEY} onError={() => setMapsFailed(true)}>
+      <APIProvider
+        apiKey={MAPS_BROWSER_KEY}
+        onError={() => setMapsFailed(true)}
+      >
         <Map
           className="size-full"
           mapId={mapId()}
@@ -473,7 +476,12 @@ function PatchRing({
           strokeWeight={1.5}
         />
       ) : null}
-      <Polyline path={solid} strokeColor={ink} strokeOpacity={0.7} strokeWeight={2} />
+      <Polyline
+        path={solid}
+        strokeColor={ink}
+        strokeOpacity={0.7}
+        strokeWeight={2}
+      />
     </>
   );
 }

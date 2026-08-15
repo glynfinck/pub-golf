@@ -63,7 +63,9 @@ export default async function LeaguePage() {
                     <span
                       className={cn(
                         "tabular mr-2 font-mono text-xs",
-                        row.rank === 1 ? "text-marker" : "text-muted-foreground",
+                        row.rank === 1
+                          ? "text-marker"
+                          : "text-muted-foreground",
                       )}
                     >
                       {row.rank}

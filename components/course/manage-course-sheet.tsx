@@ -16,7 +16,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useAction } from "@/hooks/use-action";
-import { archiveCourse, deleteCourse, duplicateCourse } from "@/lib/actions/courses";
+import {
+  archiveCourse,
+  deleteCourse,
+  duplicateCourse,
+} from "@/lib/actions/courses";
 import type { MyCourse } from "@/lib/data/courses";
 
 /**
@@ -147,7 +151,9 @@ export function ManageCourseSheet({
                   disabled={pending}
                   pending={pending}
                   busy={busy}
-                  pendingLabel={course.archived ? "Bringing it out" : "Putting it away"}
+                  pendingLabel={
+                    course.archived ? "Bringing it out" : "Putting it away"
+                  }
                   testId="archive-course"
                   onClick={putAway}
                 />

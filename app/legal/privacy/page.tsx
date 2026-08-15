@@ -37,8 +37,8 @@ export default function PrivacyPage() {
           card from everyone else&apos;s.
         </p>
         <p>
-          <b>The name you type is the whole record.</b> Type a nickname and
-          that is genuinely all we have.
+          <b>The name you type is the whole record.</b> Type a nickname and that
+          is genuinely all we have.
         </p>
       </Section>
 
@@ -56,19 +56,19 @@ export default function PrivacyPage() {
         <p>
           Google also returns your email address, and our authentication
           database holds it because that is where a Google sign-in puts it.
-          Nothing in the app reads it, and{" "}
-          <b>{APP_NAME} never sends email</b>. There is no mailing list, no
-          notification, no password reset, and no mail server configured at
-          all. If that ever changes, this page changes first.
+          Nothing in the app reads it, and <b>{APP_NAME} never sends email</b>.
+          There is no mailing list, no notification, no password reset, and no
+          mail server configured at all. If that ever changes, this page changes
+          first.
         </p>
       </Section>
 
       <Section heading="What a round records">
         <p>
-          The card, essentially: swigs per hole, penalties and who called
-          them, mulligans, handicaps, and the pubs on the course with their
-          Google Place ids. Plus the times things happened, because the hole
-          timer is a shared deadline everyone counts down to.
+          The card, essentially: swigs per hole, penalties and who called them,
+          mulligans, handicaps, and the pubs on the course with their Google
+          Place ids. Plus the times things happened, because the hole timer is a
+          shared deadline everyone counts down to.
         </p>
         <p>
           Courses you build are stored against your account: a name, the pubs,
@@ -84,10 +84,9 @@ export default function PrivacyPage() {
           request headers, never stored.
         </p>
         <p>
-          The map can also ask your browser for your exact position. That is
-          the browser&apos;s own permission prompt, it is always your choice,
-          and the coordinates are used to frame that one search and then
-          discarded.
+          The map can also ask your browser for your exact position. That is the
+          browser&apos;s own permission prompt, it is always your choice, and
+          the coordinates are used to frame that one search and then discarded.
         </p>
         <p>
           Google&apos;s own terms apply to what they do with a query. We send
@@ -101,8 +100,8 @@ export default function PrivacyPage() {
           The caddy is the paid extra that plans a course for you. What you type
           into it — the area, the kind of night, the hole count, and anything
           you add in your own words — is sent to an AI provider that generates
-          the card. Today that is <b>Anthropic</b>, reached through Vercel&apos;s
-          AI Gateway; both are processors acting for this project.
+          the card. Today that is <b>Anthropic</b>, reached through
+          Vercel&apos;s AI Gateway; both are processors acting for this project.
         </p>
         <p>
           <b>Nothing identifying goes with it.</b> Not your name, not your
@@ -124,8 +123,8 @@ export default function PrivacyPage() {
           descriptions, ratings and review snippets are held only for as long as
           you are working on that course — about half a day — and are then
           deleted by a job that runs every hour. If you come back later to
-          change the course, the caddy fetches them again rather than keeping
-          an old copy.
+          change the course, the caddy fetches them again rather than keeping an
+          old copy.
         </p>
         <p>
           What does stay is the pub itself: its name, address and map position,
@@ -140,9 +139,9 @@ export default function PrivacyPage() {
       <Section heading="If you pay for something">
         <p>
           Payment is handled by <b>Stripe</b>, on Stripe&apos;s own page. Card
-          numbers, wallets and billing addresses never touch this app — we
-          never see them and never store them. Stripe is a processor acting
-          for this project, and their own notice governs what they hold.
+          numbers, wallets and billing addresses never touch this app — we never
+          see them and never store them. Stripe is a processor acting for this
+          project, and their own notice governs what they hold.
         </p>
         <p>
           What goes to Stripe from here is your account&apos;s id, so their
@@ -152,8 +151,8 @@ export default function PrivacyPage() {
         <p>
           What comes back and is kept is the record of the purchase: which
           thing, how much, in what currency, when, and Stripe&apos;s own
-          reference for it. That is the receipt — it is what proves you paid
-          if anything goes wrong, and it is kept as long as your account is,
+          reference for it. That is the receipt — it is what proves you paid if
+          anything goes wrong, and it is kept as long as your account is,
           because a purchase you cannot evidence is a purchase you cannot get
           refunded.
         </p>
@@ -164,10 +163,10 @@ export default function PrivacyPage() {
           The report goes to a <b>public</b> issue tracker, so the sheet says so
           before you send. What you write is printed there; what stays private
           is everything that would identify you or your round — your name, your
-          account, your browser and its languages, and above all a
-          round&apos;s join code, which is stripped out before anything leaves.
-          The issue says whether you were on a phone or a desktop, because
-          that is what a layout bug needs, and nothing narrower than that.
+          account, your browser and its languages, and above all a round&apos;s
+          join code, which is stripped out before anything leaves. The issue
+          says whether you were on a phone or a desktop, because that is what a
+          layout bug needs, and nothing narrower than that.
         </p>
         <p>
           A report filed from a course the caddy planned also records which
@@ -190,14 +189,14 @@ export default function PrivacyPage() {
 
       <Section heading="Where it lives, and for how long">
         <p>
-          Rounds are stored in a Postgres database hosted by Supabase in
-          London, and the app is served by Vercel. Both are processors acting
-          for this project.
+          Rounds are stored in a Postgres database hosted by Supabase in London,
+          and the app is served by Vercel. Both are processors acting for this
+          project.
         </p>
         <p>
-          Data stays until it is deleted. A host can delete a round, which
-          takes its scores with it, and you can ask us to delete everything
-          tied to your account.
+          Data stays until it is deleted. A host can delete a round, which takes
+          its scores with it, and you can ask us to delete everything tied to
+          your account.
         </p>
       </Section>
 
@@ -205,8 +204,8 @@ export default function PrivacyPage() {
         <p>
           Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and it
           will be done. That is a person answering rather than a button, and{" "}
-          <b>a self-serve control is on the way</b>. Until it lands, this is
-          the honest description of the route.
+          <b>a self-serve control is on the way</b>. Until it lands, this is the
+          honest description of the route.
         </p>
         <p>
           Under UK data protection law you can also ask what is held, have it
@@ -223,8 +222,8 @@ export default function PrivacyPage() {
 
       <Section heading="Changes">
         <p>
-          If this page changes, the date at the top changes with it. There is
-          no archive; it is a page in a repository, and its history is the
+          If this page changes, the date at the top changes with it. There is no
+          archive; it is a page in a repository, and its history is the
           repository&apos;s.
         </p>
       </Section>

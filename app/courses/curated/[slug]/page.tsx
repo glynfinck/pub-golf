@@ -58,7 +58,9 @@ export default async function CuratedCoursePage({
         <div className="flex items-baseline gap-2">
           <span className="eyebrow">The card</span>
           <span aria-hidden className="leader flex-1" />
-          <span className="tabular font-serif text-xl">par {coursePar(holes)}</span>
+          <span className="tabular font-serif text-xl">
+            par {coursePar(holes)}
+          </span>
         </div>
         <p className="mt-1 text-[10px] text-muted-foreground">
           {holes.length} pubs · {courseWalkMinutes(holes)} min walking between

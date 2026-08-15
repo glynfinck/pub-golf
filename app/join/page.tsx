@@ -39,11 +39,9 @@ function JoinForm() {
     if (code.length < CODE_LENGTH) return;
     let cancelled = false;
     const supabase = createClient();
-    supabase
-      .rpc("get_round_preview", { join_code: code })
-      .then(({ data }) => {
-        if (!cancelled) setPreview(data?.[0] ?? null);
-      });
+    supabase.rpc("get_round_preview", { join_code: code }).then(({ data }) => {
+      if (!cancelled) setPreview(data?.[0] ?? null);
+    });
     return () => {
       cancelled = true;
     };

@@ -203,8 +203,7 @@ export default function TariffPage() {
         >
           <p>
             A tip for the house and nothing else: it unlocks nothing, grants
-            nothing, and changes no round. Only ever shown once a round is
-            over.
+            nothing, and changes no round. Only ever shown once a round is over.
           </p>
         </TariffEntry>
       </Card>
@@ -229,7 +228,9 @@ export default function TariffPage() {
             <p
               key={rule}
               className={
-                index > 0 ? "border-t border-border py-3 text-sm" : "py-3 text-sm"
+                index > 0
+                  ? "border-t border-border py-3 text-sm"
+                  : "py-3 text-sm"
               }
             >
               {rule}
@@ -245,11 +246,13 @@ export default function TariffPage() {
           card — and card numbers never touch this house. Rained off, or just
           not what you hoped? Money back, no questions: write to the club
           secretary at{" "}
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-fairway">
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="font-bold text-fairway"
+          >
             {SUPPORT_EMAIL}
           </a>
-          . The slightly longer version — refunds, delivery, disputes — lives
-          in{" "}
+          . The slightly longer version — refunds, delivery, disputes — lives in{" "}
           <Link href="/small-print" className="font-bold text-fairway">
             the small print
           </Link>

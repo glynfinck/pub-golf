@@ -87,7 +87,9 @@ export function CaddyMoreSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-2 px-4 pb-6">
-          <p className="text-center text-xs text-muted-foreground">{standing}</p>
+          <p className="text-center text-xs text-muted-foreground">
+            {standing}
+          </p>
           {courseId ? (
             <Link
               href={`/courses/${courseId}`}

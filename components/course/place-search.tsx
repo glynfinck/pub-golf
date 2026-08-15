@@ -92,29 +92,32 @@ export function PlaceSearch({
     const seq = ++requestSeq.current;
     // All setState lives in the (async) timeout callback — the strict
     // hooks lint forbids it in the effect body itself.
-    const timeout = setTimeout(async () => {
-      if (seq !== requestSeq.current) return;
-      if (trimmed.length < 3) {
-        setResults([]);
-        setSearching(false);
-        return;
-      }
-      setSearching(true);
-      try {
-        const data = await searchPubs({ query: trimmed });
+    const timeout = setTimeout(
+      async () => {
         if (seq !== requestSeq.current) return;
-        setDegraded(data.degraded);
-        setResults(data.results);
-        setSearchError(data.error);
-      } catch {
-        if (seq === requestSeq.current) {
+        if (trimmed.length < 3) {
           setResults([]);
-          setSearchError("failed");
+          setSearching(false);
+          return;
         }
-      } finally {
-        if (seq === requestSeq.current) setSearching(false);
-      }
-    }, trimmed.length < 3 ? 0 : 350);
+        setSearching(true);
+        try {
+          const data = await searchPubs({ query: trimmed });
+          if (seq !== requestSeq.current) return;
+          setDegraded(data.degraded);
+          setResults(data.results);
+          setSearchError(data.error);
+        } catch {
+          if (seq === requestSeq.current) {
+            setResults([]);
+            setSearchError("failed");
+          }
+        } finally {
+          if (seq === requestSeq.current) setSearching(false);
+        }
+      },
+      trimmed.length < 3 ? 0 : 350,
+    );
     return () => clearTimeout(timeout);
   }, [query]);
 
@@ -186,8 +189,8 @@ export function PlaceSearch({
 
       {degraded && query.trim().length >= 3 ? (
         <p className="text-[11px] text-muted-foreground">
-          Pub search needs a Google Places key on the server — add pubs by
-          name below and the course works just the same.
+          Pub search needs a Google Places key on the server — add pubs by name
+          below and the course works just the same.
         </p>
       ) : null}
 
@@ -274,7 +277,9 @@ export function PlaceSearch({
         </div>
         <button
           type="button"
-          aria-label={picking ? `${actionLabel} the named pub` : "Add the named pub"}
+          aria-label={
+            picking ? `${actionLabel} the named pub` : "Add the named pub"
+          }
           disabled={!manualName.trim() && justAdded !== "manual"}
           onClick={addManual}
           className={cn(

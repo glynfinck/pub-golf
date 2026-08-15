@@ -96,8 +96,8 @@ export function PubMapSheet({
       >
         <SheetTitle className="sr-only">Find pubs on the map</SheetTitle>
         <SheetDescription className="sr-only">
-          Search pubs, pan the map, and add them to the course. The list
-          below the map carries every result.
+          Search pubs, pan the map, and add them to the course. The list below
+          the map carries every result.
         </SheetDescription>
         <PubMapBody
           initialQuery={initialQuery}
@@ -191,8 +191,10 @@ function PubMapBody({
     .filter(
       (
         pin,
-      ): pin is { hole: DraftHole & { lat: number; lng: number }; number: number } =>
-        pin.hole.lat != null && pin.hole.lng != null,
+      ): pin is {
+        hole: DraftHole & { lat: number; lng: number };
+        number: number;
+      } => pin.hole.lat != null && pin.hole.lng != null,
     );
 
   const fitTo = useCallback((venues: VenueResult[], bias: LatLng | null) => {
@@ -431,8 +433,8 @@ function PubMapBody({
       <div className="relative min-h-0 flex-1">
         {mapsFailed ? (
           <div className="flex h-full items-center justify-center px-8 text-center text-xs text-muted-foreground">
-            The map would not load — the search below still works, and the
-            list under the builder&apos;s field always does.
+            The map would not load — the search below still works, and the list
+            under the builder&apos;s field always does.
           </div>
         ) : (
           <Map
@@ -579,7 +581,11 @@ function PubMapBody({
           type="button"
           onClick={() =>
             setDrawer((current) =>
-              current === "peek" ? "half" : current === "half" ? "full" : "peek",
+              current === "peek"
+                ? "half"
+                : current === "half"
+                  ? "full"
+                  : "peek",
             )
           }
           aria-label={
@@ -600,14 +606,14 @@ function PubMapBody({
           ) : null}
           {degraded ? (
             <p className="text-[11px] text-muted-foreground">
-              Pub search needs a Google Places key on the server — the map
-              can look, but only add-by-name can build.
+              Pub search needs a Google Places key on the server — the map can
+              look, but only add-by-name can build.
             </p>
           ) : null}
           {!MAP_STYLE_ID ? (
             <p className="text-[11px] text-muted-foreground">
-              This build carries no map style ID — the map wears
-              Google&apos;s stock look until it reaches the deploy.
+              This build carries no map style ID — the map wears Google&apos;s
+              stock look until it reaches the deploy.
             </p>
           ) : null}
           {!degraded && searchNote(searchError) ? (
@@ -637,8 +643,8 @@ function PubMapBody({
           ) : null}
           {results.length === 0 && !searching && !degraded && !searchError ? (
             <p className="pt-2 text-[11px] text-muted-foreground">
-              No pubs on this patch — pan the map and search again, widen
-              the net, or add by name from the builder.
+              No pubs on this patch — pan the map and search again, widen the
+              net, or add by name from the builder.
             </p>
           ) : null}
           {results.map((venue) => {
@@ -652,7 +658,8 @@ function PubMapBody({
                 }}
                 className={cn(
                   "flex min-h-13 items-center gap-2.5 border-b border-dotted border-border py-1.5",
-                  selectedId === venue.id && "-mx-2 rounded-lg bg-secondary px-2",
+                  selectedId === venue.id &&
+                    "-mx-2 rounded-lg bg-secondary px-2",
                 )}
               >
                 <button
@@ -726,7 +733,10 @@ function MapHandle({
 function WalkingLine({
   holePins,
 }: {
-  holePins: { hole: DraftHole & { lat: number; lng: number }; number: number }[];
+  holePins: {
+    hole: DraftHole & { lat: number; lng: number };
+    number: number;
+  }[];
 }) {
   // The dots draw on canvas, which needs a resolved color, not a CSS var.
   // Read the token once per mount; the map remounts with the theme, so it

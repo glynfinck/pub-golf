@@ -59,9 +59,9 @@ export function StartCards({ caddy }: { caddy: boolean }) {
                 Plan it with the caddy
               </span>
               <span className="text-[13px] text-muted-foreground">
-                Draw where you&rsquo;re drinking on the map. The caddy walks
-                the patch, routes the night and dresses every hole — pubs,
-                pars, drinks and hazards.
+                Draw where you&rsquo;re drinking on the map. The caddy walks the
+                patch, routes the night and dresses every hole — pubs, pars,
+                drinks and hazards.
               </span>
             </div>
           </div>
@@ -81,8 +81,8 @@ export function StartCards({ caddy }: { caddy: boolean }) {
               Plot it by hand
             </span>
             <span className="text-[13px] text-muted-foreground">
-              Search the pubs yourself and set every par, drink and hazard
-              the way your lot play it.
+              Search the pubs yourself and set every par, drink and hazard the
+              way your lot play it.
             </span>
           </div>
         </div>
@@ -355,7 +355,13 @@ function TheCard() {
           rx="3"
           fill="var(--color-fairway)"
         />
-        <rect x="-4.4" y="-14.6" width="8.8" height="2.6" fill="var(--color-border)" />
+        <rect
+          x="-4.4"
+          y="-14.6"
+          width="8.8"
+          height="2.6"
+          fill="var(--color-border)"
+        />
         <path d="M0,0 L-3.4,-13 L3.4,-13 Z" fill="var(--color-marker)" />
         <line
           x1="0"
@@ -375,7 +381,9 @@ export const START_DOORS = ["door-caddy", "door-manual"] as const;
 
 export function StartHint({ className }: { className?: string }) {
   return (
-    <p className={cn("text-center text-[11px] text-muted-foreground", className)}>
+    <p
+      className={cn("text-center text-[11px] text-muted-foreground", className)}
+    >
       Either way the course is yours to edit afterwards, and every round takes
       its own snapshot.
     </p>
