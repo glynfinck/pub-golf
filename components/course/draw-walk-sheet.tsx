@@ -204,6 +204,16 @@ export function DrawSurface({
   const [locating, setLocating] = useState(false);
   const [locateNote, setLocateNote] = useState<string | null>(null);
   const pointerDown = useRef(false);
+  /**
+   * The points as drawn, readable synchronously.
+   *
+   * `finish()` used to be called from *inside* a `setRaw` updater — a side
+   * effect in a function React may run twice, and the only way the handler
+   * could see the points it had just queued. A ref updated alongside the
+   * state is the honest version of the same read, and it is what lets
+   * `onPointerCancel` commit the line instead of abandoning it.
+   */
+  const rawRef = useRef<{ x: number; y: number }[]>([]);
 
   /** The commonest brief there is: we are here now. */
   function locate() {
@@ -321,6 +331,7 @@ export function DrawSurface({
   function releaseLock() {
     setDrawing(false);
     setStroke(null);
+    rawRef.current = [];
     setRaw([]);
     onLockChange?.(false);
   }
@@ -332,6 +343,7 @@ export function DrawSurface({
     // the sort of thing that stops people redrawing at all.
     redraw: () => {
       setStroke(null);
+      rawRef.current = [];
       setRaw([]);
     },
   }));
@@ -353,6 +365,7 @@ export function DrawSurface({
     setDrawing(true);
     onLockChange?.(true);
     setStroke(null);
+    rawRef.current = [];
     setRaw([]);
     setViewPubs(null);
     /**
@@ -597,23 +610,24 @@ export function DrawSurface({
               x: event.clientX - rect.left,
               y: event.clientY - rect.top,
             };
-            setRaw((current) => {
-              const last = current[current.length - 1];
-              if (last && Math.hypot(point.x - last.x, point.y - last.y) < 4) {
-                return current;
-              }
-              return [...current, point];
-            });
+            const last = rawRef.current[rawRef.current.length - 1];
+            if (last && Math.hypot(point.x - last.x, point.y - last.y) < 4) {
+              return;
+            }
+            rawRef.current = [...rawRef.current, point];
+            setRaw(rawRef.current);
           }}
           onPointerUp={() => {
             pointerDown.current = false;
-            setRaw((current) => {
-              finish(current);
-              return current;
-            });
+            finish(rawRef.current);
           }}
           onPointerCancel={() => {
+            // A cancelled pointer — a notification, a palm, the system taking
+            // the gesture — used to drop the stroke on the floor with the grey
+            // line still on the glass and the commit button silently disabled.
+            // It is the same line either way; commit it.
             pointerDown.current = false;
+            finish(rawRef.current);
           }}
         >
           <svg className="size-full" aria-hidden>
@@ -680,6 +694,7 @@ export function DrawSurface({
             <Chip
               onClick={() => {
                 setStroke(null);
+                rawRef.current = [];
                 setRaw([]);
               }}
             >

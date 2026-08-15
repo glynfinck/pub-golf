@@ -56,17 +56,6 @@ export const STRETCH_MAX = 20;
  * can actually answer it. */
 export const DEFAULT_STRETCH = 5;
 
-/**
- * When the round tees off, as minutes from midnight. Four chips, because a
- * crawl starts in the evening and a quarter-hour picker is a form nobody
- * asked for. Seven is the default the product has always implicitly assumed.
- */
-export const TEE_OFF_CHOICES = [
-  { minutes: 1080, label: "6 pm" },
-  { minutes: 1140, label: "7 pm" },
-  { minutes: 1200, label: "8 pm" },
-  { minutes: 1260, label: "9 pm" },
-] as const;
 export const DEFAULT_TEE_OFF_MINUTES = 1140;
 
 export function readTeeOffMinutes(value: unknown): number {

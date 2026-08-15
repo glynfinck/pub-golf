@@ -376,9 +376,6 @@ function TheCard() {
   );
 }
 
-/** Shared by both cards; exported for the tests that pin the doors. */
-export const START_DOORS = ["door-caddy", "door-manual"] as const;
-
 export function StartHint({ className }: { className?: string }) {
   return (
     <p
