@@ -38,7 +38,9 @@ import {
 import {
   appendHole,
   describeDressing,
+  draftFromPlan,
   draftHole,
+  draftOf,
   insertHole,
   moveHole,
   removeHole,
@@ -74,32 +76,6 @@ export interface CourseBuilderCourse {
 type PickTarget =
   | { mode: "insert"; beforeId: string }
   | { mode: "replace"; id: string };
-
-/**
- * A caddy's card, as rows for the table.
- *
- * Shared by the card that has just arrived and the card being picked back up
- * after a refresh, which have to produce byte-identical holes — a resumed
- * table that dressed a hole even slightly differently would file that
- * difference over the host's course the next time anything saved.
- */
-function draftFromPlan(planned: PlannedCourse): DraftHole[] {
-  return planned.holes.map((hole) => ({
-    id: crypto.randomUUID(),
-    venue_id: hole.venue_id,
-    venue_name: hole.venue_name,
-    address: hole.address,
-    rating: hole.rating,
-    lat: hole.lat,
-    lng: hole.lng,
-    drink: hole.drink,
-    par: hole.par,
-    hazard: hole.hazard,
-    hazard_note: hole.hazard_note,
-    penalties: hole.penalties,
-    walk_minutes_to_next: null,
-  }));
-}
 
 /**
  * The drafting table, shared by /courses/new and /courses/[id]: search
@@ -422,25 +398,6 @@ export function CourseBuilder({
 
   /** The card, in the shape the actions want. Two writers now — the save
    * button and the caddy filing its own card — so it is built in one place. */
-  function draftOf(rows: DraftHole[], courseName: string) {
-    return {
-      name: courseName,
-      holes: rows.map((hole) => ({
-        venue_id: hole.venue_id,
-        venue_name: hole.venue_name,
-        drink: hole.drink,
-        par: hole.par,
-        hazard: hole.hazard,
-        hazard_note: hole.hazard_note,
-        // A rule with no offence on it is a half-typed thought, not a rule.
-        penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
-        lat: hole.lat,
-        lng: hole.lng,
-        walk_minutes_to_next: hole.walk_minutes_to_next,
-      })),
-    };
-  }
-
   function save() {
     run(async () => {
       const draft = draftOf(holes, name);

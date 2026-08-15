@@ -1,3 +1,4 @@
+import type { PlannedCourse } from "@/lib/caddy/plan";
 import { type RulesetPenalty } from "@/lib/ruleset";
 
 /**
@@ -175,4 +176,55 @@ export function describeDressing(hole: DraftHole): string {
       }`,
     );
   return parts.join(" · ");
+}
+
+/**
+ * A caddy's card as drafting-table rows.
+ *
+ * Shared by the card that has just arrived and the card being picked back up
+ * after a refresh, which have to produce byte-identical holes — a resumed
+ * table that dressed a hole even slightly differently would file that
+ * difference over the host's course the next time anything saved.
+ *
+ * Lifted out of the drafting table when the Course Room needed to file a card
+ * too. It had been the only filing path in the app, so a plan made anywhere
+ * else was never written down at all: close the tab and a paid evening was
+ * gone.
+ */
+export function draftFromPlan(planned: PlannedCourse): DraftHole[] {
+  return planned.holes.map((hole) => ({
+    id: crypto.randomUUID(),
+    venue_id: hole.venue_id,
+    venue_name: hole.venue_name,
+    address: hole.address,
+    rating: hole.rating,
+    lat: hole.lat,
+    lng: hole.lng,
+    drink: hole.drink,
+    par: hole.par,
+    hazard: hole.hazard,
+    hazard_note: hole.hazard_note,
+    penalties: hole.penalties,
+    walk_minutes_to_next: null,
+  }));
+}
+
+/** The rows as the server takes them. A rule with no offence on it is a
+ * half-typed thought, not a rule. */
+export function draftOf(rows: DraftHole[], courseName: string) {
+  return {
+    name: courseName,
+    holes: rows.map((hole) => ({
+      venue_id: hole.venue_id,
+      venue_name: hole.venue_name,
+      drink: hole.drink,
+      par: hole.par,
+      hazard: hole.hazard,
+      hazard_note: hole.hazard_note,
+      penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
+      lat: hole.lat,
+      lng: hole.lng,
+      walk_minutes_to_next: hole.walk_minutes_to_next,
+    })),
+  };
 }

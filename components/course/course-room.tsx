@@ -15,6 +15,9 @@ import {
   type DrawControls,
 } from "@/components/course/draw-walk-sheet";
 import { StageRail } from "@/components/course/stage-rail";
+import { createCourse } from "@/lib/actions/courses";
+import { rememberCaddyCourse } from "@/lib/actions/caddy";
+import { draftFromPlan, draftOf } from "@/lib/course-draft";
 import { undoFor, type PlanStage } from "@/lib/caddy/stages";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -75,6 +78,10 @@ export function CourseRoom({
   const [pins, setPins] = useState<{ id: string; lat: number; lng: number }[]>(
     [],
   );
+  /** The course row, once the card is in the book. What turns "Open on the
+   * drafting table" from a hand-off of an unsaved draft into a door onto a
+   * saved course. */
+  const [filedId, setFiledId] = useState<string | null>(null);
   /** Whether the panel is up. Down to begin with: the room's first move is
    * aiming the map, and the brief is a tab away. All-or-nothing retraction
    * and the tab itself belong to `RetractingPanel`, which the gallery wears
@@ -105,9 +112,40 @@ export function CourseRoom({
     onCourse: (course) => {
       setLanded(course);
       setPanelOpen(true);
+      void file(course);
     },
     onPatch: setPins,
   });
+
+  /**
+   * File the card the moment it lands.
+   *
+   * **The room never wrote anything down.** Filing lived only in the drafting
+   * table's `takeCaddyCourse`, and the server side only ever *links* a course
+   * it was told about — so a plan made here existed as `caddy_turns.result`
+   * and nowhere else. Close the tab, press "Stay here", or let the twelve-hour
+   * dossier window lapse, and a paid evening was unreachable. It also made
+   * `feeFiledCourse()` answer null, so the next plan took another credit while
+   * telling the host there was nothing to write over.
+   *
+   * Quiet and non-fatal, exactly as the table does it: the card is on screen
+   * either way, and an error about bookkeeping the host never asked for costs
+   * them the thing they are looking at.
+   */
+  async function file(course: PlannedCourse) {
+    try {
+      const minted = await createCourse(
+        draftOf(draftFromPlan(course), course.name),
+      );
+      if (!minted.id) return;
+      setFiledId(minted.id);
+      const thread = job.sessionId ?? session;
+      if (thread) await rememberCaddyCourse(thread, minted.id);
+    } catch {
+      // Best effort. `filedId` stays null, which is what every other reader
+      // of it already treats as "not written down yet".
+    }
+  }
 
   const progress = {
     locked,
@@ -225,7 +263,15 @@ export function CourseRoom({
             {/* `?caddy=1` is the hand-over: it is what tells the table to
                 reopen this conversation, so the card arrives with its ask
                 box. Without it the table is blank by design. */}
-            <Button onClick={() => router.push("/courses/new?caddy=1")}>
+            {/* A saved course opens at its own address; only an unfiled
+                one has to go through the blank table with `?caddy=1`. */}
+            <Button
+              onClick={() =>
+                router.push(
+                  filedId ? `/courses/${filedId}` : "/courses/new?caddy=1",
+                )
+              }
+            >
               Open on the drafting table
             </Button>
             <button
