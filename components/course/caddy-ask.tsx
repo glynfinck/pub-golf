@@ -239,7 +239,7 @@ export function CaddyAsk({
             href={`/courses/${allowance.courseId}`}
             className={cn(
               buttonVariants({ variant: "outline", size: "compact" }),
-              "h-10 w-full",
+              "h-11 w-full",
             )}
           >
             Open your course

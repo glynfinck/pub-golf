@@ -3,6 +3,13 @@
 import { useRef, useState } from "react";
 
 import { collectCaddyCard } from "@/lib/actions/caddy";
+import {
+  endingOf,
+  lostThreadEnding,
+  openResult,
+  LOST_BALL,
+  type JobEnding,
+} from "@/lib/caddy/ending";
 import type { CaddyMenu } from "@/lib/caddy/menu";
 import type { PlannedCourse } from "@/lib/caddy/plan";
 import { jobWorking, type JobStage } from "@/lib/caddy/stages";
@@ -148,6 +155,21 @@ export function useCaddyJob({
   }
 
   /**
+   * Put an ending on the screen.
+   *
+   * The counterpart to `lib/caddy/ending.ts` deciding *which* ending: this is
+   * the only thing left that is not pure, and it is four setters. Every exit
+   * from both requests goes through it, which is what makes "every ending is
+   * an ending" true rather than aspirational.
+   */
+  function land(ending: JobEnding) {
+    if (ending.refusal) setRefusal(ending.refusal);
+    if (ending.closeOverlay) setOpen(false);
+    setError(ending.error);
+    settle(ending.stage);
+  }
+
+  /**
    * Ask before apologising.
    *
    * The card is written to `caddy_turns` before a byte of it is streamed, so a
@@ -192,30 +214,17 @@ export function useCaddyJob({
     setOpen(true);
     advance("opening");
 
-    const lost = "The caddy lost the ball. Ask again — this one's free.";
-    const body = await openPatch(brief, { signal: abort.current.signal });
-
-    if (!body || body.error || !body.sessionId || !body.menu) {
-      // **The overlay stays.** A thin patch used to tear down a ten-second
-      // performance into a four-second toast, with nothing on screen to
-      // change. It is a stage now, with its message, and the way back is the
-      // rail the host already has.
-      if (body?.offer && body.error) {
-        setRefusal({ text: body.error, offer: body.offer });
-        setOpen(false);
-        settle("failed");
-        setError(body.error);
-        return {};
-      }
-      setError(body?.error ?? lost);
-      settle("failed");
+    const answer = await openPatch(brief, { signal: abort.current.signal });
+    const result = openResult(answer);
+    if (result.kind === "ending") {
+      land(result.ending);
       return {};
     }
 
-    menuSession.current = body.sessionId;
-    setMenu(body.menu);
+    menuSession.current = result.sessionId;
+    setMenu(result.menu);
     onPatch?.(
-      body.menu.nodes.map((node) => ({
+      result.menu.nodes.map((node) => ({
         id: node.id,
         lat: node.lat,
         lng: node.lng,
@@ -230,10 +239,7 @@ export function useCaddyJob({
     // this is the one that holds when two taps land in the same frame.
     if (inFlight.current) return;
     if (!menuSession.current) {
-      setError(
-        "The caddy lost the thread on this patch. Plan it again — this one's free.",
-      );
-      settle("failed");
+      land(lostThreadEnding());
       return;
     }
     inFlight.current = true;
@@ -246,7 +252,6 @@ export function useCaddyJob({
     setActive(true);
     advance("dressing");
 
-    const lost = "The caddy lost the ball. Ask again — this one's free.";
     let carded = false;
 
     const outcome = await streamPlan(
@@ -273,28 +278,15 @@ export function useCaddyJob({
       { signal: abort.current.signal },
     );
 
-    if (outcome.kind === "card") {
-      settle("done");
+    const ending = endingOf(outcome, carded);
+    if (!ending.rescue) {
+      land(ending);
       return {};
     }
-    if (outcome.kind === "refused") {
-      setRefusal({ text: outcome.text, offer: outcome.offer });
-      setOpen(false);
-      settle("failed");
-      setError(outcome.text);
-      return {};
-    }
-    if (carded) {
-      settle("done");
-      return {};
-    }
-    const fallback = outcome.kind === "failed" ? outcome.error : lost;
-    const detail = outcome.kind === "failed" ? outcome.detail : undefined;
-    const rescued = await rescue(fallback, detail);
-    if (rescued.error) {
-      setError(rescued.error);
-      settle("failed");
-    }
+    // The one ending that asks a question before it commits: the card may be
+    // in Postgres already. `rescue` lands its own `done` when it finds one.
+    const rescued = await rescue(ending.error ?? LOST_BALL, ending.detail);
+    if (rescued.error) land({ ...ending, error: rescued.error, rescue: false });
     return rescued;
   }
 

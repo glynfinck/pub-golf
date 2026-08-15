@@ -493,15 +493,21 @@ function GalleryBody({
                           dials.setTapped(index);
                         }}
                       >
-                        <div
-                          className={cn(
-                            "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                            index === stops.length - 1
-                              ? "bg-marker"
-                              : "bg-fairway",
-                          )}
-                        >
-                          {index + 1}
+                        {/* 24px of ink inside a 44px target. A numbered pin
+                            any bigger would cover the walk it marks, so the
+                            paint stays small and the hit area grows — the
+                            house's 44px floor kept without shouting. */}
+                        <div className="flex size-11 items-center justify-center">
+                          <div
+                            className={cn(
+                              "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                              index === stops.length - 1
+                                ? "bg-marker"
+                                : "bg-fairway",
+                            )}
+                          >
+                            {index + 1}
+                          </div>
                         </div>
                       </AdvancedMarker>
                     );
@@ -533,15 +539,21 @@ function GalleryBody({
                           })
                         }
                       >
-                        <div
-                          className={cn(
-                            "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                            index === state.course!.holes.length - 1
-                              ? "bg-marker"
-                              : "bg-fairway",
-                          )}
-                        >
-                          {index + 1}
+                        {/* 24px of ink inside a 44px target. A numbered pin
+                            any bigger would cover the walk it marks, so the
+                            paint stays small and the hit area grows — the
+                            house's 44px floor kept without shouting. */}
+                        <div className="flex size-11 items-center justify-center">
+                          <div
+                            className={cn(
+                              "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                              index === state.course!.holes.length - 1
+                                ? "bg-marker"
+                                : "bg-fairway",
+                            )}
+                          >
+                            {index + 1}
+                          </div>
                         </div>
                       </AdvancedMarker>
                     ) : null,

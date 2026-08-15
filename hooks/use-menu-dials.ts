@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useReducer } from "react";
 
+import { dialsReducer, DIALS_START } from "@/lib/caddy/dials";
 import { rerouteMenu, type CaddyMenu, type MenuRoute } from "@/lib/caddy/menu";
-import { withMove, withSwap } from "@/lib/caddy/swap";
 
 /**
  * The host's own hand on the menu: which walk, how many holes, how far apart,
@@ -17,94 +17,51 @@ import { withMove, withSwap } from "@/lib/caddy/swap";
  * a `key` on a component that also happened to unmount for other reasons.
  * Seeding in an event handler is not an effect, so the purity rule holds.
  *
+ * **The transitions are not here.** They are `lib/caddy/dials.ts`, because
+ * "re-routing forgets the hand-edit and the open card" is a rule six separate
+ * mutators used to keep by convention — and the whole rule is provable by a
+ * function call, so a hook is the wrong place to keep it. What is left here is
+ * the routing the reducer must not do: `rerouteMenu` needs the menu, and the
+ * menu is React's to hold.
+ *
  * Everything here is arithmetic over the lean nodes the browser already has —
  * the same reason re-dialling costs nothing. Only *Dress this walk* spends.
  */
 export function useMenuDials(menu: CaddyMenu | null) {
-  const [holes, setHoles] = useState(9);
-  const [stretch, setStretch] = useState(5);
-  const [routeIndex, setRouteIndex] = useState(0);
-  /** The host's version of the chosen walk, once they have changed one. Null
-   * means "the caddy's, as offered". */
-  const [edited, setEdited] = useState<string[] | null>(null);
-  /** Which stop's card is open, by position in the walk. */
-  const [tapped, setTapped] = useState<number | null>(null);
-  const [swapping, setSwapping] = useState(false);
+  const [dials, dispatch] = useReducer(dialsReducer, DIALS_START);
 
   const routes: MenuRoute[] = useMemo(() => {
     if (!menu) return [];
-    return rerouteMenu(menu, { holes, stretch });
-  }, [menu, holes, stretch]);
+    return rerouteMenu(menu, { holes: dials.holes, stretch: dials.stretch });
+  }, [menu, dials.holes, dials.stretch]);
 
   const route =
-    routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
-  const stops = edited ?? route?.stops ?? [];
-
-  /**
-   * Forget the hand-edit and the open card.
-   *
-   * Every control that re-routes calls this, and all of them used to forget
-   * only *some* of it: the dials cleared `edited` and `routeIndex` but left
-   * `tapped` pointing at a position in a walk that no longer existed. On a
-   * shorter walk the card then described the wrong pub, "Swap" offered
-   * "nothing else round here" over a full menu, and "Later" faked an edit by
-   * moving a stop the host had never tapped.
-   */
-  function reset() {
-    setEdited(null);
-    setTapped(null);
-    setSwapping(false);
-  }
+    routes[Math.min(dials.routeIndex, Math.max(routes.length - 1, 0))] ?? null;
+  const stops = dials.edited ?? route?.stops ?? [];
 
   return {
-    holes,
-    stretch,
-    routeIndex,
+    holes: dials.holes,
+    stretch: dials.stretch,
+    routeIndex: dials.routeIndex,
     routes,
     route,
     stops,
-    edited,
-    tapped,
-    swapping,
-    setSwapping,
-    setTapped,
+    edited: dials.edited,
+    tapped: dials.tapped,
+    swapping: dials.swapping,
+    setSwapping: (open: boolean) => dispatch({ type: "swapping", open }),
+    setTapped: (index: number | null) => dispatch({ type: "tap", index }),
     /** Seed from a freshly delivered menu — an event, never an effect. */
-    seed(from: { holes: number; stretch: number }) {
-      setHoles(from.holes);
-      setStretch(from.stretch);
-      setRouteIndex(0);
-      reset();
-    },
-    pickRoute(index: number) {
-      setRouteIndex(index);
-      reset();
-    },
-    setDialHoles(next: number) {
-      setHoles(next);
-      setRouteIndex(0);
-      reset();
-    },
-    setDialStretch(next: number) {
-      setStretch(next);
-      setRouteIndex(0);
-      reset();
-    },
-    swapStop(index: number, id: string) {
-      setEdited(withSwap(stops, index, id));
-      setTapped(index);
-      setSwapping(false);
-    },
-    moveStop(index: number, delta: number) {
-      const next = withMove(stops, index, delta);
-      // A refused move returns the same array. Re-pointing the card at
-      // `index + delta` anyway is how "Later" on the last stop came to open a
-      // different pub's card and look like an edit that never happened.
-      if (next === stops) return;
-      setEdited(next);
-      setTapped(Math.min(Math.max(index + delta, 0), next.length - 1));
-      setSwapping(false);
-    },
-    restore: reset,
+    seed: (from: { holes: number; stretch: number }) =>
+      dispatch({ type: "seed", ...from }),
+    pickRoute: (index: number) => dispatch({ type: "route", index }),
+    setDialHoles: (value: number) => dispatch({ type: "holes", value }),
+    setDialStretch: (value: number) => dispatch({ type: "stretch", value }),
+    swapStop: (index: number, id: string) =>
+      dispatch({ type: "swap", index, id, stops }),
+    moveStop: (index: number, delta: number) =>
+      dispatch({ type: "move", index, delta, stops }),
+    restore: () => dispatch({ type: "restore" }),
   };
 }
 
