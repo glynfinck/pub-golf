@@ -12,7 +12,7 @@ import {
 } from "@/lib/caddy/ending";
 import type { CaddyMenu } from "@/lib/caddy/menu";
 import type { PlannedCourse } from "@/lib/caddy/plan";
-import { jobWorking, type JobStage } from "@/lib/caddy/stages";
+import { jobWorking, JOB_START, type JobStage } from "@/lib/caddy/stages";
 import { thinkingTail, type CaddyOffer } from "@/lib/caddy/stream";
 import { openPatch, streamPlan } from "@/lib/caddy/transport";
 
@@ -108,7 +108,7 @@ export function useCaddyJob({
   onSession?: (sessionId: string | null) => void;
   session?: string | null;
 }): CaddyJobHandle {
-  const [stage, setStage] = useState<JobStage>("opening");
+  const [stage, setStage] = useState<JobStage>(JOB_START);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(false);
   const [menu, setMenu] = useState<CaddyMenu | null>(null);
@@ -302,7 +302,7 @@ export function useCaddyJob({
     setError(null);
     setActive(false);
     setOpen(false);
-    setStage("opening");
+    setStage(JOB_START);
   }
 
   return {

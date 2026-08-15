@@ -61,7 +61,27 @@ const ORDER: PlanStage[] = PLAN_STAGES.map((stage) => stage.id);
  * One definition, read by the group that reports it and the gallery that
  * draws it, so they cannot drift apart again.
  */
-export type JobStage = "opening" | "menu" | "dressing" | "done" | "failed";
+export type JobStage =
+  /**
+   * Nothing has been asked for yet.
+   *
+   * **This stage exists because its absence was a bug.** A fresh job started at
+   * `opening`, which is a *request in flight* — so `jobWorking` answered true
+   * before the host had typed anything, the room's rail pinned itself to Enrich
+   * the moment it mounted, every act behind it was disabled (a stage behind a
+   * plan in flight is deliberately closed), and the drafting table painted
+   * "Walking the patch" over a map with nothing on it. One stage doing two jobs,
+   * and the second one was a lie the whole flow read.
+   */
+  | "idle"
+  | "opening"
+  | "menu"
+  | "dressing"
+  | "done"
+  | "failed";
+
+/** Where a job that has never run sits. */
+export const JOB_START: JobStage = "idle";
 
 export function jobWorking(stage: JobStage): boolean {
   return stage === "opening" || stage === "dressing";
@@ -83,6 +103,9 @@ export function jobWorking(stage: JobStage): boolean {
  * into one string would be a regression, not a tidy-up.
  */
 export const JOB_BADGE: Record<JobStage, string | null> = {
+  // Nothing has been asked for, so the map says nothing. A badge here read as
+  // work already under way over an empty table.
+  idle: null,
   opening: "Walking the patch",
   menu: "Walks ready",
   dressing: "Dressing the card",
@@ -91,6 +114,7 @@ export const JOB_BADGE: Record<JobStage, string | null> = {
 };
 
 export const JOB_HEADLINE: Record<JobStage, string> = {
+  idle: "The caddy’s ready",
   opening: "The caddy’s walking the patch",
   menu: "Pick the walk — or let the caddy",
   dressing: "The caddy’s dressing the card",
@@ -100,6 +124,7 @@ export const JOB_HEADLINE: Record<JobStage, string> = {
 
 /** Null where there is nothing worth interrupting another screen for. */
 export const JOB_PILL: Record<JobStage, string | null> = {
+  idle: null,
   opening: "The caddy’s walking the patch",
   menu: "Walks ready — come pick one",
   dressing: "The caddy’s dressing the card",
@@ -117,6 +142,7 @@ export function jobPanelLabel(stage: JobStage, character?: string): string {
   if (stage === "opening") return "Walking the patch";
   if (stage === "dressing") return "Dressing the card";
   if (stage === "done") return "The card";
+  if (stage === "idle") return "The brief";
   return "The caddy lost the ball";
 }
 

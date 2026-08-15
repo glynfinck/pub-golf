@@ -78,15 +78,28 @@ export function StageRail({
                 title={stage.doing}
                 onClick={() => onGo?.(stage.id)}
                 className={cn(
-                  "flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
-                  here && "bg-fairway text-primary-foreground",
-                  !here && done && "text-fairway hover:bg-secondary",
-                  !here && !done && "text-muted-foreground",
+                  "flex min-h-11 shrink-0 items-center",
                   !open && "cursor-default",
                 )}
               >
-                {done ? <Check size={11} aria-hidden /> : null}
-                {stage.label}
+                {/*
+                 * **The hit area is 44px; the paint is not.** The button used
+                 * to wear the highlight itself, so the current act was a solid
+                 * green lozenge forty-four pixels tall wrapped around a ten
+                 * pixel word — the tap-target floor rendered as a graphic. Same
+                 * thumb target, a badge the size of its own text.
+                 */}
+                <span
+                  className={cn(
+                    "flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
+                    here && "bg-fairway text-primary-foreground",
+                    !here && done && "text-fairway",
+                    !here && !done && "text-muted-foreground",
+                  )}
+                >
+                  {done ? <Check size={11} aria-hidden /> : null}
+                  {stage.label}
+                </span>
               </button>
             </div>
           );

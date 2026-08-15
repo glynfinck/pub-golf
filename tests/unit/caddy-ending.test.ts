@@ -16,7 +16,10 @@ import {
   JOB_BADGE,
   JOB_HEADLINE,
   JOB_PILL,
+  JOB_START,
   jobPanelLabel,
+  stageNow,
+  stageOpen,
   type JobStage,
 } from "@/lib/caddy/stages";
 import type { CaddyMenu } from "@/lib/caddy/menu";
@@ -65,12 +68,16 @@ const OUTCOMES: Record<StreamOutcome["kind"], StreamOutcome> = {
 
 const ALL_OUTCOMES = Object.values(OUTCOMES);
 const ALL_STAGES: JobStage[] = [
+  "idle",
   "opening",
   "menu",
   "dressing",
   "done",
   "failed",
 ];
+
+/** The stages with nothing to say from another screen. */
+const QUIET: JobStage[] = ["idle", "done"];
 
 describe("the dress step's endings", () => {
   it("never leaves the host watching a stage that is still working", () => {
@@ -319,6 +326,70 @@ describe("the hook that applies them", () => {
   });
 });
 
+describe("a job that has never run", () => {
+  /**
+   * The bug: `opening` was doing two jobs.
+   *
+   * A fresh job started at `opening` — which is a *request in flight* — so
+   * `jobWorking` answered true before the host had typed a word. The room's
+   * rail read that as "the caddy is planning", pinned itself to Enrich, and
+   * closed every act behind it, because a stage behind a plan in flight is
+   * deliberately shut. The whole room was locked to its last step from the
+   * moment it mounted, and the drafting table painted "Walking the patch" over
+   * an empty map at the same time.
+   */
+  it("is not working", () => {
+    expect(jobWorking(JOB_START)).toBe(false);
+  });
+
+  it("leaves the host at the first act with all four acts reachable", () => {
+    const fresh = {
+      locked: false,
+      aimed: false,
+      planning: jobWorking(JOB_START),
+      carded: false,
+    };
+    expect(stageNow(fresh)).toBe("area");
+    // Not one of them disabled by a plan that does not exist.
+    expect(stageOpen("area", fresh)).toBe(true);
+    // And with a walk drawn, the acts behind stay open.
+    const drawn = { ...fresh, locked: true, aimed: true };
+    expect(stageNow(drawn)).toBe("tune");
+    expect(stageOpen("area", drawn)).toBe(true);
+    expect(stageOpen("draw", drawn)).toBe(true);
+  });
+
+  it("says nothing on any screen it is not on", () => {
+    // A badge or a pill here is work announced before it was asked for.
+    expect(JOB_BADGE[JOB_START]).toBeNull();
+    expect(JOB_PILL[JOB_START]).toBeNull();
+  });
+
+  it("is where the hook starts and where abandoning returns to", () => {
+    // Stepping back behind the caddy has to reach the same nothing the room
+    // opened in, or the rail locks again the second time round.
+    const hook = readFileSync(
+      join(import.meta.dirname, "..", "..", "hooks", "use-caddy-job.ts"),
+      "utf8",
+    );
+    expect(hook).not.toMatch(/useState<JobStage>\("opening"\)/);
+    expect(hook).not.toMatch(/setStage\("opening"\)/);
+    expect(hook).toContain("useState<JobStage>(JOB_START)");
+    expect(hook).toContain("setStage(JOB_START)");
+  });
+
+  it("is never an ending", () => {
+    // `idle` means nothing was asked for. A run that happened cannot end there
+    // — that would erase the apology or the card it produced.
+    for (const outcome of ALL_OUTCOMES) {
+      for (const carded of [false, true]) {
+        expect(endingOf(outcome, carded).stage).not.toBe(JOB_START);
+      }
+    }
+    expect(lostThreadEnding().stage).not.toBe(JOB_START);
+  });
+});
+
 describe("the stage copy itself", () => {
   it("names every stage on every surface", () => {
     const missing: string[] = [];
@@ -334,12 +405,13 @@ describe("the stage copy itself", () => {
     expect(missing).toEqual([]);
   });
 
-  it("goes quiet on `done` and only on `done`", () => {
-    // A finished card announces itself by being on the table. Every other
-    // stage has something the host needs from another screen.
+  it("goes quiet exactly where there is nothing to say", () => {
+    // A finished card announces itself by being on the table, and a job that
+    // has not started has nothing to announce at all. Every other stage has
+    // something the host needs from another screen.
     for (const stage of ALL_STAGES) {
       const quiet = JOB_BADGE[stage] === null && JOB_PILL[stage] === null;
-      expect(`${stage}: ${quiet}`).toBe(`${stage}: ${stage === "done"}`);
+      expect(`${stage}: ${quiet}`).toBe(`${stage}: ${QUIET.includes(stage)}`);
     }
   });
 
