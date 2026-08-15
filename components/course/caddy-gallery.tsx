@@ -583,14 +583,26 @@ function GalleryBody({
             wants it — pressing *Dress this walk* looked like losing the
             progress bar. Same component, same rules, and stepping back closes
             the gallery on the way. */}
-        <div className="absolute inset-x-2 top-2 z-20 flex flex-col items-center gap-1">
-          <div className="flex max-w-full items-center overflow-x-auto rounded-full border border-border bg-card/95 px-1.5 shadow-sm">
+        {/*
+         * **`pointer-events-none` on the container, `auto` on the chrome.**
+         * This box is full-width and painted at z-20; the close button below
+         * is `z-auto`. So the container — not the rail, the whole invisible
+         * box around it — was swallowing every tap on the X, at every screen
+         * size. Leaving is the only exit at three of the five stages, so the
+         * documented "leaving never cancels" door was simply dead.
+         *
+         * `right-14` keeps the centred pill out from under the button as well,
+         * so the two never overlap even before hit-testing decides anything,
+         * and both clear the notch the room's own header already clears.
+         */}
+        <div className="pointer-events-none absolute top-[max(env(safe-area-inset-top),8px)] right-14 left-2 z-20 flex flex-col items-center gap-1">
+          <div className="pointer-events-auto flex max-w-full items-center rounded-full border border-border bg-card/95 px-1 shadow-sm">
             <StageRail
               progress={galleryProgress}
               onGo={onStep ? (stage) => onStep(stage) : undefined}
             />
           </div>
-          <span className="pointer-events-none max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
+          <span className="max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
             {state.stage === "done" && state.course
               ? `On the table — ${state.course.name}`
               : STAGE_LINES[state.stage]}
@@ -785,7 +797,7 @@ function GalleryBody({
           type="button"
           onClick={onClose}
           aria-label="Leave the gallery — the plan carries on"
-          className="absolute top-2 right-2 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm hover:text-foreground"
+          className="absolute top-[max(env(safe-area-inset-top),8px)] right-2 z-30 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm hover:text-foreground"
           data-testid="gallery-close"
         >
           <X className="size-4" aria-hidden />

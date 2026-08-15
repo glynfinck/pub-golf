@@ -1358,11 +1358,7 @@ export function CaddyGroup({
           note={teeOffNote(teeOffMinutes)}
           className="items-start"
         >
-          <TeeTimeNudger
-            className="w-52"
-            value={teeOffMinutes}
-            onChange={setTeeOffMinutes}
-          />
+          <TeeTimeNudger value={teeOffMinutes} onChange={setTeeOffMinutes} />
         </Ask>
       </BriefSection>
 

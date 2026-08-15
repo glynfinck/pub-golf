@@ -46,14 +46,25 @@ export function RetractingPanel({
   return (
     <div
       className={cn(
-        "shrink-0 rounded-t-2xl border-t border-border bg-card pb-[max(env(safe-area-inset-bottom),8px)] shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
+        "shrink-0 rounded-t-2xl border-t border-border bg-card shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
         "transition-[max-height] duration-300 motion-reduce:transition-none",
         open || !retractable
           ? "max-h-[82dvh] overflow-y-auto"
-          : "max-h-[2.75rem] overflow-hidden",
+          : // The cap covers the border too — Tailwind's preflight makes this
+            // a border-box, so a bare 2.75rem cap eats a pixel of the 44px
+            // button it is supposed to be exactly tall enough for.
+            "max-h-[calc(2.75rem+1px)] overflow-hidden",
       )}
     >
-      <div className="mx-auto w-full max-w-md">
+      {/*
+       * **The safe-area padding lives here, not on the capped box.**
+       * It used to sit on the element above, which is also the one clamped to
+       * 44px when the panel is down — and a border-box cap *includes* its own
+       * padding. On any phone with a home indicator the tab was rendering at
+       * about 35 of its 44 pixels, clipped from below, and the tab is the only
+       * way into the brief. The cap now measures the tab and nothing else.
+       */}
+      <div className="mx-auto w-full max-w-md pb-[max(env(safe-area-inset-bottom),8px)]">
         {retractable ? (
           // No aria-label: the visible text is the accessible name, and
           // aria-expanded carries the state. A label that restated the text

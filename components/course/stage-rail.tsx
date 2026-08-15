@@ -38,7 +38,16 @@ export function StageRail({
 }) {
   const now = stageNow(progress);
   return (
-    <div className={cn("flex min-w-0 flex-1 items-center gap-1", className)}>
+    <div
+      className={cn(
+        // The rail owns its overflow rather than each caller wrapping it:
+        // the room's header and the gallery's pill both mount this, and a
+        // scroll rule written twice is a scroll rule that will be written
+        // once. Scrollbar hidden — this is a thumb surface, not a pane.
+        "flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {PLAN_STAGES.map((stage, index) => {
         const here = stage.id === now;
         const done = stageDone(stage.id, progress);
@@ -49,7 +58,7 @@ export function StageRail({
               <span
                 aria-hidden
                 className={cn(
-                  "h-px w-2 shrink-0",
+                  "h-px w-1.5 shrink-0",
                   done || here ? "bg-fairway" : "bg-border",
                 )}
               />
@@ -64,7 +73,7 @@ export function StageRail({
               title={stage.doing}
               onClick={() => onGo?.(stage.id)}
               className={cn(
-                "flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
+                "flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
                 here && "bg-fairway text-primary-foreground",
                 !here && done && "text-fairway hover:bg-secondary",
                 !here && !done && "text-muted-foreground",

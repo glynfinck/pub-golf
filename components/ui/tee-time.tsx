@@ -43,7 +43,11 @@ export function TeeTimeNudger({
   return (
     <div
       className={cn(
-        "flex min-h-12 items-center gap-0.5 rounded-lg border border-input bg-card px-1.5",
+        // `min-w-max` for the reason `Stepper` documents: four shrink-0 buttons
+        // and a flex-1 readout in a caller-set width means the *readout* pays
+        // for the squeeze. At w-52 it got 42px for a 56px value and wrapped
+        // "7:00 PM" onto two lines — at the default value, on every phone.
+        "flex min-h-12 min-w-max items-center gap-0.5 rounded-lg border border-input bg-card px-1.5",
         className,
       )}
     >
