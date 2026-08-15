@@ -27,6 +27,9 @@ import { Chip } from "@/components/ui/chip";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { StageRail } from "@/components/course/stage-rail";
 import {
+  JOB_HEADLINE,
+  JOB_PILL,
+  jobPanelLabel,
   jobWorking,
   type JobStage,
   type PlanProgress,
@@ -127,27 +130,11 @@ function googleMapsHref(pub: TappedPub): string {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
-const STAGE_LINES: Record<GalleryStage, string> = {
-  opening: "The caddy’s walking the patch",
-  menu: "Pick the walk — or let the caddy",
-  dressing: "The caddy’s dressing the card",
-  done: "On the table",
-  failed: "The caddy lost the ball",
-};
-
 const noSubscription = () => () => {};
 
 /** The swap row's buttons: small, but still a 36px target apiece. */
 const swapButton =
   "flex min-h-9 items-center justify-center gap-1 rounded-lg border border-border px-2.5 text-[11px] font-bold hover:bg-secondary disabled:opacity-30";
-
-/** What the pill says for each stage it can be minimised in. */
-const PILL_LINES: Partial<Record<GalleryStage, string>> = {
-  opening: "The caddy’s walking the patch",
-  menu: "Walks ready — come pick one",
-  dressing: "The caddy’s dressing the card",
-  failed: "The caddy lost the ball — take a look",
-};
 
 export function CaddyGallery({
   open,
@@ -193,7 +180,7 @@ export function CaddyGallery({
   // Minimised: the job wears the pill. Same component, second window — the
   // Uber posture: closing the view never hides the work.
   if (!open) {
-    const line = active ? PILL_LINES[state.stage] : undefined;
+    const line = active ? JOB_PILL[state.stage] : null;
     if (!line) return null;
     return createPortal(
       <button
@@ -358,18 +345,7 @@ function GalleryBody({
   // Down, the tab is the whole panel, so it says what the panel is holding —
   // and at the menu it names the walk on the map, which is the one fact worth
   // a row when the controls that chose it are hidden.
-  const panelLabel =
-    state.stage === "opening"
-      ? "Walking the patch"
-      : state.stage === "dressing"
-        ? "Dressing the card"
-        : state.stage === "menu"
-          ? route
-            ? `The walks · ${route.character}`
-            : "The walks"
-          : state.stage === "done"
-            ? "The card"
-            : "The caddy lost the ball";
+  const panelLabel = jobPanelLabel(state.stage, route?.character);
 
   // Recomputed from the walk on screen rather than read off the route the
   // caddy offered — the moment a stop is swapped those two are different
@@ -605,7 +581,7 @@ function GalleryBody({
           <span className="max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
             {state.stage === "done" && state.course
               ? `On the table — ${state.course.name}`
-              : STAGE_LINES[state.stage]}
+              : JOB_HEADLINE[state.stage]}
           </span>
         </div>
 

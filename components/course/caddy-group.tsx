@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Sparkle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/sheet";
 import { PendingLabel } from "@/components/ui/pending-label";
 import { Putt } from "@/components/ui/putt";
+import { toast } from "sonner";
 import { useAction } from "@/hooks/use-action";
+import type { CaddyJobHandle } from "@/hooks/use-caddy-job";
 import { useCountdown } from "@/hooks/use-countdown";
 import {
   briefSentence,
@@ -43,11 +45,7 @@ import { dayOptions, teeLine, teeOffNote } from "@/lib/caddy/tee-off";
 import { Ask, BriefSection } from "@/components/course/brief-parts";
 import { Stepper } from "@/components/ui/stepper";
 import { TeeTimeNudger } from "@/components/ui/tee-time";
-import {
-  askTheCaddy,
-  collectCaddyCard,
-  reopenCaddyPatch,
-} from "@/lib/actions/caddy";
+import { askTheCaddy, reopenCaddyPatch } from "@/lib/actions/caddy";
 import { CaddyMoreSheet } from "@/components/course/caddy-more-sheet";
 import { GreenFeeSheet } from "@/components/round/green-fee-sheet";
 import {
@@ -55,21 +53,8 @@ import {
   feeIsSpent,
   freshCourseNotice,
 } from "@/lib/caddy/credits";
-import {
-  decodeEvents,
-  thinkingTail,
-  type CaddyEvent,
-  type CaddyOffer,
-} from "@/lib/caddy/stream";
 import { centreOf, reachOf, type Reach } from "@/lib/caddy/reach";
 import { previewOf, thinPatchNote } from "@/lib/caddy/preflight";
-import {
-  CaddyGallery,
-  type DressChoice,
-  type GalleryStage,
-} from "@/components/course/caddy-gallery";
-import type { CaddyMenu } from "@/lib/caddy/menu";
-import { jobWorking, type PlanStage } from "@/lib/caddy/stages";
 import { DrawWalkSheet } from "@/components/course/draw-walk-sheet";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -103,57 +88,41 @@ const readToday = () => new Date().getDay();
  * draft on the same table as a hand-plotted one and every edit is the same.
  */
 export function CaddyGroup({
+  job,
   hasPass,
   onCourse,
-  onPatch,
-  onPicked,
   onTurn,
   allowance,
-  onSession,
   onReach,
   reach,
-  onStage,
-  onWorking,
-  onStep,
   room = false,
   strokeOverride,
-  session = null,
   reopen = null,
   passExpiresAt = null,
   filed = false,
   className,
 }: {
+  /**
+   * The caddy's job, owned by the room this stands in.
+   *
+   * Not created here, and that is the point: the parent controls when this
+   * component mounts, so a job created here is a job the parent can destroy —
+   * which is exactly what the Course Room did every time a card landed. See
+   * `hooks/use-caddy-job.ts`.
+   */
+  job: CaddyJobHandle;
   /** A live green fee on this host. The form is identical either way — only
    * its last row changes, because the ask belongs after the investment. */
   hasPass: boolean;
   /** A card arrived. The builder takes it from here. */
   onCourse: (course: PlannedCourse, changed: number[]) => void | Promise<void>;
-  /** The patch, the moment Places answers — several seconds before any hole
-   * exists. The drafting table frames its map on it. */
-  onPatch?: (pins: { id: string; lat: number; lng: number }[]) => void;
-  /** Pubs as the caddy names them, in its own order rather than the walking
-   * order, which is not decided until the card is complete. */
-  onPicked?: (ids: string[]) => void;
   /** Whether this fee still has a course to give. Absent means yes — a
    * database that has not caught up says yes, exactly as the pipeline does. */
   allowance?: { canPlan: boolean; left: number; courseId: string | null };
-  /** The session behind the card, so the builder can close it on save. */
-  onSession: (sessionId: string | null) => void;
   /** The turn behind *this* card, so a report can name the card rather than
    * the conversation. Null on a resumed session until the caddy is asked
    * something: the id belongs to a turn this page watched happen. */
   onTurn?: (turnId: string | null) => void;
-  /**
-   * A conversation the server found already open, if there is one.
-   *
-   * The missing half of resuming. The drafting table restored the card and
-   * remembered the session id, but this group — the only thing that renders an
-   * ask box — kept its own `sessionId` and started it at null, so a resumed
-   * host was shown the *plan* form for a patch that was already planned. The
-   * thread was in the database, on the page, and in the parent's state, and
-   * still could not be spoken to.
-   */
-  session?: string | null;
   /**
    * A conversation whose patch has been swept, and the id it lives under.
    *
@@ -175,24 +144,6 @@ export function CaddyGroup({
   /** The reach as the builder currently holds it, so the warning under the
    * form and the ring on the map are read from one value. */
   reach?: Reach | null;
-  /** The job's stage, as a label the minimap wears — null when no plan is
-   * live. One of the three windows on the job (gallery, pill, badge). */
-  onStage?: (label: string | null) => void;
-  /**
-   * Whether a request is actually in flight — true only while the patch is
-   * being walked or the card dressed.
-   *
-   * Separate from `onStage` because the two answer different questions, and
-   * reading one for the other is what froze the course room's stage rail: the
-   * label is non-null at `menu` and at `failed`, neither of which is a plan
-   * running. Anything that closes a road on the host has to key on this.
-   */
-  onWorking?: (working: boolean) => void;
-  /** Step back an act from inside the gallery. The gallery is a fullscreen
-   * portal, so it covers whatever rail the surface behind it has — carrying
-   * one is how pressing *Dress this walk* stops looking like losing the
-   * progress bar. Absent where there is no rail to step on. */
-  onStep?: (stage: PlanStage) => void;
   /**
    * Rendered inside the Course Room rather than on the drafting table.
    *
@@ -210,9 +161,6 @@ export function CaddyGroup({
   const router = useRouter();
   const { run, pending, busy } = useAction();
   const [open, setOpen] = useState(false);
-  // Seeded from the server's answer, so a resumed conversation opens on the
-  // ask box rather than on the form that would plan the patch again.
-  const [sessionId, setSessionId] = useState<string | null>(session);
   const [ask, setAsk] = useState("");
   // The fresh-course confirmation. Held rather than fired from a `confirm()`
   // so it can carry the two facts a host actually needs — what it replaces and
@@ -229,33 +177,6 @@ export function CaddyGroup({
   const passLeftMs = useCountdown(
     passExpiresAt ? Date.parse(passExpiresAt) : null,
   );
-  // The caddy's own reasoning while it works, trimmed to a line. Narration
-  // only: nothing reads it, and a run where it never arrives is a run that
-  // looks exactly like the old one.
-  const [thinking, setThinking] = useState("");
-  // The tool the caddy is reaching for, named. Outranks the reasoning below.
-  const [doing, setDoing] = useState("");
-  /**
-   * A refusal about money, and the door that answers it.
-   *
-   * Held rather than thrown at a toast, because a toast is the wrong shape for
-   * this: it is gone in four seconds, it says nothing about what to do next,
-   * and it reads as breakage. Neither of these is breakage — one host has
-   * their courses in the book, the other has simply not paid yet — so each
-   * gets a sheet with the way on.
-   *
-   * This is the only state in the group that may render a price, and it can
-   * only be set by a refusal the host walked into. That is the covenant's
-   * money rule with somewhere to live.
-   */
-  const [refusal, setRefusal] = useState<{
-    text: string;
-    offer: CaddyOffer;
-  } | null>(null);
-  // Read back inside the streaming closure, which cannot see a state update it
-  // made a moment ago.
-  const refusedRef = useRef(false);
-
   const [where, setWhere] = useState("");
   const [holes, setHoles] = useState<number>(DEFAULT_HOLES);
   const [vibe, setVibe] = useState<VibeId>("traditional");
@@ -284,77 +205,6 @@ export function CaddyGroup({
   const [teeOffMinutes, setTeeOffMinutes] = useState<number>(
     DEFAULT_TEE_OFF_MINUTES,
   );
-
-  /**
-   * The gallery: the fullscreen view the plan performs on.
-   *
-   * All of its state lives here rather than in the overlay, because the
-   * overlay is optional viewing — closing it must change nothing about the
-   * plan, so the plan can own none of its state.
-   */
-  const [gallery, setGallery] = useState(false);
-  const [galleryStage, setGalleryStage] = useState<GalleryStage>("opening");
-  const [menu, setMenu] = useState<CaddyMenu | null>(null);
-  const [picked, setPicked] = useState<string[]>([]);
-  const [galleryCourse, setGalleryCourse] = useState<PlannedCourse | null>(
-    null,
-  );
-  const [galleryError, setGalleryError] = useState<string | null>(null);
-  /** Bumped per plan so the gallery's body remounts and re-seeds its dials. */
-  const [galleryNonce, setGalleryNonce] = useState(0);
-  /** A plan is in flight or failed unseen — what keeps the pill honest. */
-  const [jobActive, setJobActive] = useState(false);
-  /** The session the open step created, spent by the dress step. A ref: the
-   * stream closure needs it without racing a state update. */
-  const menuSession = useRef<string | null>(null);
-
-  /**
-   * One door for every stage change, so the three things that mirror the job
-   * — the gallery, the pill, and the minimap's badge — can never disagree
-   * about where the plan is.
-   */
-  function advance(next: GalleryStage) {
-    setGalleryStage(next);
-    if (next === "done") setJobActive(false);
-    // **Working is not the same as having something to come back to**, and
-    // conflating them froze the course room's stage rail. `jobActive` means
-    // the pill has something to say — a failure to read, a menu to pick from
-    // — and stays true at `menu` and `failed`. Only these two stages are a
-    // request actually in flight, which is the one thing that may close the
-    // road back.
-    onWorking?.(jobWorking(next));
-    onStage?.(
-      next === "opening"
-        ? "Walking the patch"
-        : next === "menu"
-          ? "Walks ready"
-          : next === "dressing"
-            ? "Dressing the card"
-            : next === "failed"
-              ? "The caddy lost the ball"
-              : null,
-    );
-  }
-
-  /**
-   * The run is over with neither a card nor a failure — a refusal.
-   *
-   * Every path that answers with money used to end by closing the gallery and
-   * returning, which left the job in whatever stage it had reached. The pill
-   * went on saying "the caddy's dressing the card" over a plan that had
-   * already been turned down at the till, and once the course room started
-   * reading the stage, its rail froze mid-flight: every step behind the host
-   * disabled, nothing on screen moving, and a fullscreen gallery that had
-   * silently vanished. "Nothing happened" is exactly what that looks like.
-   *
-   * So a refusal ends the run properly. The sheet is the answer; the job is
-   * finished, and says so.
-   */
-  function settle() {
-    setJobActive(false);
-    onWorking?.(false);
-    onStage?.(null);
-  }
 
   const meaning = VIBES.find((entry) => entry.id === vibe)?.meaning ?? "";
   const sentence = briefSentence({
@@ -482,253 +332,23 @@ export function CaddyGroup({
    * makes it safe to treat the narration as decoration — and it is why the
    * gallery's X can close the view without touching the work.
    */
-  function stream(request: Record<string, unknown>) {
-    run(async () => {
-      setThinking("");
-      setDoing("");
-      setPicked([]);
-      advance("dressing");
-      refusedRef.current = false;
-      const lost = "The caddy lost the ball. Ask again — this one's free.";
-      let failure: { error: string; detail?: string } | null = null;
-      let landed = false;
-
-      let response: Response;
-      try {
-        response = await fetch("/api/caddy/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(request),
-        });
-      } catch {
-        advance("failed");
-        setGalleryError(lost);
-        return { error: lost };
-      }
-
-      // A refusal decided before the model was ever asked — no fee, a thin
-      // patch, no sign-in — comes back as ordinary JSON rather than as a
-      // stream that opens only to apologise.
-      if (
-        !response.body ||
-        !response.headers.get("content-type")?.includes("ndjson")
-      ) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-          offer?: CaddyOffer;
-        } | null;
-        setGallery(false);
-        settle();
-        if (body?.offer && body.error) {
-          refusedRef.current = true;
-          setRefusal({ text: body.error, offer: body.offer });
-          return {};
-        }
-        return { error: body?.error ?? lost };
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      const handle = async (event: CaddyEvent) => {
-        if (event.type === "doing") {
-          // A named tool call replaces the reasoning ticker rather than
-          // joining it: "Looking for beer gardens" is the work the host is
-          // paying for, and it should not be buried in a paragraph of prose.
-          setDoing(event.text);
-        } else if (event.type === "thinking") {
-          setThinking((current) => thinkingTail(current + event.text));
-        } else if (event.type === "patch") {
-          onPatch?.(event.pins);
-        } else if (event.type === "picked") {
-          setPicked((current) => [...current, ...event.ids]);
-          onPicked?.(event.ids);
-        } else if (event.type === "card") {
-          setSessionId(event.sessionId);
-          onSession(event.sessionId);
-          onTurn?.(event.turnId ?? null);
-          await onCourse(event.course, []);
-          setGalleryCourse(event.course);
-          advance("done");
-          landed = true;
-        } else if (event.offer) {
-          refusedRef.current = true;
-          setGallery(false);
-          settle();
-          setRefusal({ text: event.error, offer: event.offer });
-        } else {
-          failure = { error: event.error, detail: event.detail };
-        }
-      };
-
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          buffer += decoder.decode(value, { stream: !done });
-          const { events, rest } = decodeEvents(buffer);
-          buffer = rest;
-          for (const event of events) await handle(event);
-          if (done) break;
-        }
-      } catch {
-        // The connection went away mid-plan. If the card had already landed
-        // that is a finished plan with a rough ending, not a failure.
-        if (!landed) return await collect(lost);
-      }
-
-      // Cast rather than read straight through: `failure` is only ever
-      // assigned inside the stream callback, so TypeScript's flow analysis
-      // still believes it is null here and narrows the guard to `never`. The
-      // old code got away with returning it because `never` is assignable to
-      // anything; reading a property off it does not.
-      const failed = failure as { error: string; detail?: string } | null;
-      if (failed) {
-        if (!landed) {
-          const rescued = await collect(failed.error, failed.detail);
-          if (!("error" in rescued) || !rescued.error) return rescued;
-          advance("failed");
-          setGalleryError(failed.error);
-          return rescued;
-        }
-        return failed;
-      }
-      // A money refusal is a finished run, not a failed one — the sheet says so.
-      if (landed || refusedRef.current) return {};
-      const rescued = await collect(lost);
-      if ("error" in rescued && rescued.error) {
-        advance("failed");
-        setGalleryError(lost);
-      }
-      return rescued;
-    });
-  }
-
   /**
-   * The open step: gather the patch, get the menu, spend nothing.
-   *
-   * The gallery opens on the tap and the walks arrive a few seconds later.
-   * Without a browser maps key there is nowhere to show a menu, so the plan
-   * runs straight through exactly as it always did — the same graceful
-   * absence the builder keeps for every map.
+   * Ask for a patch. The job owns everything that happens next — the overlay,
+   * the stream, the ending — so this is the whole of the brief's part in it.
    */
-  function openMenu() {
+  function plan() {
     if (!MAPS_BROWSER_KEY) {
-      stream(briefBody());
+      toast.error("No map on this deploy — the caddy needs one to look.");
       return;
     }
-    run(async () => {
-      setMenu(null);
-      setPicked([]);
-      setThinking("");
-      setDoing("");
-      setGalleryCourse(null);
-      setGalleryError(null);
-      advance("opening");
-      setJobActive(true);
-      setGalleryNonce((current) => current + 1);
-      setGallery(true);
-      const lost = "The caddy lost the ball. Ask again — this one's free.";
-      type OpenAnswer = {
-        sessionId?: string;
-        menu?: CaddyMenu;
-        error?: string;
-        offer?: CaddyOffer;
-      };
-      let body: OpenAnswer | null = null;
-      try {
-        const response = await fetch("/api/caddy/open", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(briefBody()),
-        });
-        body = (await response.json().catch(() => null)) as OpenAnswer | null;
-      } catch {
-        body = null;
-      }
-      if (!body || body.error || !body.sessionId || !body.menu) {
-        setGallery(false);
-        settle();
-        if (body?.offer && body.error) {
-          setRefusal({ text: body.error, offer: body.offer });
-          return {};
-        }
-        return { error: body?.error ?? lost };
-      }
-      menuSession.current = body.sessionId;
-      setMenu(body.menu);
-      advance("menu");
-      // The patch frames the drafting table's own map too, so leaving the
-      // gallery lands on a view that already knows the neighbourhood.
-      onPatch?.(
-        body.menu.nodes.map((node) => ({
-          id: node.id,
-          lat: node.lat,
-          lng: node.lng,
-        })),
-      );
-      return {};
-    });
-  }
-
-  /** The host chose — or declined to choose — and the turn that spends runs. */
-  function dress(choice: DressChoice) {
-    // Returning silently here is literally "I pressed it and nothing
-    // happened": no toast, no stage change, no way to tell a lost thread from
-    // a dead button. It should not be reachable — the session is set the
-    // moment the menu arrives — so if it ever is, say so.
-    if (!menuSession.current) {
-      advance("failed");
-      setGalleryError(
-        "The caddy lost the thread on this patch. Plan it again — this one's free.",
-      );
-      return;
-    }
-    stream({
-      sessionId: menuSession.current,
-      route: choice.route,
-      holes: choice.holes,
-      stretch: choice.stretch,
-    });
-  }
-
-  /**
-   * Ask before apologising.
-   *
-   * The card is written to `caddy_turns` before a byte of it is streamed, so a
-   * plan whose connection dies on the way back has still produced one. It is in
-   * Postgres, already paid for, while the host reads a timeout — which happened
-   * for real: a 32.21p plan filed nine holes and the browser showed an error.
-   *
-   * So every path that was about to return a failure checks first. If a card is
-   * there it is put on the table and the run counts as finished; the host never
-   * learns the stream broke, which is the correct amount to tell them about our
-   * plumbing.
-   */
-  async function collect(
-    error: string,
-    detail?: string,
-  ): Promise<{ error?: string; detail?: string }> {
-    try {
-      const rescued = await collectCaddyCard();
-      if (!rescued.course) return { error, detail };
-      if (rescued.sessionId) {
-        setSessionId(rescued.sessionId);
-        onSession(rescued.sessionId);
-      }
-      await onCourse(rescued.course, []);
-      return {};
-    } catch {
-      // The rescue is best-effort by definition. If it cannot run, the host
-      // gets the failure they were always going to get.
-      return { error, detail };
-    }
+    void job.openPlan(briefBody());
   }
 
   function say(input: { ask?: string; roll?: boolean }) {
-    if (!sessionId) return;
+    const asking = job.sessionId;
+    if (!asking) return;
     run(async () => {
-      const result = await askTheCaddy({ sessionId, ...input });
+      const result = await askTheCaddy({ sessionId: asking, ...input });
       if (result.error) return { error: result.error, detail: result.detail };
       if (result.course) {
         onTurn?.(result.turnId ?? null);
@@ -778,7 +398,7 @@ export function CaddyGroup({
             className="mt-1 w-full"
             onClick={() => {
               setConfirming(false);
-              openMenu();
+              plan();
             }}
             data-testid="confirm-fresh-course"
           >
@@ -807,8 +427,8 @@ export function CaddyGroup({
    */
   const feeSheet = (
     <GreenFeeSheet
-      open={refusal?.offer === "fee"}
-      onOpenChange={(open) => !open && setRefusal(null)}
+      open={job.refusal?.offer === "fee"}
+      onOpenChange={(open) => !open && job.dismissRefusal()}
     />
   );
 
@@ -821,10 +441,10 @@ export function CaddyGroup({
    */
   const moreSheet = (
     <CaddyMoreSheet
-      open={refusal?.offer === "more"}
-      onOpenChange={(open) => !open && setRefusal(null)}
+      open={job.refusal?.offer === "more"}
+      onOpenChange={(open) => !open && job.dismissRefusal()}
       courseId={allowance?.courseId}
-      standing={refusal?.text ?? ""}
+      standing={job.refusal?.text ?? ""}
     />
   );
 
@@ -833,38 +453,6 @@ export function CaddyGroup({
    * plan crosses several of them (form → wait → ask box) and the overlay must
    * survive each transition. A portal, so it costs the layout nothing.
    */
-  const galleryEl = (
-    <CaddyGallery
-      open={gallery}
-      active={jobActive}
-      onReopen={() => setGallery(true)}
-      nonce={galleryNonce}
-      state={{
-        stage: galleryStage,
-        menu,
-        picked,
-        doing,
-        thinking,
-        course: galleryCourse,
-        error: galleryError,
-      }}
-      holes={holes}
-      stretch={stretch}
-      onDress={dress}
-      onStep={
-        onStep
-          ? (stage) => {
-              // Stepping back leaves the gallery on the way out: the act the
-              // host is going to lives on the surface behind it.
-              setGallery(false);
-              onStep(stage);
-            }
-          : undefined
-      }
-      onClose={() => setGallery(false)}
-    />
-  );
-
   // ——— The wait. Narrated, never spun: the line names the stage the
   // pipeline is actually in, and the Putt is the house's own busy animation.
   if (pending) {
@@ -876,7 +464,6 @@ export function CaddyGroup({
         )}
         aria-live="polite"
       >
-        {galleryEl}
         <Putt />
         {/* Three fixed rows, and the heading never moves.
             It used to be replaced by whatever tool the caddy had reached for,
@@ -885,28 +472,30 @@ export function CaddyGroup({
             the one stable thing on the screen and everything that varies sits
             under it, in its own row, clamped. */}
         <div className="text-center font-serif text-lg leading-tight text-balance">
-          {sessionId ? "The caddy’s thinking" : "The caddy’s walking the patch"}
+          {job.sessionId
+            ? "The caddy’s thinking"
+            : "The caddy’s walking the patch"}
         </div>
         <div className="flex min-h-9 w-full flex-col items-center justify-start gap-1 overflow-hidden">
-          {doing ? (
+          {job.doing ? (
             <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
-              {doing}
+              {job.doing}
             </p>
           ) : null}
           {/* What it is actually thinking, where there is any — the end of it,
               fading rather than jumping. Absent on a tweak and absent if the
               stream sends none, which is why the heading above still says
               something on its own. */}
-          {thinking ? (
+          {job.thinking ? (
             <p
               aria-live="off"
               className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
             >
-              {thinking}
+              {job.thinking}
             </p>
-          ) : doing ? null : (
+          ) : job.doing ? null : (
             <p className="text-[11px] text-muted-foreground">
-              {sessionId ? "Won’t be a moment." : "About twenty seconds."}
+              {job.sessionId ? "Won’t be a moment." : "About twenty seconds."}
             </p>
           )}
         </div>
@@ -917,7 +506,7 @@ export function CaddyGroup({
   // ——— The card is here and the patch is not. Offered rather than done
   // automatically: it is a call out to Google, and a host who only came to
   // rename a hole should not pay for one they never asked for.
-  if (!sessionId && reopen) {
+  if (!job.sessionId && reopen) {
     return (
       <div
         className={cn(
@@ -958,7 +547,7 @@ export function CaddyGroup({
 
   // ——— On the table: the caddy's two verbs, once a card exists. No count
   // anywhere — the caddy is not rationed on screen.
-  if (sessionId) {
+  if (job.sessionId) {
     return (
       <div
         className={cn(
@@ -966,7 +555,6 @@ export function CaddyGroup({
           className,
         )}
       >
-        {galleryEl}
         {moreSheet}
         {feeSheet}
         <span className="eyebrow text-fairway">The caddy</span>
@@ -1073,7 +661,7 @@ export function CaddyGroup({
   if (
     allowance &&
     feeIsSpent({ hasPass, canPlan: allowance.canPlan }) &&
-    !sessionId
+    !job.sessionId
   ) {
     return (
       <div
@@ -1114,7 +702,7 @@ export function CaddyGroup({
         <button
           type="button"
           onClick={() =>
-            setRefusal({ text: CADDY_CREDITS_SPENT, offer: "more" })
+            job.showRefusal({ text: CADDY_CREDITS_SPENT, offer: "more" })
           }
           className="min-h-11 text-[11px] font-semibold text-muted-foreground hover:text-fairway"
         >
@@ -1144,7 +732,7 @@ export function CaddyGroup({
             saying Covered after the last course had been planned. A pass has
             two dimensions and this badge only ever showed one — so once there
             is a fee, what it says is what is left on it. With no fee it says
-            nothing at all: the price belongs to the refusal, not to the form. */}
+            nothing at all: the price belongs to the job.refusal, not to the form. */}
         {hasPass ? (
           allowance ? (
             <CaddyUsage left={allowance.left} />
@@ -1158,7 +746,6 @@ export function CaddyGroup({
           Your round, planned in twenty seconds
         </div>
       )}
-      {galleryEl}
       {moreSheet}
       {feeSheet}
 
@@ -1449,7 +1036,7 @@ export function CaddyGroup({
 
       {/* This line quoted the price. It has been kept, without it: what a host
           needs before they press the button is that the caddy is the members'
-          part and the rest of the page is not — the number is the refusal's
+          part and the rest of the page is not — the number is the job.refusal's
           business, one tap away, on a sheet with a door in it. */}
       {hasPass ? null : (
         <p className="text-[10px] text-muted-foreground">
@@ -1479,16 +1066,19 @@ export function CaddyGroup({
 
           So with no fee there is nothing to confirm: the ask goes straight
           to the server, which answers it with the green fee. The price
-          still arrives with the refusal, which is the covenant's own
+          still arrives with the job.refusal, which is the covenant's own
           order. (The ask now goes via the open step — same gate, same
-          refusal, same sheet.) */}
+          job.refusal, same sheet.) */}
+      {/* Keyed on the job, not on `pending`. `pending` belongs to the ask
+          box's own transition; while a plan runs it is false, and while an ask
+          runs the plan button has no business being disabled by it. */}
       <Button
-        onClick={() => (hasPass ? setConfirming(true) : openMenu())}
-        disabled={pending || !(where.trim() || stroke)}
+        onClick={() => (hasPass ? setConfirming(true) : plan())}
+        disabled={job.working || !(where.trim() || stroke)}
       >
         <PendingLabel
-          pending={pending}
-          busy={busy}
+          pending={job.working}
+          busy={job.working}
           label="Plan the round"
           pendingLabel="Walking the patch"
         />

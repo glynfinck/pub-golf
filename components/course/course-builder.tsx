@@ -7,13 +7,19 @@ import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { CaddyGroup } from "@/components/course/caddy-group";
+import { CaddyGallery } from "@/components/course/caddy-gallery";
+import { useCaddyJob } from "@/hooks/use-caddy-job";
+import { JOB_BADGE } from "@/lib/caddy/stages";
 import type { Reach } from "@/lib/caddy/reach";
 import { echoLine } from "@/lib/caddy/preflight";
 import {
   RoutePreview,
   type LivePatch,
 } from "@/components/course/route-preview";
-import { HoleEditor, type MoveDirection } from "@/components/course/hole-editor";
+import {
+  HoleEditor,
+  type MoveDirection,
+} from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { PubMapSheet } from "@/components/course/pub-map-sheet";
 import { Button } from "@/components/ui/button";
@@ -176,14 +182,29 @@ export function CourseBuilder({
    * still there and still says which conversation — this only ever narrows it.
    */
   const [caddyTurn, setCaddyTurn] = useState<string | null>(null);
+
+  /**
+   * The job, held by the table rather than by the group inside it — the same
+   * ownership the Course Room now keeps, and for the same reason: whoever can
+   * unmount the group must not be the one whose job it is.
+   */
+  const caddyJob = useCaddyJob({
+    session: caddySession,
+    onSession: setCaddySession,
+    onTurn: setCaddyTurn,
+    onCourse: takeCaddyCourse,
+    onPatch: (pins) => setPatch({ pins, picked: [] }),
+    onPicked: (ids) =>
+      setPatch((current) =>
+        current ? { ...current, picked: [...current.picked, ...ids] } : current,
+      ),
+  });
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
   /** How far the round reaches, resolved from the brief's two areas. Held
    * here rather than in the group so the map and the form read one value. */
   const [reach, setReach] = useState<Reach | null>(null);
-  /** The caddy job's stage label, worn by the minimap while a plan runs. */
-  const [caddyStage, setCaddyStage] = useState<string | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -498,7 +519,8 @@ export function CourseBuilder({
       : pick?.mode === "replace"
         ? {
             label: "Choose",
-            aria: (venue: string) => `Choose ${venue} for hole ${pickIndex + 1}`,
+            aria: (venue: string) =>
+              `Choose ${venue} for hole ${pickIndex + 1}`,
           }
         : { label: "Add", aria: undefined };
 
@@ -540,11 +562,16 @@ export function CourseBuilder({
             : null)
         }
         chip={patch ? null : reach?.preview ? echoLine(reach.preview) : null}
-        badge={caddyStage}
+        badge={JOB_BADGE[caddyJob.stage]}
         drawKey={drawKey}
         ring={
           reach
-            ? { lat: reach.centre.lat, lng: reach.centre.lng, km: reach.km, warn: reach.warn }
+            ? {
+                lat: reach.centre.lat,
+                lng: reach.centre.lng,
+                km: reach.km,
+                warn: reach.warn,
+              }
             : null
         }
         onOpen={
@@ -580,26 +607,41 @@ export function CourseBuilder({
           that wrote that course is still open. */}
       {caddy && (caddySession || reopen) ? (
         <CaddyGroup
+          job={caddyJob}
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
-          onSession={setCaddySession}
-          onTurn={setCaddyTurn}
-          session={caddySession}
           reopen={reopen}
           passExpiresAt={passExpiresAt}
           filed={savedId !== null}
           allowance={allowance}
-          onPatch={(pins) => setPatch({ pins, picked: [] })}
-          onStage={setCaddyStage}
           onReach={setReach}
           reach={reach}
-          onPicked={(ids) =>
-            setPatch((current) =>
-              current ? { ...current, picked: [...current.picked, ...ids] } : current,
-            )
-          }
         />
       ) : null}
+
+      {/* The gallery belongs to the table, not to the group inside it, and it
+          renders unconditionally: it draws nothing unless the job is open or
+          still has something to say, and gating it on the group's own
+          condition is how it came to be torn down mid-performance. */}
+      <CaddyGallery
+        open={caddyJob.open}
+        active={caddyJob.active}
+        nonce={caddyJob.nonce}
+        holes={9}
+        stretch={5}
+        state={{
+          stage: caddyJob.stage,
+          menu: caddyJob.menu,
+          picked: caddyJob.picked,
+          doing: caddyJob.doing,
+          thinking: caddyJob.thinking,
+          course: caddyJob.course,
+          error: caddyJob.error,
+        }}
+        onDress={(choice) => void caddyJob.dress({ ...choice })}
+        onClose={caddyJob.hide}
+        onReopen={caddyJob.show}
+      />
 
       <PlaceSearch
         onAdd={addPub}
@@ -656,7 +698,9 @@ export function CourseBuilder({
               <button
                 type="button"
                 aria-label={`Insert a pub before hole ${index + 1}`}
-                onClick={() => setPicking({ mode: "insert", beforeId: hole.id })}
+                onClick={() =>
+                  setPicking({ mode: "insert", beforeId: hole.id })
+                }
                 className="flex min-h-10 items-center gap-2 text-muted-foreground hover:text-fairway focus-visible:text-fairway"
               >
                 <span
@@ -703,7 +747,9 @@ export function CourseBuilder({
                   clearUndo();
                   setChanged([]);
                   setHoles((current) =>
-                    current.map((h, i) => (i === index ? { ...h, ...patch } : h)),
+                    current.map((h, i) =>
+                      i === index ? { ...h, ...patch } : h,
+                    ),
                   );
                 }}
                 onRemove={() => remove(index)}
@@ -850,8 +896,8 @@ export function CourseBuilder({
             />
           )}
           <p className="text-center text-[11px] text-muted-foreground">
-            The copy is the course as last saved. Tearing it out never touches
-            a round already played on it.
+            The copy is the course as last saved. Tearing it out never touches a
+            round already played on it.
           </p>
         </div>
       ) : null}

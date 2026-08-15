@@ -8,6 +8,8 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import { CaddyGroup } from "@/components/course/caddy-group";
+import { CaddyGallery } from "@/components/course/caddy-gallery";
+import { useCaddyJob } from "@/hooks/use-caddy-job";
 import {
   DrawSurface,
   type DrawControls,
@@ -46,7 +48,7 @@ export function CourseRoom({
   hasPass,
   allowance,
   passExpiresAt = null,
-  session = null,
+  session: sessionProp = null,
   reopen = null,
   filed = false,
 }: {
@@ -65,6 +67,14 @@ export function CourseRoom({
    * table owns editing, as it owns every course — so this is a door rather
    * than a form. */
   const [landed, setLanded] = useState<PlannedCourse | null>(null);
+  /** The conversation behind the card, so the ask box has something to spend
+   * and the drafting table can be handed the right thread. */
+  const [session, setSession] = useState<string | null>(sessionProp);
+  /** The patch as Places answered it — the map behind the gallery should be
+   * on the ground the plan is actually about. */
+  const [pins, setPins] = useState<{ id: string; lat: number; lng: number }[]>(
+    [],
+  );
   /** Whether the panel is up. Down to begin with: the room's first move is
    * aiming the map, and the brief is a tab away. All-or-nothing retraction
    * and the tab itself belong to `RetractingPanel`, which the gallery wears
@@ -78,13 +88,31 @@ export function CourseRoom({
    * this — never for a stage *label*, which stays non-null at the menu and
    * after a failure and would leave the rail dead in both.
    */
-  const [working, setWorking] = useState(false);
   const draw = useRef<DrawControls | null>(null);
+
+  /**
+   * The job, held by the room rather than by the group inside it.
+   *
+   * This is the fix six reviews asked for. The gallery is a portal the job
+   * renders, and the room used to swap `CaddyGroup` out for a card panel the
+   * moment a plan landed — unmounting the portal mid-performance and taking
+   * the session, the menu and the brief with it. A job the room holds cannot
+   * be destroyed by the room re-rendering, so the finale plays.
+   */
+  const job = useCaddyJob({
+    session,
+    onSession: setSession,
+    onCourse: (course) => {
+      setLanded(course);
+      setPanelOpen(true);
+    },
+    onPatch: setPins,
+  });
 
   const progress = {
     locked,
     aimed: Boolean(stroke),
-    planning: working,
+    planning: job.working,
     carded: landed != null,
   };
 
@@ -106,7 +134,13 @@ export function CourseRoom({
     if (undo.clearStroke) setStroke(null);
     if (stage === "tune") setPanelOpen(true);
     if (stage === "area" || stage === "draw") setPanelOpen(false);
-    if (stage !== "enrich") setLanded(null);
+    if (stage !== "enrich") {
+      setLanded(null);
+      // Stepping back behind the caddy ends its run rather than orphaning it:
+      // a live menu left behind the host is a pill that dresses a stale
+      // session when they eventually tap it.
+      job.abandon();
+    }
   }
 
   return (
@@ -138,7 +172,7 @@ export function CourseRoom({
             <DrawSurface
               ref={draw}
               centre={reach?.centre ?? null}
-              pins={reach?.preview?.pins ?? []}
+              pins={pins.length ? pins : (reach?.preview?.pins ?? [])}
               dark={resolvedTheme === "dark"}
               onLockChange={setLocked}
               onUse={(drawn) => {
@@ -202,39 +236,57 @@ export function CourseRoom({
               Stay here
             </button>
           </div>
-        ) : (
-          <>
-            {stroke ? (
-              <p className="px-4 pt-2 text-[11px] font-semibold text-fairway">
-                Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km. The caddy
-                will look along it.
-              </p>
-            ) : null}
-            <CaddyGroup
-              room
-              strokeOverride={stroke}
-              hasPass={hasPass}
-              allowance={allowance}
-              passExpiresAt={passExpiresAt}
-              session={session}
-              reopen={reopen}
-              filed={filed}
-              reach={reach}
-              onReach={setReach}
-              onSession={() => {}}
-              onWorking={setWorking}
-              onStep={goToStage}
-              // A card landing opens the panel — an event, not an effect, so
-              // the strict hooks rules stay satisfied and the host can push
-              // it straight back down.
-              onCourse={(course) => {
-                setLanded(course);
-                setPanelOpen(true);
-              }}
-            />
-          </>
-        )}
+        ) : null}
+        {/* **A sibling, never a replacement.** The card block above used to
+            stand in place of this group, which unmounted the job holding the
+            gallery. Hidden rather than removed while a card is up: the brief
+            keeps its fields, the job keeps its session, and "Stay here" comes
+            back to the round the host was building rather than to a blank. */}
+        <div className={landed ? "hidden" : undefined}>
+          {stroke ? (
+            <p className="px-4 pt-2 text-[11px] font-semibold text-fairway">
+              Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km. The caddy
+              will look along it.
+            </p>
+          ) : null}
+          <CaddyGroup
+            job={job}
+            room
+            strokeOverride={stroke}
+            hasPass={hasPass}
+            allowance={allowance}
+            passExpiresAt={passExpiresAt}
+            reopen={reopen}
+            filed={filed}
+            reach={reach}
+            onReach={setReach}
+            onCourse={() => {}}
+          />
+        </div>
       </RetractingPanel>
+
+      {/* The gallery is the room's, not the group's — so nothing the room
+          renders can tear it down. */}
+      <CaddyGallery
+        open={job.open}
+        active={job.active}
+        nonce={job.nonce}
+        holes={9}
+        stretch={5}
+        state={{
+          stage: job.stage,
+          menu: job.menu,
+          picked: job.picked,
+          doing: job.doing,
+          thinking: job.thinking,
+          course: job.course,
+          error: job.error,
+        }}
+        onDress={(choice) => void job.dress({ ...choice })}
+        onClose={job.hide}
+        onReopen={job.show}
+        onStep={goToStage}
+      />
     </div>
   );
 }
