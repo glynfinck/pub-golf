@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 import {
@@ -35,15 +35,11 @@ import {
   type PlanProgress,
   type PlanStage,
 } from "@/lib/caddy/stages";
-import { swapOptions, walkStats, withMove, withSwap } from "@/lib/caddy/swap";
+import { swapOptions, walkStats } from "@/lib/caddy/swap";
+import { useMenuDials, type MenuDials } from "@/hooks/use-menu-dials";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
-import {
-  rerouteMenu,
-  type CaddyMenu,
-  type MenuNode,
-  type MenuRoute,
-} from "@/lib/caddy/menu";
+import type { CaddyMenu, MenuNode } from "@/lib/caddy/menu";
 import { HOLE_CHOICES, STRETCH_CHOICES } from "@/lib/caddy/brief";
 import { WALK_MINUTES_PER_KM } from "@/lib/geo";
 import type { PlannedCourse } from "@/lib/caddy/plan";
@@ -167,6 +163,24 @@ export function CaddyGallery({
    * which case the gallery's own rail is a display. */
   onStep?: (stage: PlanStage) => void;
 }) {
+  // Above every early return, and above the overlay's own mount: a walk the
+  // host has edited must survive closing the gallery to glance at the map.
+  const dials = useMenuDials(state.menu);
+  /**
+   * Which plan the dials are currently seeded for.
+   *
+   * React's own "adjusting state when a prop changes" pattern: state compared
+   * during render, re-rendering immediately without committing. Not an effect
+   * (the house forbids setState in one) and not a `key` on the body (that ties
+   * re-seeding to a component which unmounts for other reasons entirely, which
+   * is exactly what was deleting hand-edited walks).
+   */
+  const [seeded, setSeeded] = useState(-1);
+  if (state.menu && seeded !== nonce) {
+    setSeeded(nonce);
+    dials.seed({ holes, stretch });
+  }
+
   // Mounted portals only: the overlay renders into <body>, so no ancestor
   // transform can trap the fixed positioning. `useSyncExternalStore` is the
   // house's hydration guard — never a mounted-flag effect.
@@ -215,10 +229,8 @@ export function CaddyGallery({
 
   return createPortal(
     <GalleryBody
-      key={nonce}
       state={state}
-      holes={holes}
-      stretch={stretch}
+      dials={dials}
       onDress={onDress}
       onClose={onClose}
       onStep={onStep}
@@ -229,15 +241,13 @@ export function CaddyGallery({
 
 function GalleryBody({
   state,
-  holes,
-  stretch,
+  dials,
   onDress,
   onClose,
   onStep,
 }: {
   state: GalleryState;
-  holes: number;
-  stretch: number;
+  dials: MenuDials;
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
   onStep?: (stage: PlanStage) => void;
@@ -246,24 +256,6 @@ function GalleryBody({
   const reducedMotion = usePrefersReducedMotion();
   const [mapsFailed, setMapsFailed] = useState(false);
 
-  // The menu's own dials, seeded from the brief. Initial-value only, on
-  // purpose: a fresh plan remounts this body (the `key` above), which is
-  // what re-seeds them.
-  const [dialHoles, setDialHoles] = useState(holes);
-  const [dialStretch, setDialStretch] = useState(stretch);
-  const [routeIndex, setRouteIndex] = useState(0);
-  /** The pub the host tapped, if any. Null is the ordinary state. */
-  const [tapped, setTapped] = useState<TappedPub | null>(null);
-  /**
-   * The host's own version of the chosen walk, once they have changed one.
-   *
-   * Null means "the caddy's, as offered" — so the menu is unchanged until
-   * somebody touches it, and every dial that re-routes clears this rather than
-   * silently keeping a hand-edit on top of a different walk.
-   */
-  const [edited, setEdited] = useState<string[] | null>(null);
-  /** Whether the tapped stop is showing its alternatives. */
-  const [swapping, setSwapping] = useState(false);
   /**
    * Whether the furniture is up. Up to begin with — the panel is where the
    * whole act happens — and a host who pushes it down to watch the map keeps
@@ -272,27 +264,13 @@ function GalleryBody({
    */
   const [panelOpen, setPanelOpen] = useState(true);
 
+  const { routes, route, stops, edited, swapping } = dials;
   /**
-   * The walks on offer: the server's menu as dealt, re-routed in the browser
-   * the moment a dial moves. Pure arithmetic over the lean nodes — the whole
-   * reason iterating here is free.
+   * A pub tapped that is *not* a stop on the walk — a faint candidate pin, or
+   * a hole on the finished card. Held as a snapshot because there is no
+   * position to derive it from.
    */
-  const routes: MenuRoute[] = useMemo(() => {
-    if (!state.menu) return [];
-    if (dialHoles === holes && dialStretch === stretch)
-      return state.menu.routes;
-    return rerouteMenu(state.menu, { holes: dialHoles, stretch: dialStretch });
-  }, [state.menu, dialHoles, dialStretch, holes, stretch]);
-  const route =
-    routes[Math.min(routeIndex, Math.max(routes.length - 1, 0))] ?? null;
-  /**
-   * The walk actually on the map: the host's edit where they have made one,
-   * the caddy's offer otherwise. Everything downstream — the line drawn, the
-   * numbers under it, and what gets dressed — reads this rather than
-   * `route.stops`, so a swapped stop is the walk in every sense and not just
-   * on the pins.
-   */
-  const stops = edited ?? route?.stops ?? [];
+  const [pinned, setPinned] = useState<TappedPub | null>(null);
 
   // The widening: the overlay grows from the middle of the screen unless
   // motion is reduced, in which case it is simply there.
@@ -300,13 +278,45 @@ function GalleryBody({
     ? ""
     : "animate-in fade-in zoom-in-95 duration-300";
 
-  if (mapsFailed) return null;
-
   const dark = resolvedTheme === "dark";
   // A record rather than a `Map`: the component import shadows the global
   // constructor in this file, exactly as route-preview.tsx already notes.
   const byId: Record<string, MenuNode> = {};
   for (const node of state.menu?.nodes ?? []) byId[node.id] = node;
+
+  /**
+   * The card over the map.
+   *
+   * **Derived from the position, never stored.** It used to be a snapshot
+   * taken at tap time, and every control that re-routed left it pointing at a
+   * walk that no longer existed: on a shorter walk the card described the
+   * wrong pub, "Swap" answered "nothing else round here" over a full menu, and
+   * "Later" moved a stop the host had never tapped. A position into the walk
+   * on screen cannot go stale, because there is only one walk.
+   */
+  const stopCard: TappedPub | null =
+    state.stage === "menu" && dials.tapped != null && stops[dials.tapped]
+      ? (() => {
+          const node = byId[stops[dials.tapped]];
+          if (!node) return null;
+          return {
+            stopIndex: dials.tapped,
+            name: node.name,
+            address: node.address,
+            rating: node.rating,
+            reviewCount: node.reviewCount,
+            lat: node.lat,
+            lng: node.lng,
+          };
+        })()
+      : null;
+  const tapped = stopCard ?? pinned;
+
+  function closeCard() {
+    setPinned(null);
+    dials.setTapped(null);
+    dials.setSwapping(false);
+  }
 
   // What the map draws depends on the act. While dressing, the caddy's own
   // picks; at the menu, the selected walk; when done, the finished card.
@@ -356,8 +366,8 @@ function GalleryBody({
    * render because it is a handful of distances over nodes already in hand —
    * memoising it would cost more than it saves and could go stale on a swap. */
   const alternatives =
-    tapped?.stopIndex != null && state.stage === "menu"
-      ? swapOptions(stops, tapped.stopIndex, state.menu?.nodes ?? [])
+    stopCard?.stopIndex != null
+      ? swapOptions(stops, stopCard.stopIndex, state.menu?.nodes ?? [])
       : [];
 
   /**
@@ -366,38 +376,6 @@ function GalleryBody({
    * Event handlers, not effects — the strict hooks rules stay satisfied and
    * the walk only ever changes because somebody asked it to.
    */
-  function retap(next: string[], index: number) {
-    setEdited(next);
-    const node = state.menu?.nodes.find((entry) => entry.id === next[index]);
-    if (!node) return;
-    setTapped({
-      stopIndex: index,
-      name: node.name,
-      address: node.address,
-      rating: node.rating,
-      reviewCount: node.reviewCount,
-      lat: node.lat,
-      lng: node.lng,
-    });
-  }
-
-  function swapStop(index: number, id: string) {
-    retap(withSwap(stops, index, id), index);
-    setSwapping(false);
-  }
-
-  function moveStop(index: number, delta: number) {
-    const next = withMove(stops, index, delta);
-    // Follow the pub, not the position: the host moved *this* pub, so the
-    // card should still be about it once it has moved.
-    retap(next, Math.min(Math.max(index + delta, 0), next.length - 1));
-  }
-
-  function restoreWalk() {
-    setEdited(null);
-    setSwapping(false);
-    setTapped(null);
-  }
   const stats =
     route && state.stage === "menu"
       ? [
@@ -415,143 +393,165 @@ function GalleryBody({
     <div
       className={cn("fixed inset-0 z-50 flex flex-col bg-background", grow)}
       role="dialog"
+      aria-modal="true"
+      tabIndex={-1}
+      // Escape leaves, like every other overlay in the house. Leaving never
+      // cancels — the plan carries on and the card still lands — so there is
+      // nothing here to confirm.
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
       aria-label="The gallery — the caddy planning your round"
       data-testid="caddy-gallery"
     >
+      {/* Where the plan has got to, for a screen reader. The ticker's own
+          reasoning stays `aria-live="off"` — it is a window, not an
+          announcement, and reading it aloud would bury the stage. */}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {JOB_HEADLINE[state.stage]}
+        {state.doing ? `. ${state.doing}` : ""}
+      </p>
+
       {/* The map is the screen. Everything else floats over it. `min-h-0` so
           a panel standing at its full height squeezes the map rather than
           pushing the bottom of it off the glass. */}
       <div className="relative min-h-0 flex-1">
-        <APIProvider
-          apiKey={MAPS_BROWSER_KEY}
-          onError={() => setMapsFailed(true)}
-        >
-          <Map
-            className="size-full"
-            mapId={mapId()}
-            colorScheme={dark ? ColorScheme.DARK : ColorScheme.LIGHT}
-            defaultCenter={{ lat: 51.5, lng: -0.08 }}
-            defaultZoom={13}
-            gestureHandling="greedy"
-            disableDefaultUI
-            keyboardShortcuts={false}
-            clickableIcons={false}
+        {mapsFailed ? (
+          /* The overlay stays. It used to return null the moment Google's
+             script failed — taking the narration, the walks, the stats and
+             both dress buttons with it, and leaving a paid-for menu
+             unreachable behind a blank screen. Only the map is missing. */
+          <div className="flex h-full items-center justify-center px-8 text-center text-xs text-muted-foreground">
+            The map would not load — the walks still work.
+          </div>
+        ) : (
+          <APIProvider
+            apiKey={MAPS_BROWSER_KEY}
+            onError={() => setMapsFailed(true)}
           >
-            <FrameNodes nodes={state.menu?.nodes ?? []} course={state.course} />
-            {/* Every candidate, faint; the walk's stops light up over them. */}
-            {(state.menu?.nodes ?? []).map((node) => (
-              <AdvancedMarker
-                key={node.id}
-                position={{ lat: node.lat, lng: node.lng }}
-                anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-                title={node.name}
-                onClick={() =>
-                  setTapped({
-                    name: node.name,
-                    address: node.address,
-                    rating: node.rating,
-                    reviewCount: node.reviewCount,
-                    lat: node.lat,
-                    lng: node.lng,
+            <Map
+              className="size-full"
+              mapId={mapId()}
+              colorScheme={dark ? ColorScheme.DARK : ColorScheme.LIGHT}
+              defaultCenter={{ lat: 51.5, lng: -0.08 }}
+              defaultZoom={13}
+              gestureHandling="greedy"
+              disableDefaultUI
+              keyboardShortcuts={false}
+              clickableIcons={false}
+            >
+              <FrameNodes
+                nodes={state.menu?.nodes ?? []}
+                course={state.course}
+              />
+              {/* Every candidate, faint; the walk's stops light up over them. */}
+              {(state.menu?.nodes ?? []).map((node) => (
+                <AdvancedMarker
+                  key={node.id}
+                  position={{ lat: node.lat, lng: node.lng }}
+                  anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                  title={node.name}
+                  onClick={() =>
+                    setPinned({
+                      name: node.name,
+                      address: node.address,
+                      rating: node.rating,
+                      reviewCount: node.reviewCount,
+                      lat: node.lat,
+                      lng: node.lng,
+                    })
+                  }
+                >
+                  <div
+                    className={cn(
+                      "rounded-full transition-all duration-300",
+                      walkIds.includes(node.id)
+                        ? "size-3.5 bg-fairway ring-2 ring-background"
+                        : "size-1.5 bg-muted-foreground/40",
+                    )}
+                  />
+                </AdvancedMarker>
+              ))}
+              {/* The walk under consideration — dotted, the house's own line. */}
+              {walkPath.length > 1 ? (
+                <DottedWalk path={walkPath} dark={dark} />
+              ) : null}
+              {state.stage === "menu" && route
+                ? stops.map((id, index) => {
+                    const node = byId[id];
+                    if (!node) return null;
+                    return (
+                      <AdvancedMarker
+                        key={`stop-${id}`}
+                        position={{ lat: node.lat, lng: node.lng }}
+                        anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                        title={`Hole ${index + 1} — ${node.name}`}
+                        onClick={() => {
+                          setPinned(null);
+                          dials.setSwapping(false);
+                          dials.setTapped(index);
+                        }}
+                      >
+                        <div
+                          className={cn(
+                            "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                            index === stops.length - 1
+                              ? "bg-marker"
+                              : "bg-fairway",
+                          )}
+                        >
+                          {index + 1}
+                        </div>
+                      </AdvancedMarker>
+                    );
                   })
-                }
-              >
-                <div
-                  className={cn(
-                    "rounded-full transition-all duration-300",
-                    walkIds.includes(node.id)
-                      ? "size-3.5 bg-fairway ring-2 ring-background"
-                      : "size-1.5 bg-muted-foreground/40",
-                  )}
-                />
-              </AdvancedMarker>
-            ))}
-            {/* The walk under consideration — dotted, the house's own line. */}
-            {walkPath.length > 1 ? (
-              <DottedWalk path={walkPath} dark={dark} />
-            ) : null}
-            {state.stage === "menu" && route
-              ? stops.map((id, index) => {
-                  const node = byId[id];
-                  if (!node) return null;
-                  return (
-                    <AdvancedMarker
-                      key={`stop-${id}`}
-                      position={{ lat: node.lat, lng: node.lng }}
-                      anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-                      title={`Hole ${index + 1} — ${node.name}`}
-                      onClick={() => {
-                        setSwapping(false);
-                        setTapped({
-                          stopIndex: index,
-                          name: node.name,
-                          address: node.address,
-                          rating: node.rating,
-                          reviewCount: node.reviewCount,
-                          lat: node.lat,
-                          lng: node.lng,
-                        });
-                      }}
-                    >
-                      <div
-                        className={cn(
-                          "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                          index === stops.length - 1
-                            ? "bg-marker"
-                            : "bg-fairway",
-                        )}
+                : null}
+              {/* The finished card, numbered in walking order. */}
+              {state.stage === "done" && state.course
+                ? state.course.holes.map((hole, index) =>
+                    hole.lat != null && hole.lng != null ? (
+                      <AdvancedMarker
+                        key={`done-${index}`}
+                        position={{ lat: hole.lat, lng: hole.lng }}
+                        anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
+                        title={`Hole ${index + 1} — ${hole.venue_name}`}
+                        onClick={() =>
+                          setPinned({
+                            name: hole.venue_name,
+                            address: hole.address,
+                            rating: hole.rating,
+                            reviewCount: null,
+                            lat: hole.lat as number,
+                            lng: hole.lng as number,
+                            hole: {
+                              number: index + 1,
+                              drink: hole.drink,
+                              par: hole.par,
+                              hazard: hole.hazard,
+                            },
+                          })
+                        }
                       >
-                        {index + 1}
-                      </div>
-                    </AdvancedMarker>
-                  );
-                })
-              : null}
-            {/* The finished card, numbered in walking order. */}
-            {state.stage === "done" && state.course
-              ? state.course.holes.map((hole, index) =>
-                  hole.lat != null && hole.lng != null ? (
-                    <AdvancedMarker
-                      key={`done-${index}`}
-                      position={{ lat: hole.lat, lng: hole.lng }}
-                      anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
-                      title={`Hole ${index + 1} — ${hole.venue_name}`}
-                      onClick={() =>
-                        setTapped({
-                          name: hole.venue_name,
-                          address: hole.address,
-                          rating: hole.rating,
-                          reviewCount: null,
-                          lat: hole.lat as number,
-                          lng: hole.lng as number,
-                          hole: {
-                            number: index + 1,
-                            drink: hole.drink,
-                            par: hole.par,
-                            hazard: hole.hazard,
-                          },
-                        })
-                      }
-                    >
-                      <div
-                        className={cn(
-                          "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                          index === state.course!.holes.length - 1
-                            ? "bg-marker"
-                            : "bg-fairway",
-                        )}
-                      >
-                        {index + 1}
-                      </div>
-                    </AdvancedMarker>
-                  ) : null,
-                )
-              : null}
-            {donePath.length > 1 ? (
-              <DottedWalk path={donePath} dark={dark} />
-            ) : null}
-          </Map>
-        </APIProvider>
+                        <div
+                          className={cn(
+                            "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
+                            index === state.course!.holes.length - 1
+                              ? "bg-marker"
+                              : "bg-fairway",
+                          )}
+                        >
+                          {index + 1}
+                        </div>
+                      </AdvancedMarker>
+                    ) : null,
+                  )
+                : null}
+              {donePath.length > 1 ? (
+                <DottedWalk path={donePath} dark={dark} />
+              ) : null}
+            </Map>
+          </APIProvider>
+        )}
 
         {/* The four acts, carried into the gallery.
             The gallery is a fullscreen portal over the course room, so it
@@ -640,7 +640,7 @@ function GalleryBody({
               </div>
               <button
                 type="button"
-                onClick={() => setTapped(null)}
+                onClick={closeCard}
                 aria-label="Close"
                 className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
               >
@@ -663,7 +663,7 @@ function GalleryBody({
                 hand afterwards. This is neither: the nodes are already here,
                 so a stop can be exchanged or moved as many times as it takes
                 before a credit is spent on dressing the result. */}
-            {tapped.stopIndex != null && state.stage === "menu" ? (
+            {tapped.stopIndex != null ? (
               <div
                 className="mt-2 border-t border-border pt-2"
                 data-testid="swap-controls"
@@ -673,7 +673,7 @@ function GalleryBody({
                     type="button"
                     aria-label="Move this pub earlier in the walk"
                     disabled={tapped.stopIndex === 0}
-                    onClick={() => moveStop(tapped.stopIndex!, -1)}
+                    onClick={() => dials.moveStop(tapped.stopIndex!, -1)}
                     className={swapButton}
                   >
                     <ArrowLeft className="size-3" aria-hidden />
@@ -683,7 +683,7 @@ function GalleryBody({
                     type="button"
                     aria-label="Move this pub later in the walk"
                     disabled={tapped.stopIndex === stops.length - 1}
-                    onClick={() => moveStop(tapped.stopIndex!, 1)}
+                    onClick={() => dials.moveStop(tapped.stopIndex!, 1)}
                     className={swapButton}
                   >
                     Later
@@ -692,7 +692,7 @@ function GalleryBody({
                   <button
                     type="button"
                     aria-expanded={swapping}
-                    onClick={() => setSwapping((open) => !open)}
+                    onClick={() => dials.setSwapping(!swapping)}
                     className={cn(swapButton, "flex-1 text-fairway")}
                     data-testid="swap-open"
                   >
@@ -715,7 +715,7 @@ function GalleryBody({
                             <button
                               type="button"
                               onClick={() =>
-                                swapStop(tapped.stopIndex!, option.id)
+                                dials.swapStop(tapped.stopIndex!, option.id)
                               }
                               className="flex min-h-11 w-full items-center gap-2 border-b border-border/60 px-0.5 text-left last:border-0"
                             >
@@ -755,7 +755,7 @@ function GalleryBody({
                 {edited ? (
                   <button
                     type="button"
-                    onClick={restoreWalk}
+                    onClick={dials.restore}
                     className="mt-1.5 flex min-h-9 w-full items-center justify-center gap-1.5 text-[10px] font-bold text-muted-foreground hover:text-fairway"
                   >
                     <RotateCcw className="size-3" aria-hidden />
@@ -806,12 +806,9 @@ function GalleryBody({
                   <Chip
                     key={`${entry.character}-${index}`}
                     role="radio"
-                    aria-checked={index === routeIndex}
-                    active={index === routeIndex}
-                    onClick={() => {
-                      setRouteIndex(index);
-                      setEdited(null);
-                    }}
+                    aria-checked={index === dials.routeIndex}
+                    active={index === dials.routeIndex}
+                    onClick={() => dials.pickRoute(index)}
                   >
                     {entry.character}
                   </Chip>
@@ -837,12 +834,8 @@ function GalleryBody({
                 {HOLE_CHOICES.map((count) => (
                   <Chip
                     key={count}
-                    active={dialHoles === count}
-                    onClick={() => {
-                      setDialHoles(count);
-                      setRouteIndex(0);
-                      setEdited(null);
-                    }}
+                    active={dials.holes === count}
+                    onClick={() => dials.setDialHoles(count)}
                   >
                     {count}
                   </Chip>
@@ -853,12 +846,8 @@ function GalleryBody({
                 {STRETCH_CHOICES.map((entry) => (
                   <Chip
                     key={entry.id}
-                    active={dialStretch === entry.id}
-                    onClick={() => {
-                      setDialStretch(entry.id);
-                      setRouteIndex(0);
-                      setEdited(null);
-                    }}
+                    active={dials.stretch === entry.id}
+                    onClick={() => dials.setDialStretch(entry.id)}
                   >
                     {entry.label}
                   </Chip>
@@ -872,8 +861,8 @@ function GalleryBody({
                 onClick={() =>
                   onDress({
                     route: stops.length ? stops : null,
-                    holes: dialHoles,
-                    stretch: dialStretch,
+                    holes: dials.holes,
+                    stretch: dials.stretch,
                   })
                 }
                 data-testid="dress-this-walk"
@@ -887,8 +876,8 @@ function GalleryBody({
                 onClick={() =>
                   onDress({
                     route: null,
-                    holes: dialHoles,
-                    stretch: dialStretch,
+                    holes: dials.holes,
+                    stretch: dials.stretch,
                   })
                 }
               >
