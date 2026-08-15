@@ -181,7 +181,7 @@ export function CourseRoom({
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col bg-background">
-      <header className="flex items-center gap-3 px-4 pt-[max(env(safe-area-inset-top),10px)] pb-2">
+      <header className="flex items-center gap-2 px-4 pt-[max(env(safe-area-inset-top),10px)] pb-2">
         <button
           type="button"
           onClick={() => router.back()}
@@ -191,6 +191,13 @@ export function CourseRoom({
           <ArrowLeft className="size-4" aria-hidden />
         </button>
         <StageRail withHint progress={progress} onGo={goToStage} />
+        {/* **The counterweight.** The rail centres itself in the space it is
+            given, and that space started after a 44px back button — so the
+            four acts sat half a button right of the page's centre, which is
+            exactly far enough to look like a mistake rather than a margin. An
+            empty twin on the other side makes the rail's column the page's
+            column. Hidden from the reading order: it is furniture. */}
+        <div className="size-11 shrink-0" aria-hidden />
       </header>
 
       {/* The floor: the draw surface, edge to edge. Without a browser key
