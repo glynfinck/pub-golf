@@ -49,7 +49,12 @@ export function RetractingPanel({
         "shrink-0 rounded-t-2xl border-t border-border bg-card shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
         "transition-[max-height] duration-300 motion-reduce:transition-none",
         open || !retractable
-          ? "max-h-[82dvh] overflow-y-auto"
+          ? // **The map keeps a floor.** At a flat 82dvh the panel took the
+            // screen and left the map about a hundred pixels — on the surface
+            // whose entire premise is the map, with the draw surface's own
+            // absolutely-positioned furniture piling up inside the remainder.
+            // The panel scrolls; the map cannot.
+            "max-h-[min(82dvh,calc(100dvh-15rem))] overflow-y-auto"
           : // The cap covers the border too — Tailwind's preflight makes this
             // a border-box, so a bare 2.75rem cap eats a pixel of the 44px
             // button it is supposed to be exactly tall enough for.

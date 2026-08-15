@@ -128,9 +128,10 @@ function googleMapsHref(pub: TappedPub): string {
 
 const noSubscription = () => () => {};
 
-/** The swap row's buttons: small, but still a 36px target apiece. */
+/** The swap row's buttons. 44px, like everything else a thumb lands on — the
+ * comment this replaces stated a 36px compromise without a reason for it. */
 const swapButton =
-  "flex min-h-9 items-center justify-center gap-1 rounded-lg border border-border px-2.5 text-[11px] font-bold hover:bg-secondary disabled:opacity-30";
+  "flex min-h-11 items-center justify-center gap-1 rounded-lg border border-border px-2.5 text-[11px] font-bold hover:bg-secondary disabled:opacity-30";
 
 export function CaddyGallery({
   open,
@@ -212,7 +213,7 @@ export function CaddyGallery({
           )}
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12px] font-bold">
+          <span className="block truncate text-xs font-bold">
             {state.stage === "dressing" && state.doing ? state.doing : line}
           </span>
           <span className="block text-[10px] font-semibold text-muted-foreground">
@@ -633,7 +634,7 @@ function GalleryBody({
                   </p>
                 ) : null}
                 {tapped.hole ? (
-                  <p className="mt-1 text-[11.5px]">
+                  <p className="mt-1 text-[11px]">
                     {tapped.hole.drink} · par {tapped.hole.par}
                   </p>
                 ) : null}
@@ -642,7 +643,7 @@ function GalleryBody({
                 type="button"
                 onClick={closeCard}
                 aria-label="Close"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                className="-mt-1 -mr-1 flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -651,7 +652,7 @@ function GalleryBody({
               href={googleMapsHref(tapped)}
               target="_blank"
               rel="noreferrer noopener"
-              className="mt-2 flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border text-[11px] font-bold text-fairway"
+              className="mt-2 flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-border text-[11px] font-bold text-fairway"
             >
               Hours, photos and reviews on Google
               <ExternalLink className="size-3" aria-hidden />
@@ -720,7 +721,7 @@ function GalleryBody({
                               className="flex min-h-11 w-full items-center gap-2 border-b border-border/60 px-0.5 text-left last:border-0"
                             >
                               <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[12px] font-semibold">
+                                <span className="block truncate text-xs font-semibold">
                                   {option.name}
                                 </span>
                                 <span className="tabular block text-[10px] text-muted-foreground">
@@ -756,7 +757,7 @@ function GalleryBody({
                   <button
                     type="button"
                     onClick={dials.restore}
-                    className="mt-1.5 flex min-h-9 w-full items-center justify-center gap-1.5 text-[10px] font-bold text-muted-foreground hover:text-fairway"
+                    className="mt-1.5 flex min-h-11 w-full items-center justify-center gap-1.5 text-[10px] font-bold text-muted-foreground hover:text-fairway"
                   >
                     <RotateCcw className="size-3" aria-hidden />
                     Back to the caddy&rsquo;s walk
@@ -827,31 +828,55 @@ function GalleryBody({
                   {state.menu.note}
                 </p>
               ) : null}
-              <div
-                className="flex flex-wrap items-center gap-1.5"
-                aria-label="Holes"
-              >
-                {HOLE_CHOICES.map((count) => (
-                  <Chip
-                    key={count}
-                    active={dials.holes === count}
-                    onClick={() => dials.setDialHoles(count)}
-                  >
-                    {count}
-                  </Chip>
-                ))}
-                <span className="mx-1 text-[10px] text-muted-foreground">
-                  ·
+              {/* **Two dials, two rows.** They shared one wrapping row
+                  separated by a bare middot, so the wrap regularly broke
+                  mid-control — "Doorstep" ended up on the holes row — and the
+                  separator orphaned on a narrow phone and read as a typo.
+                  Neither group was named to a screen reader either: an
+                  `aria-label` on a `div` with no role is dropped. */}
+              <div className="flex flex-col gap-1.5">
+                <span id="gallery-holes" className="eyebrow">
+                  Holes
                 </span>
-                {STRETCH_CHOICES.map((entry) => (
-                  <Chip
-                    key={entry.id}
-                    active={dials.stretch === entry.id}
-                    onClick={() => dials.setDialStretch(entry.id)}
-                  >
-                    {entry.label}
-                  </Chip>
-                ))}
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="radiogroup"
+                  aria-labelledby="gallery-holes"
+                >
+                  {HOLE_CHOICES.map((count) => (
+                    <Chip
+                      key={count}
+                      role="radio"
+                      aria-checked={dials.holes === count}
+                      active={dials.holes === count}
+                      onClick={() => dials.setDialHoles(count)}
+                    >
+                      {count}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span id="gallery-stretch" className="eyebrow">
+                  How far apart
+                </span>
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="radiogroup"
+                  aria-labelledby="gallery-stretch"
+                >
+                  {STRETCH_CHOICES.map((entry) => (
+                    <Chip
+                      key={entry.id}
+                      role="radio"
+                      aria-checked={dials.stretch === entry.id}
+                      active={dials.stretch === entry.id}
+                      onClick={() => dials.setDialStretch(entry.id)}
+                    >
+                      {entry.label}
+                    </Chip>
+                  ))}
+                </div>
               </div>
               <p className="text-center text-[10px] text-muted-foreground">
                 Every tap re-routes on the spot — choosing is free.

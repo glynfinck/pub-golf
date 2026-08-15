@@ -186,11 +186,11 @@ export function CourseRoom({
           type="button"
           onClick={() => router.back()}
           aria-label="Leave the course room"
-          className="flex size-9 items-center justify-center rounded-full border border-border text-muted-foreground"
+          className="flex size-11 items-center justify-center rounded-full border border-border text-muted-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden />
         </button>
-        <StageRail progress={progress} onGo={goToStage} />
+        <StageRail withHint progress={progress} onGo={goToStage} />
       </header>
 
       {/* The floor: the draw surface, edge to edge. Without a browser key

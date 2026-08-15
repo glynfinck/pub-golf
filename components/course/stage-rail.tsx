@@ -28,8 +28,12 @@ import { cn } from "@/lib/utils";
 export function StageRail({
   progress,
   onGo,
+  /** Show the current act's instruction under the rail. Off where there is no
+   * room for it — the gallery carries its own stage line already. */
+  withHint = false,
   className,
 }: {
+  withHint?: boolean;
   progress: PlanProgress;
   /** Absent makes this a display rather than a control — the same four acts,
    * read-only, for a surface with nowhere to send the host back to. */
@@ -37,55 +41,64 @@ export function StageRail({
   className?: string;
 }) {
   const now = stageNow(progress);
+  const doing = PLAN_STAGES.find((stage) => stage.id === now)?.doing ?? "";
   return (
-    <div
-      className={cn(
-        // The rail owns its overflow rather than each caller wrapping it:
-        // the room's header and the gallery's pill both mount this, and a
-        // scroll rule written twice is a scroll rule that will be written
-        // once. Scrollbar hidden — this is a thumb surface, not a pane.
-        "flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        className,
-      )}
-    >
-      {PLAN_STAGES.map((stage, index) => {
-        const here = stage.id === now;
-        const done = stageDone(stage.id, progress);
-        const open = onGo != null && stageOpen(stage.id, progress);
-        return (
-          <div key={stage.id} className="flex min-w-0 items-center gap-1">
-            {index > 0 ? (
-              <span
-                aria-hidden
+    <div className={cn("flex min-w-0 flex-1 flex-col", className)}>
+      <div
+        className={cn(
+          // The rail owns its overflow rather than each caller wrapping it:
+          // the room's header and the gallery's pill both mount this, and a
+          // scroll rule written twice is a scroll rule that will be written
+          // once. Scrollbar hidden — this is a thumb surface, not a pane.
+          "flex w-full items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        )}
+      >
+        {PLAN_STAGES.map((stage, index) => {
+          const here = stage.id === now;
+          const done = stageDone(stage.id, progress);
+          const open = onGo != null && stageOpen(stage.id, progress);
+          return (
+            <div key={stage.id} className="flex min-w-0 items-center gap-1">
+              {index > 0 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-px w-1.5 shrink-0",
+                    done || here ? "bg-fairway" : "bg-border",
+                  )}
+                />
+              ) : null}
+              <button
+                type="button"
+                disabled={!open}
+                aria-current={here ? "step" : undefined}
+                // The name carries the state: a screen reader gets "Draw, done"
+                // rather than a bare label that reads the same at every stage.
+                aria-label={`${stage.label}${done ? ", done" : here ? ", current" : ", not yet"}`}
+                title={stage.doing}
+                onClick={() => onGo?.(stage.id)}
                 className={cn(
-                  "h-px w-1.5 shrink-0",
-                  done || here ? "bg-fairway" : "bg-border",
+                  "flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
+                  here && "bg-fairway text-primary-foreground",
+                  !here && done && "text-fairway hover:bg-secondary",
+                  !here && !done && "text-muted-foreground",
+                  !open && "cursor-default",
                 )}
-              />
-            ) : null}
-            <button
-              type="button"
-              disabled={!open}
-              aria-current={here ? "step" : undefined}
-              // The name carries the state: a screen reader gets "Draw, done"
-              // rather than a bare label that reads the same at every stage.
-              aria-label={`${stage.label}${done ? ", done" : here ? ", current" : ", not yet"}`}
-              title={stage.doing}
-              onClick={() => onGo?.(stage.id)}
-              className={cn(
-                "flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2 text-[10px] font-bold tracking-[0.1em] uppercase transition-colors",
-                here && "bg-fairway text-primary-foreground",
-                !here && done && "text-fairway hover:bg-secondary",
-                !here && !done && "text-muted-foreground",
-                !open && "cursor-default",
-              )}
-            >
-              {done ? <Check size={11} aria-hidden /> : null}
-              {stage.label}
-            </button>
-          </div>
-        );
-      })}
+              >
+                {done ? <Check size={11} aria-hidden /> : null}
+                {stage.label}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {/* **The act's instruction, on the glass.** `PLAN_STAGES` has carried a
+        line for each of these all along and it shipped only as `title=` —
+        a tooltip, which never fires on touch, on the only platform this app
+        targets. So the four acts were named and never explained. */}
+      {withHint && doing ? (
+        <p className="truncate text-[10px] text-muted-foreground">{doing}</p>
+      ) : null}
     </div>
   );
 }

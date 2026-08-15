@@ -183,7 +183,7 @@ export function BriefForm({
           rather than reassembling it from eight groups of chips. */}
       <div className="rounded-xl border border-border bg-secondary/40 px-3.5 py-3">
         <p
-          className="font-serif text-[15px] leading-snug text-balance"
+          className="font-serif text-base leading-snug text-balance"
           data-testid="brief-sentence"
         >
           {brief.sentence}

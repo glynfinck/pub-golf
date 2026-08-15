@@ -58,7 +58,7 @@ export function StartCards({ caddy }: { caddy: boolean }) {
               <span className="font-serif text-2xl leading-tight">
                 Plan it with the caddy
               </span>
-              <span className="text-[13px] text-muted-foreground">
+              <span className="text-xs text-muted-foreground">
                 Draw where you&rsquo;re drinking on the map. The caddy walks the
                 patch, routes the night and dresses every hole — pubs, pars,
                 drinks and hazards.
@@ -80,7 +80,7 @@ export function StartCards({ caddy }: { caddy: boolean }) {
             <span className="font-serif text-2xl leading-tight">
               Plot it by hand
             </span>
-            <span className="text-[13px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Search the pubs yourself and set every par, drink and hazard the
               way your lot play it.
             </span>

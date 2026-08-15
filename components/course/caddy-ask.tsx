@@ -118,7 +118,7 @@ export function CaddyAsk({
       >
         {sheets}
         <span className="eyebrow text-fairway">The caddy</span>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The caddy has put this patch away for the night. Fetch it back and you
           can carry on changing the card — it costs nothing off your fee.
         </p>

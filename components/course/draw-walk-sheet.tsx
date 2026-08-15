@@ -290,7 +290,6 @@ export function DrawSurface({
   const inIds = new Set(inSwath.map((pin) => pin.id));
   /** What the map says about itself, or nothing at all. */
   const statusLine =
-    locateNote ??
     lockNote ??
     (reading
       ? "Reading the patch…"
@@ -300,7 +299,13 @@ export function DrawSurface({
           : viewPubs
             ? `${viewPubs.length} pubs in view — bright is busy, dark is dead ground`
             : "One finger draws the walk"
-        : null);
+        : // **Last, not first.** A refused location used to outrank every
+          // other note and was cleared only by a button that the refusal
+          // itself removes — so one denial blinded the surface for the rest
+          // of the session: no density count, no reason for a refused lock,
+          // nothing. It says its piece while the map is idle and gets out of
+          // the way the moment there is something more useful to say.
+          locateNote);
 
   /** Kilometres across the frozen frame, corner to corner-ish. */
   function acrossKm(f: Frozen): number {
@@ -343,6 +348,7 @@ export function DrawSurface({
       return;
     }
     setLockNote(null);
+    setLocateNote(null);
     setFrozen(f);
     setDrawing(true);
     onLockChange?.(true);
@@ -536,7 +542,7 @@ export function DrawSurface({
           type="button"
           onClick={locate}
           aria-label={here ? "Back to where I am" : "Start where I am"}
-          className="absolute top-3 right-3 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card/95 text-fairway shadow-md"
+          className="absolute top-3 right-3 z-20 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-fairway shadow-md"
           data-testid="start-where-i-am"
         >
           <LocateFixed
@@ -554,7 +560,7 @@ export function DrawSurface({
           type="button"
           onClick={releaseLock}
           aria-label="Pan the map again"
-          className="absolute top-3 left-3 z-20 flex size-10 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-md"
+          className="absolute top-3 left-3 z-20 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-md"
         >
           <Hand size={17} aria-hidden />
         </button>
@@ -651,7 +657,7 @@ export function DrawSurface({
           patch, then hold it still" — which the button underneath already
           says, in a place the eye is already going. */}
       {statusLine ? (
-        <span className="pointer-events-none absolute inset-x-12 top-3 z-10 mx-auto w-fit max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-center text-[11px] font-semibold shadow-sm">
+        <span className="pointer-events-none absolute inset-x-3 top-16 z-10 mx-auto w-fit max-w-[calc(100%-1.5rem)] truncate rounded-full border border-border bg-card/95 px-3 py-1 text-center text-[11px] font-semibold shadow-sm">
           {statusLine}
         </span>
       ) : null}
