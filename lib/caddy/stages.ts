@@ -105,7 +105,7 @@ export function jobWorking(stage: JobStage): boolean {
 }
 
 /**
- * What each stage is called, on each of the four surfaces that name it.
+ * What each stage is called, on each of the three surfaces that name it.
  *
  * One truth, written four times, was the shape this arrived in: a badge on the
  * drafting table's map, a headline over the gallery, a line on the minimised
@@ -113,11 +113,12 @@ export function jobWorking(stage: JobStage): boolean {
  * none of them exhaustive over the stage list. Adding a stage meant finding
  * four places or shipping a blank.
  *
- * Exhaustive `Record`s, so a new stage is a type error rather than a silence.
- * The four wordings stay **deliberately different**: the pill is read from
- * another screen and has to say what to do about it; the tab has one row and
- * says what is under it; the headline is read while watching. Flattening them
- * into one string would be a regression, not a tidy-up.
+ * The tab is gone: it is a grabber over three fixed figures now, because five
+ * different wordings on the control a host reaches for most was the whole
+ * complaint. Three remain, and they stay **deliberately different**: the pill
+ * is read from another screen and has to say what to do about it; the badge
+ * sits on a map and has a map's room; the headline is read while watching.
+ * Flattening them into one string would be a regression, not a tidy-up.
  */
 export const JOB_BADGE: Record<JobStage, string | null> = {
   // Nothing has been asked for, so the map says nothing. A badge here read as
@@ -158,20 +159,6 @@ export const JOB_PILL: Record<JobStage, string | null> = {
   done: null,
   failed: "The caddy lost the ball — take a look",
 };
-
-/** The panel's tab: one row, so it says what the panel is holding. The menu
- * names the chosen walk, which is the one fact worth a row when the controls
- * that chose it are hidden. */
-export function jobPanelLabel(stage: JobStage, character?: string): string {
-  if (stage === "menu") {
-    return character ? `The walks · ${character}` : "The walks";
-  }
-  if (stage === "opening") return "Walking the patch";
-  if (stage === "dressing") return "Dressing the card";
-  if (stage === "done") return "The card";
-  if (stage === "idle") return "The brief";
-  return "The caddy lost the ball";
-}
 
 /** Everything the room knows about how far the host has got. */
 export interface PlanProgress {

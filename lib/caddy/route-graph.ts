@@ -96,6 +96,10 @@ export interface PlannedRoute {
   /** Why this one is in the set, for the model to read: "shortest",
    * "kindest legs", "most variety". */
   character: string;
+  /** The walk's name, two or three words — what the menu puts on a card. */
+  name: string;
+  /** Why you would take it, in one line under the name. */
+  why: string;
 }
 
 export interface RouteGraph {
@@ -1000,12 +1004,32 @@ export function overlap(a: string[], b: string[]): number {
   return union === 0 ? 0 : shared / union;
 }
 
+/** How a walk is described: a name, a reason, and the sentence that joins
+ * them for the model. Passed as one value so the three can never disagree. */
+export interface RouteWording {
+  name: string;
+  why: string;
+  character: string;
+}
+
+/** What a walk with no objective behind it is called — the router's own
+ * working answer, before an objective has claimed it. */
+const UNNAMED: RouteWording = {
+  name: "The walk",
+  why: "The router's own pick",
+  character: "the router's own pick",
+};
+
 function describe(
   table: Map<string, Map<string, number>>,
   nodes: Map<string, RouteNode>,
   stops: string[],
-  character: string,
+  wording: string | RouteWording,
 ): PlannedRoute {
+  const said: RouteWording =
+    typeof wording === "string"
+      ? { ...UNNAMED, character: wording, why: wording }
+      : wording;
   const legs: RouteLeg[] = [];
   for (let i = 1; i < stops.length; i += 1) {
     legs.push({
@@ -1028,7 +1052,9 @@ function describe(
     totalKm,
     worstLegKm: legs.reduce((worst, leg) => Math.max(worst, leg.km), 0),
     variety: kinds.size,
-    character,
+    character: said.character,
+    name: said.name,
+    why: said.why,
   };
 }
 
@@ -1093,7 +1119,20 @@ function carrying(
  */
 export interface RouteObjective {
   key: string;
-  /** What the model reads, so it can choose between them. */
+  /**
+   * The walk's name — two or three words, comparable at a glance.
+   *
+   * Split out of `character` because the menu could not use a sentence. Ten
+   * walks arrived as ten pills holding up to forty-six characters of prose
+   * each; nothing lined up, nothing could be compared, and the stats only ever
+   * described the one already chosen. A name goes in a column heading and a
+   * card title. A sentence goes underneath it.
+   */
+  name: string;
+  /** Why you would take it — the sentence that used to be the whole label. */
+  why: string;
+  /** Name and why, joined. What the model reads, so it can choose between
+   * them, and what anything not yet rebuilt on the pair still renders. */
   character: string;
   score: (
     route: PlannedRoute,
@@ -1105,16 +1144,22 @@ export interface RouteObjective {
 export const ROUTE_OBJECTIVES: RouteObjective[] = [
   {
     key: "balanced",
+    name: "Best fit",
+    why: "Closest to the brief you wrote",
     character: "best fit for the brief",
     score: (route, _nodes, target) => scoreRoute(route, target),
   },
   {
     key: "onward",
+    name: "Keeps moving",
+    why: "Least doubling back",
     character: "keeps moving — least doubling back",
     score: (route) => route.detour,
   },
   {
     key: "rated",
+    name: "Best reviewed",
+    why: "The patch's highest-rated pubs",
     character: "the best-reviewed pubs in the patch",
     score: (route, nodes) => {
       // Weighted by review count, so one glowing five-star with three reviews
@@ -1133,6 +1178,8 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   },
   {
     key: "drinks",
+    name: "Widest range",
+    why: "Beer, wine and shorts across the walk",
     character: "widest range of drinks",
     score: (route, nodes) => {
       // The house rule enforced by geometry rather than by dressing: a card
@@ -1147,16 +1194,22 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   },
   {
     key: "kind",
+    name: "Kindest legs",
+    why: "Nothing far between stops",
     character: "kindest legs — nothing far between stops",
     score: (route) => route.worstLegKm,
   },
   {
     key: "mixed",
+    name: "Most variety",
+    why: "Fewest repeats of the same kind of place",
     character: "most variety — fewest repeats of the same place",
     score: (route) => -route.variety,
   },
   {
     key: "cheap",
+    name: "Easiest round",
+    why: "Gentlest on a round of drinks",
     character: "easiest on a round of drinks",
     score: (route, nodes) => {
       const priced = route.stops
@@ -1169,16 +1222,22 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   },
   {
     key: "outdoor",
+    name: "Beer gardens",
+    why: "Outdoor tables where the patch has any",
     character: "beer gardens where there are any",
     score: (route, nodes) => -carrying(route.stops, nodes, "outdoorSeating"),
   },
   {
     key: "groups",
+    name: "Big table",
+    why: "Room for a crowd to sit together",
     character: "room for a big table",
     score: (route, nodes) => -carrying(route.stops, nodes, "goodForGroups"),
   },
   {
     key: "sport",
+    name: "The match",
+    why: "Somewhere with the game on",
     character: "somewhere with the match on",
     score: (route, nodes) =>
       -carrying(route.stops, nodes, "goodForWatchingSports"),
@@ -1429,6 +1488,8 @@ export function buildRouteGraph(
     );
     if (!winner) continue;
     winner.character = objective.character;
+    winner.name = objective.name;
+    winner.why = objective.why;
     kept.push(winner);
   }
 

@@ -17,7 +17,6 @@ import {
   JOB_HEADLINE,
   JOB_PILL,
   JOB_START,
-  jobPanelLabel,
   stageNow,
   stageOpen,
   type JobStage,
@@ -281,16 +280,15 @@ describe("every stage the endings can name", () => {
   ];
 
   it("has copy on all four surfaces", () => {
-    // The four wordings are deliberately different, but none of them may be
-    // missing: a stage with no badge, headline, pill or tab label renders a
-    // blank where the host is looking for what happened.
+    // The wordings are deliberately different, but none may be missing: a
+    // stage with no badge, headline or pill renders a blank where the host is
+    // looking for what happened.
     const blanks: string[] = [];
     for (const ending of ENDINGS) {
       const stage = ending.stage;
       if (!(stage in JOB_HEADLINE)) blanks.push(`${stage}: headline`);
       if (!(stage in JOB_BADGE)) blanks.push(`${stage}: badge`);
       if (!(stage in JOB_PILL)) blanks.push(`${stage}: pill`);
-      if (!jobPanelLabel(stage)) blanks.push(`${stage}: tab`);
     }
     expect(blanks).toEqual([]);
   });
@@ -395,7 +393,6 @@ describe("the stage copy itself", () => {
     const missing: string[] = [];
     for (const stage of ALL_STAGES) {
       if (!JOB_HEADLINE[stage]) missing.push(`${stage}: headline`);
-      if (!jobPanelLabel(stage)) missing.push(`${stage}: tab`);
       // Badge and pill are nullable by design — `done` is the one stage with
       // nothing worth interrupting another screen for — but the key must exist
       // so a new stage is a type error rather than an `undefined` on the glass.
@@ -413,19 +410,6 @@ describe("the stage copy itself", () => {
       const quiet = JOB_BADGE[stage] === null && JOB_PILL[stage] === null;
       expect(`${stage}: ${quiet}`).toBe(`${stage}: ${QUIET.includes(stage)}`);
     }
-  });
-
-  it("keeps the tab to one row's worth of words", () => {
-    // The panel collapses to a single 44px row and the tab *is* that row, so a
-    // label long enough to wrap or truncate loses the only status the host has
-    // while the map is up.
-    for (const stage of ALL_STAGES) {
-      expect(jobPanelLabel(stage).length).toBeLessThanOrEqual(28);
-    }
-    expect(jobPanelLabel("menu", "the long way")).toBe(
-      "The walks · the long way",
-    );
-    expect(jobPanelLabel("menu")).toBe("The walks");
   });
 
   it("keeps the four wordings distinct where they are read together", () => {

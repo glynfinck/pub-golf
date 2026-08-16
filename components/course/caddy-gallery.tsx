@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
+  Check,
   ExternalLink,
   RotateCcw,
   Star,
@@ -23,12 +24,15 @@ import {
 } from "@vis.gl/react-google-maps";
 
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
+import { FormRow, FormRows } from "@/components/ui/form-row";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { StageBar } from "@/components/course/stage-bar";
 import {
   JOB_PILL,
-  jobPanelLabel,
   stageBack,
   type JobStage,
   type PlanProgress,
@@ -356,11 +360,6 @@ function GalleryBody({
   // Where a back tap lands. Null while the plan is on the wire — there is
   // nothing to go back *to* until it lands or fails, and the fee is spent.
   const back = stageBack(progress);
-
-  // Down, the tab is the whole panel, so it says what the panel is holding —
-  // and at the menu it names the walk on the map, which is the one fact worth
-  // a row when the controls that chose it are hidden.
-  const panelLabel = jobPanelLabel(state.stage, route?.character);
 
   // Recomputed from the walk on screen rather than read off the route the
   // caddy offered — the moment a stop is swapped those two are different
@@ -797,29 +796,83 @@ function GalleryBody({
         onToggle={
           state.stage === "failed" ? undefined : () => setPanelOpen((up) => !up)
         }
-        label={panelLabel}
+        holes={stops.length || null}
+        km={stops.length > 1 ? shown.totalKm : null}
       >
         {/* The panel itself already clears the home indicator; this is only
             the furniture's own breathing room. */}
         <div className="px-4 pt-1 pb-3">
           {state.stage === "menu" && state.menu ? (
             <div className="flex flex-col gap-2.5">
+              {/*
+               * **Cards, because a walk is not a token.**
+               * These were chips holding up to forty-six characters of prose
+               * — "most variety — fewest repeats of the same place" — so ten
+               * of them wrapped into a paragraph of lozenges with nothing
+               * lined up and nothing to compare. A card has a name you can
+               * scan down, the sentence underneath where it belongs, and the
+               * two figures that actually differ in the same place every
+               * time. Choosing between walks is a comparison, and a
+               * comparison needs a column.
+               */}
               <div
-                className="flex flex-wrap gap-1.5"
+                className="flex flex-col gap-1.5"
                 role="radiogroup"
                 aria-label="The walks on offer"
               >
-                {routes.map((entry, index) => (
-                  <Chip
-                    key={`${entry.character}-${index}`}
-                    role="radio"
-                    aria-checked={index === dials.routeIndex}
-                    active={index === dials.routeIndex}
-                    onClick={() => dials.pickRoute(index)}
-                  >
-                    {entry.character}
-                  </Chip>
-                ))}
+                {routes.map((entry, index) => {
+                  const on = index === dials.routeIndex;
+                  const legMin = Math.max(
+                    1,
+                    Math.round(entry.worstLegKm * WALK_MINUTES_PER_KM),
+                  );
+                  return (
+                    <button
+                      key={`${entry.name}-${index}`}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => dials.pickRoute(index)}
+                      className={cn(
+                        "flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
+                        on
+                          ? "border-fairway bg-card ring-1 ring-fairway"
+                          : "border-border bg-background hover:bg-secondary",
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                          on
+                            ? "border-fairway bg-fairway text-primary-foreground"
+                            : "border-border",
+                        )}
+                      >
+                        {on ? <Check className="size-3" /> : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-serif text-base leading-tight">
+                          {entry.name}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {entry.why}
+                        </span>
+                      </span>
+                      {/* The two figures that differ between walks, in the
+                          same place on every card — which is the whole reason
+                          this is a card. The old chips showed stats for the
+                          walk you had already chosen and none for the rest,
+                          so there was nothing to choose *on*. */}
+                      <span className="tabular shrink-0 text-right text-[11px] text-muted-foreground">
+                        <span className="block text-sm font-bold text-foreground">
+                          {entry.totalKm.toFixed(1)} km
+                        </span>
+                        {legMin} min legs
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
               {stats ? (
                 <p className="text-center text-[11px] text-muted-foreground tabular">
@@ -834,56 +887,48 @@ function GalleryBody({
                   {state.menu.note}
                 </p>
               ) : null}
-              {/* **Two dials, two rows.** They shared one wrapping row
-                  separated by a bare middot, so the wrap regularly broke
-                  mid-control — "Doorstep" ended up on the holes row — and the
-                  separator orphaned on a narrow phone and read as a typo.
-                  Neither group was named to a screen reader either: an
-                  `aria-label` on a `div` with no role is dropped. */}
-              <div className="flex flex-col gap-1.5">
-                <span id="gallery-holes" className="eyebrow">
-                  Holes
-                </span>
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="radiogroup"
-                  aria-labelledby="gallery-holes"
-                >
-                  {HOLE_CHOICES.map((count) => (
-                    <Chip
-                      key={count}
-                      role="radio"
-                      aria-checked={dials.holes === count}
-                      active={dials.holes === count}
-                      onClick={() => dials.setDialHoles(count)}
-                    >
-                      {count}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span id="gallery-stretch" className="eyebrow">
-                  How far apart
-                </span>
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="radiogroup"
-                  aria-labelledby="gallery-stretch"
-                >
-                  {STRETCH_CHOICES.map((entry) => (
-                    <Chip
-                      key={entry.id}
-                      role="radio"
-                      aria-checked={dials.stretch === entry.id}
-                      active={dials.stretch === entry.id}
-                      onClick={() => dials.setDialStretch(entry.id)}
-                    >
-                      {entry.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
+              {/* **Two dials, two rows** — the same rows the brief uses, so a
+                  host who tuned the brief already knows this control. They
+                  shared one wrapping row of chips separated by a bare middot,
+                  so the wrap regularly broke mid-control ("Doorstep" ended up
+                  on the holes row) and the separator orphaned on a narrow
+                  phone and read as a typo. Neither group was named to a screen
+                  reader either: an `aria-label` on a `div` with no role is
+                  dropped. */}
+              <FormRows>
+                <FormRow label="Holes">
+                  <ToggleGroup
+                    type="single"
+                    value={String(dials.holes)}
+                    onValueChange={(next) => {
+                      if (next) dials.setDialHoles(Number(next));
+                    }}
+                    aria-label="Holes"
+                  >
+                    {HOLE_CHOICES.map((count) => (
+                      <ToggleGroupItem key={count} value={String(count)}>
+                        {count}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </FormRow>
+                <FormRow label="How far apart">
+                  <ToggleGroup
+                    type="single"
+                    value={String(dials.stretch)}
+                    onValueChange={(next) => {
+                      if (next) dials.setDialStretch(Number(next));
+                    }}
+                    aria-label="How far apart"
+                  >
+                    {STRETCH_CHOICES.map((entry) => (
+                      <ToggleGroupItem key={entry.id} value={String(entry.id)}>
+                        {entry.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </FormRow>
+              </FormRows>
               <p className="text-center text-[10px] text-muted-foreground">
                 Every tap re-routes on the spot — choosing is free.
               </p>

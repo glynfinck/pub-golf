@@ -40,7 +40,11 @@ const SURFACES = [
   "components/course/retracting-panel.tsx",
   "components/course/stage-bar.tsx",
   "components/ui/chip.tsx",
+  "components/ui/form-row.tsx",
+  "components/ui/picker-row.tsx",
+  "components/ui/slider.tsx",
   "components/ui/tee-time.tsx",
+  "components/ui/toggle-group.tsx",
 ];
 
 /**
@@ -167,15 +171,34 @@ describe("the panel under a map", () => {
     }
   });
 
-  it("caps the collapsed panel at the tab it is measuring", () => {
-    // Tailwind's preflight makes this a border-box, so the cap has to cover
-    // the border too — a bare 2.75rem ate a pixel of the 44px button that is
-    // the only way back into the panel.
+  it("collapses the body and never the handle", () => {
+    // The cap used to sit on the whole panel with a hand-derived number for
+    // the tab's height — so the one control that reopens the panel lived
+    // inside the thing being clipped, and every change to it had to re-derive
+    // that number or lose pixels off the bottom of the only way back in.
     const panel = read("components/course/retracting-panel.tsx");
-    expect(panel).toContain("max-h-[calc(2.75rem+1px)]");
+    expect(panel).toContain("max-h-0");
+    expect(panel).not.toMatch(/max-h-\[calc\(\d/);
     // And the map keeps a floor: at a flat 82dvh the panel took the screen on
     // the surface whose entire premise is the map.
-    expect(panel).toContain("calc(100dvh-15rem)");
+    expect(panel).toContain("calc(100dvh-18rem)");
+  });
+
+  it("says the same three things at every act", () => {
+    // The complaint this answers: five different wordings and a flipping
+    // chevron on the control a host reaches for most. The figures come from
+    // one pure function and the icons are fixed, so the furniture cannot
+    // change shape with the stage again.
+    const panel = read("components/course/retracting-panel.tsx");
+    expect(panel).toContain("panelSlots");
+    for (const icon of ["Flag", "Route", "Clock"]) {
+      expect(`${icon}: ${panel.includes(`<${icon} `)}`).toBe(`${icon}: true`);
+    }
+    // And no stage-dependent label prop: the tab took one, which is how five
+    // wordings got in. (`aria-label` stays — that is the button's name, and it
+    // says only whether the panel is up.)
+    expect(panel).not.toContain("jobPanelLabel");
+    expect(panel).not.toMatch(/^\s*label\??:/m);
   });
 });
 

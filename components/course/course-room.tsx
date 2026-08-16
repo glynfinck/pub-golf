@@ -21,6 +21,7 @@ import { stageBack, undoFor, type PlanStage } from "@/lib/caddy/stages";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
+import { walkKmOf } from "@/lib/caddy/panel";
 import type { CaddyAllowance } from "@/lib/data/caddy";
 import type { Reach } from "@/lib/caddy/reach";
 import type { PlannedCourse } from "@/lib/caddy/plan";
@@ -242,12 +243,13 @@ export function CourseRoom({
       <RetractingPanel
         open={panelOpen}
         onToggle={() => setPanelOpen((open) => !open)}
-        label={
+        holes={landed?.holes.length ?? null}
+        km={
           landed
-            ? `The card · ${landed.holes.length} holes`
+            ? walkKmOf(landed.holes)
             : stroke
-              ? "The brief · walk drawn"
-              : "The brief"
+              ? strokeLengthKm(stroke)
+              : null
         }
       >
         {landed ? (

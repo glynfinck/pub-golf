@@ -50,7 +50,13 @@ export interface MenuNode {
 export interface MenuRoute {
   /** Candidate ids, walking order. */
   stops: string[];
+  /** The whole sentence, kept for the model and for anything reading a walk
+   * as one string. */
   character: string;
+  /** The name the menu puts on a card — two or three words, comparable. */
+  name: string;
+  /** The line under it. */
+  why: string;
   totalKm: number;
   worstLegKm: number;
   variety: number;
@@ -87,6 +93,8 @@ function menuRoutes(graph: RouteGraph): MenuRoute[] {
   return graph.routes.map((route) => ({
     stops: route.stops,
     character: route.character,
+    name: route.name,
+    why: route.why,
     totalKm: Math.round(route.totalKm * 100) / 100,
     worstLegKm: Math.round(route.worstLegKm * 100) / 100,
     variety: route.variety,
