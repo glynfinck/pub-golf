@@ -204,6 +204,27 @@ describe("the panel under a map", () => {
     expect(panel).toContain("calc(100dvh-18rem)");
   });
 
+  /**
+   * The opening tag of a JSX element, braces balanced.
+   *
+   * Asserting on the *file* rather than the element is what let the bar end up
+   * pinned to the bottom of the room with this suite green: the string was
+   * present, just on the wrong element. A prop belongs to a tag, so the test
+   * has to read a tag.
+   */
+  function openingTag(source: string, tag: string): string {
+    const at = source.indexOf(`<${tag}`);
+    if (at < 0) return "";
+    let depth = 0;
+    for (let i = at; i < source.length; i += 1) {
+      const char = source[i];
+      if (char === "{") depth += 1;
+      else if (char === "}") depth -= 1;
+      else if (char === ">" && depth === 0) return source.slice(at, i + 1);
+    }
+    return "";
+  }
+
   it("floats over the map rather than squeezing it", () => {
     // As a flex sibling the panel took its height *out* of the map, so opening
     // the drawer resized it — and a Google map keeps its centre through a
@@ -212,15 +233,22 @@ describe("the panel under a map", () => {
     // slides across it, which is the only arrangement where opening the drawer
     // moves nothing at all.
     for (const file of PANELLED) {
-      const source = read(file);
-      const mount = source.slice(
-        source.indexOf("<RetractingPanel"),
-        source.indexOf(">", source.indexOf("<RetractingPanel")) + 1,
-      );
-      expect(`${file}: ${/absolute inset-x-0 bottom-0/.test(source)}`).toBe(
+      const mount = openingTag(read(file), "RetractingPanel");
+      expect(`${file}: ${mount.includes("absolute inset-x-0 bottom-0")}`).toBe(
         `${file}: true`,
       );
-      expect(mount).toBeTruthy();
+    }
+  });
+
+  it("leaves the bar at the top of the screen, in flow", () => {
+    // It was briefly given the panel's own positioning and went to the bottom,
+    // above the drawer, on the screen whose first act it names.
+    for (const file of PANELLED) {
+      const bar = openingTag(read(file), "StageBar");
+      expect(`${file}: ${bar.length > 0}`).toBe(`${file}: true`);
+      expect(`${file}: ${/absolute|fixed|bottom-/.test(bar)}`).toBe(
+        `${file}: false`,
+      );
     }
   });
 

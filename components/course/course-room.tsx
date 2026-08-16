@@ -188,7 +188,6 @@ export function CourseRoom({
       <StageBar
         progress={progress}
         job={job.stage}
-        className="absolute inset-x-0 bottom-0 z-30"
         holes={landed?.holes.length ?? null}
         onBack={() => {
           const back = stageBack(progress);
