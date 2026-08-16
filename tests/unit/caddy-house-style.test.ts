@@ -204,6 +204,38 @@ describe("the panel under a map", () => {
     expect(panel).toContain("calc(100dvh-18rem)");
   });
 
+  it("floats over the map rather than squeezing it", () => {
+    // As a flex sibling the panel took its height *out* of the map, so opening
+    // the drawer resized it — and a Google map keeps its centre through a
+    // resize, so the ground re-framed: the walk slid up the glass and the pins
+    // moved. Absolutely positioned, the map is one fixed canvas and the sheet
+    // slides across it, which is the only arrangement where opening the drawer
+    // moves nothing at all.
+    for (const file of PANELLED) {
+      const source = read(file);
+      const mount = source.slice(
+        source.indexOf("<RetractingPanel"),
+        source.indexOf(">", source.indexOf("<RetractingPanel")) + 1,
+      );
+      expect(`${file}: ${/absolute inset-x-0 bottom-0/.test(source)}`).toBe(
+        `${file}: true`,
+      );
+      expect(mount).toBeTruthy();
+    }
+  });
+
+  it("owns the body's padding so no stage can bring its own", () => {
+    // The room brought `pt-2` and the gallery `pt-1`, so the first thing under
+    // the slot bar sat four pixels from it on one screen and eight on the
+    // other — and the waiting card had a different gap above than below.
+    const panel = read("components/course/retracting-panel.tsx");
+    expect(panel).toMatch(/gap-3 px-4 pt-3/);
+    // And nothing the panel wraps re-states it.
+    expect(read("components/course/brief-form.tsx")).not.toMatch(
+      /"flex flex-col gap-3", "px-4/,
+    );
+  });
+
   it("says the same three things at every act", () => {
     // The complaint this answers: five different wordings and a flipping
     // chevron on the control a host reaches for most. The figures come from

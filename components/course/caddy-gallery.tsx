@@ -784,8 +784,6 @@ function GalleryBody({
           </div>
         ) : null}
 
-      </div>
-
       {/* Below the map: the act's own furniture, on the same tab the course
           room's brief uses. The menu is the reason it retracts — chips, stats,
           two dial rows and two buttons is most of a phone, and the walk those
@@ -798,10 +796,9 @@ function GalleryBody({
         }
         holes={stops.length || null}
         km={stops.length > 1 ? shown.totalKm : null}
+        className="absolute inset-x-0 bottom-0 z-30"
       >
-        {/* The panel itself already clears the home indicator; this is only
-            the furniture's own breathing room. */}
-        <div className="px-4 pt-1 pb-3">
+        <div>
           {state.stage === "menu" && state.menu ? (
             <div className="flex flex-col gap-2.5">
               {/*
@@ -1040,6 +1037,7 @@ function GalleryBody({
           ) : null}
         </div>
       </RetractingPanel>
+      </div>
     </div>
   );
 }

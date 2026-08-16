@@ -188,6 +188,7 @@ export function CourseRoom({
       <StageBar
         progress={progress}
         job={job.stage}
+        className="absolute inset-x-0 bottom-0 z-30"
         holes={landed?.holes.length ?? null}
         onBack={() => {
           const back = stageBack(progress);
@@ -229,7 +230,6 @@ export function CourseRoom({
             exactly as it always has.
           </div>
         )}
-      </div>
 
       {/* The panel: retractable, scrollable, and never dismissed. The brief
           lives here through every stage, so there is nothing to close and no
@@ -243,6 +243,7 @@ export function CourseRoom({
       <RetractingPanel
         open={panelOpen}
         onToggle={() => setPanelOpen((open) => !open)}
+        className="absolute inset-x-0 bottom-0 z-30"
         holes={landed?.holes.length ?? null}
         km={
           landed
@@ -253,7 +254,7 @@ export function CourseRoom({
         }
       >
         {landed ? (
-          <div className="flex flex-col gap-2.5 px-4 pt-1 pb-4">
+          <div className="flex flex-col gap-2.5">
             <span className="eyebrow text-fairway">On the table</span>
             <div className="font-serif text-lg leading-tight">
               {landed.name}
@@ -292,7 +293,7 @@ export function CourseRoom({
             back to the round the host was building rather than to a blank. */}
         <div className={landed ? "hidden" : undefined}>
           {stroke ? (
-            <p className="px-4 pt-2 text-[11px] font-semibold text-fairway">
+            <p className="text-[11px] font-semibold text-fairway">
               Walk drawn — {strokeLengthKm(stroke).toFixed(1)} km. The caddy
               will look along it.
             </p>
@@ -308,6 +309,7 @@ export function CourseRoom({
           />
         </div>
       </RetractingPanel>
+      </div>
 
       {/* The gallery is the room's, not the group's — so nothing the room
           renders can tear it down. */}

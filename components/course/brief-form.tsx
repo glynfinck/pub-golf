@@ -161,7 +161,7 @@ export function BriefForm({
   );
 
   return (
-    <div className={cn("flex flex-col gap-3", "px-4 pt-2 pb-4", className)}>
+    <div className={cn("flex flex-col gap-3", className)}>
       <div className="flex items-center justify-between gap-2">
         <span className="eyebrow text-fairway">The brief</span>
         {/* "Covered" was the whole of what a host could see, and it went on

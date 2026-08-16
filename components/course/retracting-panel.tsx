@@ -24,6 +24,15 @@ import { cn } from "@/lib/utils";
  * three slots with three fixed icons, where only the figures change. The
  * furniture stops moving; the numbers do the talking.
  *
+ * **It floats over the map; it does not squeeze it.** As a flex sibling the
+ * panel took its height *out* of the map, so opening the drawer resized the
+ * map — and a Google map keeps its centre through a resize, which means the
+ * ground under it re-frames: the walk slid up the glass, the pins moved, and
+ * nothing was where it had been a moment ago. Absolutely positioned over the
+ * map region instead, the map is one fixed canvas and the sheet slides across
+ * it, which is what every map app does and the only arrangement where opening
+ * the drawer moves nothing at all.
+ *
  * **Only the body collapses.** The cap used to sit on the whole panel with a
  * magic number for the tab's own height — which meant the one control that
  * reopens the panel was inside the thing being clipped, and every change to it
@@ -44,6 +53,7 @@ export function RetractingPanel({
   holes = null,
   km = null,
   children,
+  className,
 }: {
   open: boolean;
   onToggle?: () => void;
@@ -52,6 +62,7 @@ export function RetractingPanel({
   /** How far that walk is, or null. */
   km?: number | null;
   children: ReactNode;
+  className?: string;
 }) {
   const retractable = onToggle != null;
   const slots = panelSlots({ holes, km });
@@ -83,7 +94,12 @@ export function RetractingPanel({
   );
 
   return (
-    <div className="shrink-0 rounded-t-2xl border-t border-border bg-card shadow-[0_-6px_24px_rgba(0,0,0,0.12)]">
+    <div
+      className={cn(
+        "rounded-t-2xl border-t border-border bg-card shadow-[0_-6px_24px_rgba(0,0,0,0.12)]",
+        className,
+      )}
+    >
       <div className="mx-auto w-full max-w-md">
         {retractable ? (
           <button
@@ -112,11 +128,20 @@ export function RetractingPanel({
           className={cn(
             "transition-[max-height] duration-300 motion-reduce:transition-none",
             open || !retractable
-              ? "max-h-[min(82dvh,calc(100dvh-18rem))] overflow-y-auto pb-[max(env(safe-area-inset-bottom),8px)]"
+              ? "max-h-[min(82dvh,calc(100dvh-18rem))] overflow-y-auto"
               : "max-h-0 overflow-hidden",
           )}
         >
-          {children}
+          {/* **The body's padding lives here, once.** Each screen used to
+              bring its own — the room `pt-2`, the gallery `pt-1` — so the
+              first thing under the slot bar sat four pixels from it on one
+              screen and eight on the other, and the waiting card had a
+              different gap above it than below. One declaration, every stage.
+              `gap-3` for the same reason: two blocks in the panel are spaced
+              by the panel, not by whichever one happened to set a margin. */}
+          <div className="flex flex-col gap-3 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),16px)]">
+            {children}
+          </div>
         </div>
       </div>
     </div>
