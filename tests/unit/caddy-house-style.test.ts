@@ -415,6 +415,38 @@ describe("the wait", () => {
     expect(withoutComments(ticker)).not.toMatch(/\bPlanSteps\b/);
   });
 
+  it("reserves the thought's row instead of growing into it", () => {
+    // Both waits used to clamp the reasoning to two lines, so the row was one
+    // line or two depending on the wording and the panel hopped every time the
+    // caddy finished a sentence. `min-h` is not the fix and was the bug on the
+    // ticker: it is a floor, and a two-line thought walks straight through it.
+    for (const file of [
+      "components/course/caddy-gallery.tsx",
+      "components/course/caddy-waiting.tsx",
+    ]) {
+      const source = withoutComments(read(file));
+      expect(`${file}: ${/line-clamp-2/.test(source)}`).toBe(`${file}: false`);
+      expect(`${file}: ${/\bmin-h-9\b/.test(source)}`).toBe(`${file}: false`);
+    }
+  });
+
+  it("switches the live step's ring off for a reader who asked", () => {
+    // An infinite animation is exactly what `prefers-reduced-motion` is for,
+    // and a `::after` is invisible to the `motion-reduce:` variant — it has to
+    // be turned off in the stylesheet that draws it.
+    const css = read("app/globals.css");
+    expect(css).toContain("@keyframes step-live-ring");
+    const off = css.slice(css.indexOf(".step-live::after"));
+    expect(off).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.step-live::after\s*\{[^}]*animation:\s*none/,
+    );
+    // And it must not be tucked under its parent: the dot is `relative` with
+    // `z-auto`, which makes no stacking context, so a negative z-index paints
+    // the ring behind the *card* and it disappears entirely.
+    expect(off.slice(0, off.indexOf("}"))).not.toContain("z-index: -1");
+    expect(read("components/course/plan-steps.tsx")).toContain("step-live");
+  });
+
   it("holds the figure column open before there is a figure", () => {
     // Four rows whose labels shift sideways as numbers arrive is a list that
     // twitches for the length of the wait. The figures are right-aligned into

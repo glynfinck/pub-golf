@@ -65,10 +65,12 @@ export function PlanSteps({
           <span
             aria-hidden
             className={cn(
-              "flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors duration-300",
+              "relative flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors duration-300",
               step.state === "done" &&
                 "border-fairway bg-fairway text-primary-foreground",
-              step.state === "now" && "border-marker bg-marker",
+              // The ring is drawn behind the dot by `.step-live` — see
+              // `app/globals.css` for why it is a ring and not a fade.
+              step.state === "now" && "step-live border-marker bg-marker",
               step.state === "todo" && "border-border",
             )}
           >

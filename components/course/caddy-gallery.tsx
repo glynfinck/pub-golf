@@ -41,7 +41,7 @@ import {
   type PlanStage,
 } from "@/lib/caddy/stages";
 import { swapOptions, walkStats } from "@/lib/caddy/swap";
-import { highlight } from "@/lib/caddy/thinking";
+import { useThinking } from "@/hooks/use-thinking";
 import { useMenuDials, type MenuDials } from "@/hooks/use-menu-dials";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
@@ -344,9 +344,10 @@ function GalleryBody({
    * caddy's own picks are a walk in their own right, and then they take over.
    */
   const confirmed = state.picked.filter((id) => byId[id] != null);
-  /** The caddy's last *finished* thought — see `lib/caddy/thinking.ts`. The
-   * raw tail slid upward on every token and could not be read. */
-  const thought = highlight(state.thinking);
+  /** The caddy's last finished thought, held long enough to read — see
+   * `hooks/use-thinking.ts`. The raw tail slid upward on every token, and
+   * swapping on every close only slowed the same unreadability down. */
+  const thought = useThinking(state.thinking);
   const walkIds =
     state.stage === "dressing"
       ? confirmed.length > 1
@@ -1020,16 +1021,26 @@ function GalleryBody({
                 />
                 {/* The caddy's own last finished thought, under its work. The
                   tool it reached for used to sit here too — two lines saying
-                  the same thing, one of which the steps now say better. */}
-                {thought ? (
+                  the same thing, one of which the steps now say better.
+
+                  **The row is always here, and it is always one line.** It
+                  used to render only once a thought existed and clamp to two,
+                  so the card grew by a rule and a line when the first one
+                  landed and then breathed between one line and two for the
+                  rest of the wait — under a thumb, on a panel the host is
+                  reading. A reserved row costs 26px of a card that is not
+                  short of them. */}
+                <div className="border-t border-border/55 pt-2.5">
                   <p
-                    key={thought}
+                    // Keyed on the thought, so React swaps the element and the
+                    // fade plays per thought rather than once per mount.
+                    key={thought ?? "quiet"}
                     aria-live="off"
-                    className="animate-in fade-in duration-500 line-clamp-2 border-t border-border/55 pt-2.5 text-center text-[11px] text-muted-foreground/80 italic motion-reduce:animate-none"
+                    className="animate-in fade-in h-4 truncate text-center text-[11px] leading-4 text-muted-foreground/80 italic duration-500 motion-reduce:animate-none"
                   >
                     {thought}
                   </p>
-                ) : null}
+                </div>
               </div>
             ) : null}
 

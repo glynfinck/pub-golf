@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint app components lib e2e tests",
+    "lint": "eslint app components hooks lib e2e tests",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",

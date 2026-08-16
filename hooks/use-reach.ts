@@ -34,29 +34,43 @@ export function useReach(
    * stable — a `useState` setter is. */
   onReach?: (reach: (Reach & { preview?: PatchPreview }) | null) => void,
 ) {
-  const [found, setFound] = useState<{
+  const [answered, setAnswered] = useState<{
+    /** The patch this answer is *for*. Carried so a result can be told from
+     * the one before it without an effect clearing state between them. */
+    query: string;
     centre: { lat: number; lng: number } | null;
     results: Tables<"venues">[];
     error: string | null;
   } | null>(null);
 
+  /**
+   * The answer, but only where it belongs to what is typed now.
+   *
+   * This used to be an effect that cleared the state whenever the box went
+   * empty — a setState in an effect body, which the house forbids and the
+   * linter never saw because `hooks/` was outside the lint script. Deriving it
+   * also fixes what the clear could not: typing over one patch with another
+   * left the *first* patch's ring on the map for the 600ms of debounce, since
+   * only an empty box reset anything.
+   */
+  const wanted = where.trim();
+  const found = answered && answered.query === wanted ? answered : null;
+
   useEffect(() => {
-    if (!where.trim()) {
-      setFound(null);
-      return;
-    }
+    if (!where.trim()) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const answer = await searchPubs({ query: where });
         if (cancelled) return;
-        setFound({
+        setAnswered({
+          query: where.trim(),
           centre: centreOf(answer.results),
           results: answer.results,
           error: answer.error ?? null,
         });
       } catch {
-        if (!cancelled) setFound(null);
+        if (!cancelled) setAnswered(null);
       }
     }, 600);
     return () => {
