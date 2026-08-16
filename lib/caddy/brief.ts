@@ -87,6 +87,19 @@ export function readStretch(value: unknown): number {
  * reason. Computed rather than looked up, because the dial is continuous now
  * and a table would only answer four of its twenty-one positions.
  */
+/**
+ * The dial's answer, short enough to sit opposite its own label.
+ *
+ * `stretchMeaning` is a sentence, and a sentence is the wrong shape for a
+ * value slot: every other row in the brief reads back two or three words, so
+ * one row carrying "About 5 minutes' walk between pubs." was the thing that
+ * broke the column. The sentence still has a home — it is what the caddy is
+ * told — but the row says the figure.
+ */
+export function stretchLabel(minutes: number): string {
+  return minutes <= 0 ? "Any" : `${minutes} min`;
+}
+
 export function stretchMeaning(minutes: number): string {
   if (minutes <= 0) return "Whatever's closest, however close.";
   if (minutes <= 2) return "Doors a minute or two apart.";

@@ -30,7 +30,6 @@ const ROOT = join(import.meta.dirname, "..", "..");
  * hardest. A new file in this flow belongs on this list. */
 const SURFACES = [
   "components/course/brief-form.tsx",
-  "components/course/brief-parts.tsx",
   "components/course/caddy-ask.tsx",
   "components/course/caddy-fee-panels.tsx",
   "components/course/caddy-gallery.tsx",
@@ -220,6 +219,44 @@ describe("the panel under a map", () => {
     // says only whether the panel is up.)
     expect(panel).not.toContain("jobPanelLabel");
     expect(panel).not.toMatch(/^\s*label\??:/m);
+  });
+});
+
+describe("the brief's rhythm", () => {
+  const BRIEF = read("components/course/brief-form.tsx");
+  const ROW = read("components/ui/form-row.tsx");
+
+  it("is one list, not four titled sections", () => {
+    // Four eyebrow headings and four printed double rules over nine labelled
+    // rows is more furniture than the thing it organises, and it made the
+    // vertical spacing a different size at every boundary. The rows carry
+    // their own names and the sentence above says the whole of it back.
+    expect(BRIEF).not.toContain("BriefSection");
+    expect(BRIEF).not.toContain("RuleDouble");
+    expect((BRIEF.match(/<FormRows>/g) ?? []).length).toBe(1);
+  });
+
+  it("gives every row the same padding, whatever it holds", () => {
+    // One `py` in one place. A stacked row is taller because its content is
+    // taller — never because it is spaced differently.
+    const frames = ROW.match(/py-[\d.]+/g) ?? [];
+    expect(new Set(frames).size).toBe(1);
+  });
+
+  it("keeps explanation out of the left column", () => {
+    // It made some rows two lines and others one, it truncated mid-word, and
+    // it said what the value on the right of the same row already said. An
+    // option's meaning belongs in the sheet where the option is chosen.
+    expect(ROW).not.toMatch(/^\s*note\??:/m);
+    expect(BRIEF).not.toMatch(/\bnote=\{/);
+  });
+
+  it("keeps a warning, because a warning is not an explanation", () => {
+    // The thin-patch counter-offer says the answer will not work. That is the
+    // one thing that may not be tucked into a sheet nobody opens.
+    expect(ROW).toMatch(/warning\??:/);
+    expect(BRIEF).toContain("warning=");
+    expect(BRIEF).toContain("thinPatchNote");
   });
 });
 

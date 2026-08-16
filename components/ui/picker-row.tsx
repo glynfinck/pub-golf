@@ -26,6 +26,11 @@ import { cn } from "@/lib/utils";
  * The row reads back the answer, which is the other half of the point: the
  * brief becomes a summary you can check at a glance before spending a credit,
  * instead of six control groups you have to re-read to find out what you said.
+ *
+ * **This is where an option's meaning lives.** It used to sit under the field's
+ * name in the row — explaining, in a truncated line, what an answer you had
+ * already made would do. Here it is attached to each option, on the screen
+ * where you are choosing between them, which is the only screen where it helps.
  */
 export interface PickerOption<T extends string | number> {
   id: T;
@@ -45,8 +50,6 @@ export function PickerRow<T extends string | number>({
   multi = false,
   /** What the row reads when nothing is chosen. */
   empty = "Any",
-  /** A word under the field's name in the row. */
-  note,
   /** What the sheet says under its title. */
   hint,
 }: {
@@ -56,7 +59,6 @@ export function PickerRow<T extends string | number>({
   onChange: (next: T[]) => void;
   multi?: boolean;
   empty?: string;
-  note?: string;
   hint?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -66,8 +68,10 @@ export function PickerRow<T extends string | number>({
     <>
       <FormRow
         label={label}
-        note={note}
-        value={summarise(chosen.map((option) => option.label), empty)}
+        value={summarise(
+          chosen.map((option) => option.label),
+          empty,
+        )}
         onOpen={() => setOpen(true)}
       />
       <Sheet open={open} onOpenChange={setOpen}>

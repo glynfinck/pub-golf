@@ -21,7 +21,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { BriefSection } from "@/components/course/brief-parts";
 import {
   CaddyRefusalSheets,
   CoveredBadge,
@@ -34,18 +33,17 @@ import type { CaddyJobHandle } from "@/hooks/use-caddy-job";
 import {
   HOLE_CHOICES,
   MEASURES,
-  measuresMeaning,
   NOTE_MAX,
   PARTICULARS,
   STRETCH_MAX,
   STRETCH_MIN,
-  stretchMeaning,
+  stretchLabel,
   VIBES,
   WHERE_MAX,
 } from "@/lib/caddy/brief";
 import { freshCourseNotice } from "@/lib/caddy/credits";
 import { thinPatchNote } from "@/lib/caddy/preflight";
-import { teeLine, teeOffNote } from "@/lib/caddy/tee-off";
+import { teeLine } from "@/lib/caddy/tee-off";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import type { Reach } from "@/lib/caddy/reach";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
@@ -97,8 +95,6 @@ export function BriefForm({
     passExpiresAt ? Date.parse(passExpiresAt) : null,
   );
 
-  const meaning = VIBES.find((entry) => entry.id === brief.vibe)?.meaning ?? "";
-  const stretchNote = stretchMeaning(brief.stretch);
 
   /** Ask for a patch. The job owns everything that happens next. */
   function plan() {
@@ -198,191 +194,165 @@ export function BriefForm({
         </p>
       </div>
 
-      <BriefSection title="The patch">
-        <FormRows>
-          <FormRow
-            label={MAPS_BROWSER_KEY ? "Or name a patch" : "Where"}
-            stacked
-          >
-            <Input
-              id="caddy-where"
-              value={brief.where}
-              onChange={(event) =>
-                brief.setWhere(event.target.value.slice(0, WHERE_MAX))
-              }
-              placeholder="Shoreditch, London"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              {searchError ?? "A neighbourhood, a street, a town."}
-            </p>
-          </FormRow>
-        </FormRows>
-
-        {/* **The destination field is gone.**
-            It asked the host to name where the night finishes — which the walk
-            they drew has already said, twice over: `gatherPubs` takes the
-            stroke's own ends as the corridor's, and `readBrief` measures its
-            arc length for the reach. Asking again was asking for something
-            already answered, and it brought a whole second pace control with
-            it. A typed patch is one patch now, paced by the spacing dial; a
-            drawn walk is paced by its own length. `whereTo` stays on the wire
-            and in `readBrief` so sessions written before this still read. */}
-      </BriefSection>
-
       {/*
-       * **One row per field, and the row is the constant.**
-       * This was six wrapping `role="radiogroup"` chip sets — seventeen pills
-       * in the first three fields alone, every group a different width and
-       * every field a different height depending on where its own options
-       * happened to wrap. Nothing lined up, so there was no column to scan and
-       * no way to read the brief back before spending on it.
+       * **One list, one rhythm.**
+       * This was four titled sections — "The patch", "The round", "The night",
+       * "The card" — each with an eyebrow and a printed double rule, over what
+       * is now nine labelled rows. Four headings and four rules is more
+       * furniture than the thing it organises, and it made the vertical
+       * spacing a different size at every boundary. The rows carry their own
+       * names, and the sentence above says the whole of it back, so the
+       * headings were naming what was already named.
        *
-       * What sits in a row's value slot follows the field, which is the whole
-       * design: a four-way pick stays one tap (`ToggleGroup`), an ordered
-       * quantity stays a drag (`Slider`), and only the genuinely long lists pay
-       * the extra tap of a sheet. Same rhythm, same baseline, same right edge,
-       * whichever it is.
+       * What sits in a row's value slot follows the field: a segmented
+       * `ToggleGroup` for a four-way pick, a `Slider` for an ordered quantity,
+       * a sheet for a list too long to sit in a row. Same padding, same
+       * hairline, same baseline, whichever it is.
        */}
-      <BriefSection title="The round">
-        <FormRows>
-          {/* The counter-offer rides on the row's own note line rather than a
-              paragraph beneath a chip group: the count is the lean search's
-              floor, so this warns and names the hole count that fits — it never
-              gates. The server still decides. */}
-          <FormRow
-            label="Holes"
-            note={
-              reach?.preview
-                ? (thinPatchNote(reach.preview.count, brief.holes) ?? undefined)
-                : undefined
+      <FormRows>
+        <FormRow
+          label={MAPS_BROWSER_KEY ? "Or name a patch" : "Where"}
+          stacked
+        >
+          <Input
+            id="caddy-where"
+            value={brief.where}
+            onChange={(event) =>
+              brief.setWhere(event.target.value.slice(0, WHERE_MAX))
             }
+            placeholder="Shoreditch, London"
+          />
+          {searchError ? (
+            <p className="text-[11px] text-hazard">{searchError}</p>
+          ) : null}
+        </FormRow>
+
+        {/* The counter-offer is a warning, not a note: the count is the lean
+            search's floor, so this says the answer will not work and names the
+            hole count that fits. It never gates — the server still decides —
+            which is exactly why it has to be visible rather than tucked into a
+            sheet nobody opens. */}
+        <FormRow
+          label="Holes"
+          warning={
+            reach?.preview
+              ? (thinPatchNote(reach.preview.count, brief.holes) ?? undefined)
+              : undefined
+          }
+        >
+          <ToggleGroup
+            type="single"
+            value={String(brief.holes)}
+            onValueChange={(next) => {
+              if (next) brief.setHoles(Number(next));
+            }}
+            aria-label="Holes"
           >
-            <ToggleGroup
-              type="single"
-              value={String(brief.holes)}
-              onValueChange={(next) => {
-                if (next) brief.setHoles(Number(next));
-              }}
-              aria-label="Holes"
-            >
-              {HOLE_CHOICES.map((count) => (
-                <ToggleGroupItem key={count} value={String(count)}>
-                  {count}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FormRow>
+            {HOLE_CHOICES.map((count) => (
+              <ToggleGroupItem key={count} value={String(count)}>
+                {count}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </FormRow>
 
-          <PickerRow
-            label="Kind of round"
-            note={meaning}
-            options={VIBES}
-            value={[brief.vibe]}
-            onChange={(next) => {
-              if (next[0]) brief.setVibe(next[0]);
-            }}
-            hint="How hard the caddy makes it."
+        <PickerRow
+          label="Kind of round"
+          options={VIBES}
+          value={[brief.vibe]}
+          onChange={(next) => {
+            if (next[0]) brief.setVibe(next[0]);
+          }}
+          hint="How hard the caddy makes it."
+        />
+
+        {/* Hidden rather than disabled when a walk is drawn, and that is a fix
+            rather than tidiness: `targetKmFor` takes the stroke's own arc
+            length and never reads `brief.stretch` at all, so this dial was
+            sitting there doing nothing while looking exactly like a control. */}
+        {stroke ? (
+          <FormRow
+            label="How far apart"
+            value={`${strokeLengthKm(stroke).toFixed(1)} km`}
           />
-
-          {/* Hidden rather than disabled when a walk is drawn, and that is a
-              fix rather than tidiness: `targetKmFor` takes the stroke's own arc
-              length and never reads `brief.stretch` at all, so this dial was
-              sitting there doing nothing while looking exactly like a control. */}
-          {stroke ? (
-            <FormRow
-              label="How far apart"
-              note={`The walk you drew sets the pace — ${strokeLengthKm(stroke).toFixed(1)} km over ${brief.holes} holes.`}
-            />
-          ) : (
-            <FormRow label="How far apart" note={stretchNote} stacked>
-              {/* Four presets were the whole of it, so a perfectly ordinary
-                  "seven minutes" was unsayable — and four buttons in a row said
-                  nothing about the fact that a stretch is *more* than a short
-                  hop. A track says the ordering without a word. */}
-              <Slider
-                value={[brief.stretch]}
-                onValueChange={([next]) => brief.setStretch(next)}
-                min={STRETCH_MIN}
-                max={STRETCH_MAX}
-                step={1}
-                aria-label="Minutes between pubs"
-              />
-            </FormRow>
-          )}
-        </FormRows>
-      </BriefSection>
-
-      <BriefSection title="The night">
-        <FormRows>
-          {/* The tee-off is not decoration: it is what decides which pubs are
-              open enough to be on the card at all, so it gets a real control
-              rather than four evening chips. Seven days is more than a row can
-              hold, so the day is a sheet and the time is a nudger. */}
-          <PickerRow
-            label="Which day"
-            options={brief.days.map((choice) => ({
-              id: choice.day,
-              label: choice.label,
-            }))}
-            value={brief.teeDay == null ? [] : [brief.teeDay]}
-            onChange={(next) => {
-              if (next[0] != null) brief.setDay(next[0]);
-            }}
-            empty="Any day"
-          />
-
-          <FormRow label="First tee" note={teeOffNote(brief.teeOffMinutes)}>
-            <TeeTimeNudger
-              value={brief.teeOffMinutes}
-              onChange={brief.setTeeOffMinutes}
+        ) : (
+          <FormRow label="How far apart" value={stretchLabel(brief.stretch)} stacked>
+            {/* Four presets were the whole of it, so a perfectly ordinary
+                "seven minutes" was unsayable — and four buttons in a row said
+                nothing about the fact that a stretch is *more* than a short
+                hop. A track says the ordering without a word, and what it is
+                set to reads opposite the label rather than under it. */}
+            <Slider
+              value={[brief.stretch]}
+              onValueChange={([next]) => brief.setStretch(next)}
+              min={STRETCH_MIN}
+              max={STRETCH_MAX}
+              step={1}
+              aria-label="Minutes between pubs"
             />
           </FormRow>
-        </FormRows>
-      </BriefSection>
+        )}
 
-      <BriefSection title="The card">
-        <FormRows>
-          {/* The one part of a hole the host could not say a word about, on the
-              app whose unit is the drink. Unlike a particular this is not a
-              claim about a pub — it is what the caddy may write — so it is not
-              bound by the dossier-signal rule. `drinks-pourable` still refuses
-              a beer where Google says none is poured. */}
-          <PickerRow
-            label="Drinking"
-            multi
-            options={MEASURES}
-            value={brief.measures}
-            onChange={(next) => brief.setMeasures(() => next)}
-            empty="Whatever suits"
-            note={
-              brief.measures.length
-                ? `The caddy keeps to ${measuresMeaning(brief.measures)}.`
-                : "Nothing ticked, so the caddy pours what suits each pub."
+        {/* The tee-off is not decoration: it is what decides which pubs are
+            open enough to be on the card at all, so it gets a real control
+            rather than four evening chips. Seven days is more than a row can
+            hold, so the day is a sheet and the time is a nudger. */}
+        <PickerRow
+          label="Which day"
+          options={brief.days.map((choice) => ({
+            id: choice.day,
+            label: choice.label,
+          }))}
+          value={brief.teeDay == null ? [] : [brief.teeDay]}
+          onChange={(next) => {
+            if (next[0] != null) brief.setDay(next[0]);
+          }}
+          empty="Any day"
+        />
+
+        <FormRow label="First tee">
+          <TeeTimeNudger
+            value={brief.teeOffMinutes}
+            onChange={brief.setTeeOffMinutes}
+          />
+        </FormRow>
+
+        {/* The one part of a hole the host could not say a word about, on the
+            app whose unit is the drink. Unlike a particular this is not a claim
+            about a pub — it is what the caddy may write — so it is not bound by
+            the dossier-signal rule. `drinks-pourable` still refuses a beer
+            where Google says none is poured. */}
+        <PickerRow
+          label="Drinking"
+          multi
+          options={MEASURES}
+          value={brief.measures}
+          onChange={(next) => brief.setMeasures(() => next)}
+          empty="Whatever suits"
+          hint="Nothing ticked and the caddy pours what suits each pub."
+        />
+
+        <PickerRow
+          label="Particulars"
+          multi
+          options={PARTICULARS}
+          value={brief.particulars}
+          onChange={(next) => brief.setParticulars(() => next)}
+          empty="None"
+          hint="Only asked for where Google can actually answer it."
+        />
+
+        <FormRow label="Anything the caddy should know" stacked>
+          <Input
+            id="caddy-note"
+            value={brief.note}
+            onChange={(event) =>
+              brief.setNote(event.target.value.slice(0, NOTE_MAX))
             }
+            placeholder="Short walks — one of us is on crutches"
           />
-
-          <PickerRow
-            label="Particulars"
-            multi
-            options={PARTICULARS}
-            value={brief.particulars}
-            onChange={(next) => brief.setParticulars(() => next)}
-            empty="None"
-            note="Only asked for where Google can actually answer it."
-          />
-
-          <FormRow label="Anything the caddy should know" stacked>
-            <Input
-              id="caddy-note"
-              value={brief.note}
-              onChange={(event) =>
-                brief.setNote(event.target.value.slice(0, NOTE_MAX))
-              }
-              placeholder="Short walks — one of us is on crutches"
-            />
-          </FormRow>
-        </FormRows>
-      </BriefSection>
+        </FormRow>
+      </FormRows>
 
       {/* This line quoted the price. It has been kept, without it: what a host
           needs before they press the button is that the caddy is the members'
