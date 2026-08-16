@@ -36,6 +36,7 @@ const SURFACES = [
   "components/course/caddy-waiting.tsx",
   "components/course/course-room.tsx",
   "components/course/draw-walk-sheet.tsx",
+  "components/course/plan-steps.tsx",
   "components/course/retracting-panel.tsx",
   "components/course/stage-bar.tsx",
   "components/ui/chip.tsx",
@@ -389,6 +390,40 @@ describe("Radix state variants", () => {
     // deleting the highlight is a visible diff rather than a silent no-op.
     const group = read("components/ui/toggle-group.tsx");
     expect(group).toContain("data-[state=on]:bg-fairway");
+  });
+});
+
+describe("the wait", () => {
+  /**
+   * Two waits, and they are not the same wait.
+   *
+   * The gallery's shows a checklist that reports what each step found; the
+   * drafting table's has nothing to show and keeps the house `Putt`. The rule
+   * worth holding is that no wait carries **both** — a rolling ball beside a
+   * list of live figures is a second thing saying the same thing, and it is
+   * the half that says it worse.
+   */
+  it("shows a mark or a checklist, never both", () => {
+    const gallery = read("components/course/caddy-gallery.tsx");
+    expect(gallery).toContain("<PlanSteps");
+    // An import is the only way to render one, so its absence is the whole
+    // proof — and adding one back is a visible line in a diff.
+    expect(withoutComments(gallery)).not.toMatch(/\bPutt\b/);
+
+    const ticker = read("components/course/caddy-waiting.tsx");
+    expect(ticker).toContain("<Putt");
+    expect(withoutComments(ticker)).not.toMatch(/\bPlanSteps\b/);
+  });
+
+  it("holds the figure column open before there is a figure", () => {
+    // Four rows whose labels shift sideways as numbers arrive is a list that
+    // twitches for the length of the wait. The figures are right-aligned into
+    // a column and the column is held by a non-breaking space, so a row that
+    // has found nothing takes exactly the width of one that has.
+    const steps = read("components/course/plan-steps.tsx");
+    expect(steps).toContain("ml-auto");
+    expect(steps).toContain('HOLDS_THE_COLUMN = "\\u00a0"');
+    expect(steps).toContain("step.found ?? HOLDS_THE_COLUMN");
   });
 });
 

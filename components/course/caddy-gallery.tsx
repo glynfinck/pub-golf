@@ -25,15 +25,13 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { FormRow, FormRows } from "@/components/ui/form-row";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   PANEL_HEAD,
   PANEL_HEAD_BOTTOM,
   RetractingPanel,
 } from "@/components/course/retracting-panel";
+import { PlanSteps } from "@/components/course/plan-steps";
 import { StageBar } from "@/components/course/stage-bar";
 import {
   JOB_PILL,
@@ -444,9 +442,7 @@ function GalleryBody({
         progress={progress}
         job={state.stage}
         holes={state.course?.holes.length ?? null}
-        onBack={
-          back && onStep ? () => onStep(back) : undefined
-        }
+        onBack={back && onStep ? () => onStep(back) : undefined}
         right={
           <button
             type="button"
@@ -532,8 +528,7 @@ function GalleryBody({
               {walkPath.length > 1 ? (
                 <DottedWalk path={walkPath} dark={dark} />
               ) : null}
-              {(state.stage === "menu" && route) ||
-              state.stage === "dressing"
+              {(state.stage === "menu" && route) || state.stage === "dressing"
                 ? walkIds.map((id, index) => {
                     const node = byId[id];
                     if (!node) return null;
@@ -817,107 +812,109 @@ function GalleryBody({
           </div>
         ) : null}
 
-      {/* Below the map: the act's own furniture, on the same tab the course
+        {/* Below the map: the act's own furniture, on the same tab the course
           room's brief uses. The menu is the reason it retracts — chips, stats,
           two dial rows and two buttons is most of a phone, and the walk those
           controls are steering is drawn on the half of the screen they were
           covering. A refusal is the one thing pinned open. */}
-      <RetractingPanel
-        open={panelOpen}
-        onToggle={
-          state.stage === "failed" ? undefined : () => setPanelOpen((up) => !up)
-        }
-        holes={stops.length || null}
-        km={stops.length > 1 ? shown.totalKm : null}
-        className="absolute inset-x-0 bottom-0 z-30"
-      >
-        <div>
-          {state.stage === "menu" && state.menu ? (
-            <div className="flex flex-col gap-2.5">
-              {/*
-               * **Cards, because a walk is not a token.**
-               * These were chips holding up to forty-six characters of prose
-               * — "most variety — fewest repeats of the same place" — so ten
-               * of them wrapped into a paragraph of lozenges with nothing
-               * lined up and nothing to compare. A card has a name you can
-               * scan down, the sentence underneath where it belongs, and the
-               * two figures that actually differ in the same place every
-               * time. Choosing between walks is a comparison, and a
-               * comparison needs a column.
-               */}
-              <div
-                className="flex flex-col gap-1.5"
-                role="radiogroup"
-                aria-label="The walks on offer"
-              >
-                {routes.map((entry, index) => {
-                  const on = index === dials.routeIndex;
-                  const legMin = Math.max(
-                    1,
-                    Math.round(entry.worstLegKm * WALK_MINUTES_PER_KM),
-                  );
-                  return (
-                    <button
-                      key={`${entry.name}-${index}`}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      onClick={() => dials.pickRoute(index)}
-                      className={cn(
-                        "flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
-                        on
-                          ? "border-fairway bg-card ring-1 ring-fairway"
-                          : "border-border bg-background hover:bg-secondary",
-                      )}
-                    >
-                      <span
-                        aria-hidden
+        <RetractingPanel
+          open={panelOpen}
+          onToggle={
+            state.stage === "failed"
+              ? undefined
+              : () => setPanelOpen((up) => !up)
+          }
+          holes={stops.length || null}
+          km={stops.length > 1 ? shown.totalKm : null}
+          className="absolute inset-x-0 bottom-0 z-30"
+        >
+          <div>
+            {state.stage === "menu" && state.menu ? (
+              <div className="flex flex-col gap-2.5">
+                {/*
+                 * **Cards, because a walk is not a token.**
+                 * These were chips holding up to forty-six characters of prose
+                 * — "most variety — fewest repeats of the same place" — so ten
+                 * of them wrapped into a paragraph of lozenges with nothing
+                 * lined up and nothing to compare. A card has a name you can
+                 * scan down, the sentence underneath where it belongs, and the
+                 * two figures that actually differ in the same place every
+                 * time. Choosing between walks is a comparison, and a
+                 * comparison needs a column.
+                 */}
+                <div
+                  className="flex flex-col gap-1.5"
+                  role="radiogroup"
+                  aria-label="The walks on offer"
+                >
+                  {routes.map((entry, index) => {
+                    const on = index === dials.routeIndex;
+                    const legMin = Math.max(
+                      1,
+                      Math.round(entry.worstLegKm * WALK_MINUTES_PER_KM),
+                    );
+                    return (
+                      <button
+                        key={`${entry.name}-${index}`}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => dials.pickRoute(index)}
                         className={cn(
-                          "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                          "flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
                           on
-                            ? "border-fairway bg-fairway text-primary-foreground"
-                            : "border-border",
+                            ? "border-fairway bg-card ring-1 ring-fairway"
+                            : "border-border bg-background hover:bg-secondary",
                         )}
                       >
-                        {on ? <Check className="size-3" /> : null}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-serif text-base leading-tight">
-                          {entry.name}
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                            on
+                              ? "border-fairway bg-fairway text-primary-foreground"
+                              : "border-border",
+                          )}
+                        >
+                          {on ? <Check className="size-3" /> : null}
                         </span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {entry.why}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-serif text-base leading-tight">
+                            {entry.name}
+                          </span>
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {entry.why}
+                          </span>
                         </span>
-                      </span>
-                      {/* The two figures that differ between walks, in the
+                        {/* The two figures that differ between walks, in the
                           same place on every card — which is the whole reason
                           this is a card. The old chips showed stats for the
                           walk you had already chosen and none for the rest,
                           so there was nothing to choose *on*. */}
-                      <span className="tabular shrink-0 text-right text-[11px] text-muted-foreground">
-                        <span className="block text-sm font-bold text-foreground">
-                          {entry.totalKm.toFixed(1)} km
+                        <span className="tabular shrink-0 text-right text-[11px] text-muted-foreground">
+                          <span className="block text-sm font-bold text-foreground">
+                            {entry.totalKm.toFixed(1)} km
+                          </span>
+                          {legMin} min legs
                         </span>
-                        {legMin} min legs
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {stats ? (
-                <p className="text-center text-[11px] text-muted-foreground tabular">
-                  {stats}
-                </p>
-              ) : null}
-              {/* The patch's shape, where it is remarkable: two pockets with a
+                      </button>
+                    );
+                  })}
+                </div>
+                {stats ? (
+                  <p className="text-center text-[11px] text-muted-foreground tabular">
+                    {stats}
+                  </p>
+                ) : null}
+                {/* The patch's shape, where it is remarkable: two pockets with a
                 march between them, or one street. A note on every patch
                 would be a note nobody reads. */}
-              {state.menu.note ? (
-                <p className="text-center font-serif text-[11px] italic text-muted-foreground">
-                  {state.menu.note}
-                </p>
-              ) : null}
-              {/* **Two dials, two rows** — the same rows the brief uses, so a
+                {state.menu.note ? (
+                  <p className="text-center font-serif text-[11px] italic text-muted-foreground">
+                    {state.menu.note}
+                  </p>
+                ) : null}
+                {/* **Two dials, two rows** — the same rows the brief uses, so a
                   host who tuned the brief already knows this control. They
                   shared one wrapping row of chips separated by a bare middot,
                   so the wrap regularly broke mid-control ("Doorstep" ended up
@@ -925,154 +922,159 @@ function GalleryBody({
                   phone and read as a typo. Neither group was named to a screen
                   reader either: an `aria-label` on a `div` with no role is
                   dropped. */}
-              <FormRows>
-                <FormRow label="Holes">
-                  <ToggleGroup
-                    type="single"
-                    value={String(dials.holes)}
-                    onValueChange={(next) => {
-                      if (next) dials.setDialHoles(Number(next));
-                    }}
-                    aria-label="Holes"
-                  >
-                    {HOLE_CHOICES.map((count) => (
-                      <ToggleGroupItem key={count} value={String(count)}>
-                        {count}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </FormRow>
-                {/* Stacked, because these labels are words. Four of
+                <FormRows>
+                  <FormRow label="Holes">
+                    <ToggleGroup
+                      type="single"
+                      value={String(dials.holes)}
+                      onValueChange={(next) => {
+                        if (next) dials.setDialHoles(Number(next));
+                      }}
+                      aria-label="Holes"
+                    >
+                      {HOLE_CHOICES.map((count) => (
+                        <ToggleGroupItem key={count} value={String(count)}>
+                          {count}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </FormRow>
+                  {/* Stacked, because these labels are words. Four of
                     "Doorstep / Short / Steady / Stretch" want 231px and the
                     value slot caps at 62% of the row — so inline, the group
                     overflowed and `overflow-hidden` clipped "Stretch" clean
                     off the right edge, unreachable. Numerals fit a slot;
                     words want the width. */}
-                <FormRow label="How far apart" stacked>
-                  <ToggleGroup
-                    type="single"
-                    value={String(dials.stretch)}
-                    onValueChange={(next) => {
-                      if (next) dials.setDialStretch(Number(next));
-                    }}
-                    aria-label="How far apart"
-                  >
-                    {STRETCH_CHOICES.map((entry) => (
-                      <ToggleGroupItem key={entry.id} value={String(entry.id)}>
-                        {entry.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </FormRow>
-              </FormRows>
-              <p className="text-center text-[10px] text-muted-foreground">
-                Every tap re-routes on the spot — choosing is free.
-              </p>
-              <Button
-                className="w-full"
-                onClick={() =>
-                  onDress({
-                    route: stops.length ? stops : null,
-                    holes: dials.holes,
-                    stretch: dials.stretch,
-                  })
-                }
-                data-testid="dress-this-walk"
-              >
-                Dress this walk
-              </Button>
-              <Button
-                variant="outline"
-                size="compact"
-                className="h-11 w-full"
-                onClick={() =>
-                  onDress({
-                    route: null,
-                    holes: dials.holes,
-                    stretch: dials.stretch,
-                  })
-                }
-              >
-                Caddy&rsquo;s choice
-              </Button>
-            </div>
-          ) : null}
-
-          {state.stage === "opening" || state.stage === "dressing" ? (
-            <div className="flex min-h-16 flex-col items-center gap-1 rounded-xl border border-border bg-card px-4 py-3">
-              {state.doing ? (
-                <p className="animate-in fade-in line-clamp-1 max-w-full text-center text-[11px] font-semibold text-fairway">
-                  {state.doing}
+                  <FormRow label="How far apart" stacked>
+                    <ToggleGroup
+                      type="single"
+                      value={String(dials.stretch)}
+                      onValueChange={(next) => {
+                        if (next) dials.setDialStretch(Number(next));
+                      }}
+                      aria-label="How far apart"
+                    >
+                      {STRETCH_CHOICES.map((entry) => (
+                        <ToggleGroupItem
+                          key={entry.id}
+                          value={String(entry.id)}
+                        >
+                          {entry.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </FormRow>
+                </FormRows>
+                <p className="text-center text-[10px] text-muted-foreground">
+                  Every tap re-routes on the spot — choosing is free.
                 </p>
-              ) : (
-                <p className="text-[11px] font-semibold text-fairway">
-                  {state.stage === "opening"
-                    ? "Walking the patch"
-                    : "Dressing the card"}
-                </p>
-              )}
-              {thought ? (
-                <p
-                  // Keyed on the thought, so each finished one fades in over
-                  // the last rather than the paragraph sliding per token.
-                  key={thought}
-                  aria-live="off"
-                  className="animate-in fade-in duration-500 line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic motion-reduce:animate-none"
+                <Button
+                  className="w-full"
+                  onClick={() =>
+                    onDress({
+                      route: stops.length ? stops : null,
+                      holes: dials.holes,
+                      stretch: dials.stretch,
+                    })
+                  }
+                  data-testid="dress-this-walk"
                 >
-                  {thought}
-                </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  {state.stage === "opening"
-                    ? "About ten seconds."
-                    : "Won’t be long."}
-                </p>
-              )}
-            </div>
-          ) : null}
+                  Dress this walk
+                </Button>
+                <Button
+                  variant="outline"
+                  size="compact"
+                  className="h-11 w-full"
+                  onClick={() =>
+                    onDress({
+                      route: null,
+                      holes: dials.holes,
+                      stretch: dials.stretch,
+                    })
+                  }
+                >
+                  Caddy&rsquo;s choice
+                </Button>
+              </div>
+            ) : null}
 
-          {state.stage === "done" ? (
-            <div className="flex flex-col gap-2">
-              {/* Street truth, where the streets answered for every leg. */}
-              {state.course?.legMinutes?.length &&
-              state.course.legMinutes.every((leg) => leg !== null) ? (
-                <p className="text-center text-[11px] text-muted-foreground tabular">
-                  Walks checked against the streets —{" "}
-                  {state.course.legMinutes.reduce(
-                    (sum, leg) => sum + (leg ?? 0),
-                    0,
-                  )}{" "}
-                  min all told.
-                </p>
-              ) : null}
-              <Button
-                className="w-full"
-                onClick={onClose}
-                data-testid="gallery-done"
-              >
-                Back to the table
-              </Button>
-            </div>
-          ) : null}
+            {state.stage === "opening" || state.stage === "dressing" ? (
+              <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card px-4 py-3.5">
+                {/* **No busy mark here, and that is the design.** The steps
+                  below already show work happening in more detail than a
+                  rolling ball can; a mark beside them would be a second thing
+                  saying the same thing. The house `Putt` keeps every other
+                  wait in the app — the ones with nothing else to show. */}
+                <PlanSteps
+                  facts={{
+                    stage: state.stage,
+                    candidates: state.menu?.nodes.length ?? 0,
+                    picked: confirmed.length,
+                    holes: dials.holes,
+                    // A single pin has no walk through it, and `0.0 km` is
+                    // worse than nothing. When it may be *shown* is
+                    // `planSteps`' rule, not this call's.
+                    km: confirmed.length > 1 ? shown.totalKm : null,
+                    carded: state.course?.holes.length ?? null,
+                  }}
+                />
+                {/* The caddy's own last finished thought, under its work. The
+                  tool it reached for used to sit here too — two lines saying
+                  the same thing, one of which the steps now say better. */}
+                {thought ? (
+                  <p
+                    key={thought}
+                    aria-live="off"
+                    className="animate-in fade-in duration-500 line-clamp-2 border-t border-border/55 pt-2.5 text-center text-[11px] text-muted-foreground/80 italic motion-reduce:animate-none"
+                  >
+                    {thought}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
-          {state.stage === "failed" ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-center text-xs text-hazard">
-                {state.error ??
-                  "The caddy lost the ball. Ask again — this one's free."}
-              </p>
-              <Button
-                variant="outline"
-                size="compact"
-                className="h-11 w-full"
-                onClick={onClose}
-              >
-                Back to the table
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </RetractingPanel>
+            {state.stage === "done" ? (
+              <div className="flex flex-col gap-2">
+                {/* Street truth, where the streets answered for every leg. */}
+                {state.course?.legMinutes?.length &&
+                state.course.legMinutes.every((leg) => leg !== null) ? (
+                  <p className="text-center text-[11px] text-muted-foreground tabular">
+                    Walks checked against the streets —{" "}
+                    {state.course.legMinutes.reduce(
+                      (sum, leg) => sum + (leg ?? 0),
+                      0,
+                    )}{" "}
+                    min all told.
+                  </p>
+                ) : null}
+                <Button
+                  className="w-full"
+                  onClick={onClose}
+                  data-testid="gallery-done"
+                >
+                  Back to the table
+                </Button>
+              </div>
+            ) : null}
+
+            {state.stage === "failed" ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-center text-xs text-hazard">
+                  {state.error ??
+                    "The caddy lost the ball. Ask again — this one's free."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="compact"
+                  className="h-11 w-full"
+                  onClick={onClose}
+                >
+                  Back to the table
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </RetractingPanel>
       </div>
     </div>
   );
