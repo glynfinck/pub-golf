@@ -29,7 +29,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
-import { RetractingPanel } from "@/components/course/retracting-panel";
+import {
+  PANEL_HEAD,
+  PANEL_HEAD_BOTTOM,
+  RetractingPanel,
+} from "@/components/course/retracting-panel";
 import { StageBar } from "@/components/course/stage-bar";
 import {
   JOB_PILL,
@@ -452,7 +456,7 @@ function GalleryBody({
       {/* The map is the screen. Everything else floats over it. `min-h-0` so
           a panel standing at its full height squeezes the map rather than
           pushing the bottom of it off the glass. */}
-      <div className="relative min-h-0 flex-1">
+      <div className={cn("relative min-h-0 flex-1", PANEL_HEAD)}>
         {mapsFailed ? (
           /* The overlay stays. It used to return null the moment Google's
              script failed — taking the narration, the walks, the stats and
@@ -610,7 +614,12 @@ function GalleryBody({
             hours, the photos and the reviews in full. */}
         {tapped ? (
           <div
-            className="animate-in fade-in slide-in-from-bottom-2 absolute inset-x-3 bottom-3 z-30 rounded-xl border border-border bg-card p-3 shadow-lg"
+            className={cn(
+              "animate-in fade-in slide-in-from-bottom-2 absolute inset-x-3 z-30 rounded-xl border border-border bg-card p-3 shadow-lg",
+              // Padding does not move an absolutely positioned child, so this
+              // clears the collapsed panel on its own.
+              PANEL_HEAD_BOTTOM,
+            )}
             data-testid="pub-card"
           >
             <div className="flex items-start gap-2">

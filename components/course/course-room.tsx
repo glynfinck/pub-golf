@@ -18,8 +18,12 @@ import { createCourse } from "@/lib/actions/courses";
 import { rememberCaddyCourse } from "@/lib/actions/caddy";
 import { draftFromPlan, draftOf } from "@/lib/course-draft";
 import { stageBack, undoFor, type PlanStage } from "@/lib/caddy/stages";
-import { RetractingPanel } from "@/components/course/retracting-panel";
+import {
+  PANEL_HEAD,
+  RetractingPanel,
+} from "@/components/course/retracting-panel";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
+import { cn } from "@/lib/utils";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
 import { walkKmOf } from "@/lib/caddy/panel";
 import type { CaddyAllowance } from "@/lib/data/caddy";
@@ -205,7 +209,7 @@ export function CourseRoom({
           written for. Handed a plain block parent it has no height at all,
           the `size-full` map inside it resolves to zero pixels, and the room
           renders a map nobody can see — which is exactly what it did. */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className={cn("relative flex min-h-0 flex-1 flex-col", PANEL_HEAD)}>
         {MAPS_BROWSER_KEY ? (
           <APIProvider apiKey={MAPS_BROWSER_KEY}>
             <DrawSurface

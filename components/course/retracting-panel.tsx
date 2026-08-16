@@ -47,6 +47,25 @@ import { cn } from "@/lib/utils";
  * retracting is wrong — a refusal has to stay readable — and not a general
  * off switch.
  */
+/**
+ * How much room the panel takes when it is down: the grabber, the slot row and
+ * the hairlines either side of it.
+ *
+ * **The panel floats over the map, so `bottom-0` on the map is behind it.**
+ * Anything that stands at the map's own bottom edge — the draw surface's
+ * controls, the gallery's tapped-pub card — has to clear this or it is simply
+ * not there. The draw button went missing exactly that way.
+ *
+ * Given to the map region as padding rather than subtracted per control: the
+ * map is then a *constant* amount shorter whatever the panel is doing, which
+ * is what keeps opening the drawer from resizing it.
+ */
+export const PANEL_HEAD = "pb-16";
+
+/** The same clearance for something positioned against the region's own
+ * bottom edge, where padding does not reach — plus its own 12px margin. */
+export const PANEL_HEAD_BOTTOM = "bottom-19";
+
 export function RetractingPanel({
   open,
   onToggle,

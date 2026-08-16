@@ -240,6 +240,25 @@ describe("the panel under a map", () => {
     }
   });
 
+  it("reserves the collapsed panel so the map's own controls clear it", () => {
+    // The panel floats over the map, so `bottom-0` on the map is *behind* it —
+    // and the draw surface's controls live at exactly that edge. The button
+    // that holds the map still went missing that way. Padding on the region
+    // keeps them clear, and being a constant it does not reintroduce the
+    // resize: the map is the same amount shorter whatever the panel is doing.
+    for (const file of PANELLED) {
+      expect(`${file}: ${read(file).includes("PANEL_HEAD")}`).toBe(
+        `${file}: true`,
+      );
+    }
+    const panel = read("components/course/retracting-panel.tsx");
+    expect(panel).toMatch(/export const PANEL_HEAD = "pb-\d+"/);
+    // Two mechanisms, one number: padding lifts a flex child, and an
+    // absolutely positioned one needs its own offset because padding does not
+    // reach it.
+    expect(panel).toMatch(/export const PANEL_HEAD_BOTTOM = "bottom-\d+"/);
+  });
+
   it("leaves the bar at the top of the screen, in flow", () => {
     // It was briefly given the panel's own positioning and went to the bottom,
     // above the drawer, on the screen whose first act it names.
