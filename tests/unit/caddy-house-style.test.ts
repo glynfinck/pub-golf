@@ -38,7 +38,7 @@ const SURFACES = [
   "components/course/course-room.tsx",
   "components/course/draw-walk-sheet.tsx",
   "components/course/retracting-panel.tsx",
-  "components/course/stage-rail.tsx",
+  "components/course/stage-bar.tsx",
   "components/ui/chip.tsx",
   "components/ui/tee-time.tsx",
 ];

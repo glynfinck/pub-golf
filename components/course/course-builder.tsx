@@ -571,6 +571,16 @@ export function CourseBuilder({
         onDress={(choice) => void caddyJob.dress({ ...choice })}
         onClose={caddyJob.hide}
         onReopen={caddyJob.show}
+        // The table has no Area, Draw or Tune — its brief is a form, and the
+        // only act it plays is the caddy's. Saying so here is what let the
+        // gallery stop guessing: it used to hard-code exactly this and then
+        // apply it to the Course Room too, where all four acts are real.
+        progress={{
+          locked: true,
+          aimed: true,
+          planning: caddyJob.working,
+          carded: caddyJob.course != null,
+        }}
       />
 
       <PlaceSearch

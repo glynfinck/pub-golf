@@ -25,12 +25,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { RetractingPanel } from "@/components/course/retracting-panel";
-import { StageRail } from "@/components/course/stage-rail";
+import { StageBar } from "@/components/course/stage-bar";
 import {
-  JOB_HEADLINE,
   JOB_PILL,
   jobPanelLabel,
-  jobWorking,
+  stageBack,
   type JobStage,
   type PlanProgress,
   type PlanStage,
@@ -144,6 +143,7 @@ export function CaddyGallery({
   onClose,
   onReopen,
   onStep,
+  progress,
 }: {
   open: boolean;
   /** A plan is in flight (or failed unseen). This is what makes the job
@@ -160,9 +160,13 @@ export function CaddyGallery({
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
   onReopen: () => void;
-  /** Step back an act. Absent on surfaces with no stage rail behind them, in
-   * which case the gallery's own rail is a display. */
+  /** Step back an act. Absent on surfaces with nowhere to send the host, in
+   * which case the bar's arrow is disabled rather than missing. */
   onStep?: (stage: PlanStage) => void;
+  /** How far the host has got — the parent's own, never a second opinion.
+   * The gallery used to hard-code `locked` and `aimed` true, so the same
+   * moment ticked differently on the two screens showing it. */
+  progress: PlanProgress;
 }) {
   // Above every early return, and above the overlay's own mount: a walk the
   // host has edited must survive closing the gallery to glance at the map.
@@ -235,6 +239,7 @@ export function CaddyGallery({
       onDress={onDress}
       onClose={onClose}
       onStep={onStep}
+      progress={progress}
     />,
     body,
   );
@@ -246,12 +251,14 @@ function GalleryBody({
   onDress,
   onClose,
   onStep,
+  progress,
 }: {
   state: GalleryState;
   dials: MenuDials;
   onDress: (choice: DressChoice) => void;
   onClose: () => void;
   onStep?: (stage: PlanStage) => void;
+  progress: PlanProgress;
 }) {
   const { resolvedTheme } = useTheme();
   const reducedMotion = usePrefersReducedMotion();
@@ -346,12 +353,9 @@ function GalleryBody({
    * gallery without an aim — so the only live question is whether the caddy
    * is mid-request, which is what closes the road back.
    */
-  const galleryProgress: PlanProgress = {
-    locked: true,
-    aimed: true,
-    planning: jobWorking(state.stage),
-    carded: state.stage === "done",
-  };
+  // Where a back tap lands. Null while the plan is on the wire — there is
+  // nothing to go back *to* until it lands or fails, and the fee is spent.
+  const back = stageBack(progress);
 
   // Down, the tab is the whole panel, so it says what the panel is holding —
   // and at the menu it names the walk on the map, which is the one fact worth
@@ -405,12 +409,45 @@ function GalleryBody({
       aria-label="The gallery — the caddy planning your round"
       data-testid="caddy-gallery"
     >
-      {/* Where the plan has got to, for a screen reader. The ticker's own
-          reasoning stays `aria-live="off"` — it is a window, not an
-          announcement, and reading it aloud would bury the stage. */}
+      {/*
+       * **The same bar the room has, in the same place.**
+       * It used to be a floating pill over the map — a different object with
+       * a border, a shadow, a headline pill under it, no instruction, no back
+       * button, twenty-four pixels off centre to clear the close button, and
+       * its own hard-coded ticks. Pressing *Dress this walk* therefore looked
+       * like losing the progress bar and gaining a different one.
+       *
+       * In flow as the first child of the same column, so the two screens are
+       * the same furniture at the same height. The close button rides in the
+       * bar's right-hand slot, which is what the room leaves empty — that is
+       * what keeps the title on the page's centre line in both.
+       */}
+      <StageBar
+        progress={progress}
+        job={state.stage}
+        holes={state.course?.holes.length ?? null}
+        onBack={
+          back && onStep ? () => onStep(back) : undefined
+        }
+        right={
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Leave the gallery — the plan carries on"
+            className="flex size-11 items-center justify-center rounded-full border border-border text-muted-foreground hover:text-foreground"
+            data-testid="gallery-close"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        }
+      />
+
+      {/* The narration, for a screen reader. The stage itself is announced by
+          the bar; this adds only what the caddy is doing right now. The
+          ticker's own reasoning stays `aria-live="off"` — it is a window, not
+          an announcement, and reading it aloud would bury the stage. */}
       <p className="sr-only" aria-live="polite" aria-atomic="true">
-        {JOB_HEADLINE[state.stage]}
-        {state.doing ? `. ${state.doing}` : ""}
+        {state.doing}
       </p>
 
       {/* The map is the screen. Everything else floats over it. `min-h-0` so
@@ -565,38 +602,6 @@ function GalleryBody({
             </Map>
           </APIProvider>
         )}
-
-        {/* The four acts, carried into the gallery.
-            The gallery is a fullscreen portal over the course room, so it
-            covered the room's own rail at exactly the moment a host most
-            wants it — pressing *Dress this walk* looked like losing the
-            progress bar. Same component, same rules, and stepping back closes
-            the gallery on the way. */}
-        {/*
-         * **`pointer-events-none` on the container, `auto` on the chrome.**
-         * This box is full-width and painted at z-20; the close button below
-         * is `z-auto`. So the container — not the rail, the whole invisible
-         * box around it — was swallowing every tap on the X, at every screen
-         * size. Leaving is the only exit at three of the five stages, so the
-         * documented "leaving never cancels" door was simply dead.
-         *
-         * `right-14` keeps the centred pill out from under the button as well,
-         * so the two never overlap even before hit-testing decides anything,
-         * and both clear the notch the room's own header already clears.
-         */}
-        <div className="pointer-events-none absolute top-[max(env(safe-area-inset-top),8px)] right-14 left-2 z-20 flex flex-col items-center gap-1">
-          <div className="pointer-events-auto flex max-w-full items-center rounded-full border border-border bg-card/95 px-1 shadow-sm">
-            <StageRail
-              progress={galleryProgress}
-              onGo={onStep ? (stage) => onStep(stage) : undefined}
-            />
-          </div>
-          <span className="max-w-full truncate rounded-full border border-border bg-card/95 px-3 py-1 text-[11px] font-semibold shadow-sm">
-            {state.stage === "done" && state.course
-              ? `On the table — ${state.course.name}`
-              : JOB_HEADLINE[state.stage]}
-          </span>
-        </div>
 
         {/* The pub the host tapped. Over the map rather than in a sheet: a
             dialog inside a fullscreen dialog is a stack nobody asked for,
@@ -780,17 +785,6 @@ function GalleryBody({
           </div>
         ) : null}
 
-        {/* The way out. Leaving never cancels: the plan carries on and the
-            card lands on the drafting table exactly as it always has. */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Leave the gallery — the plan carries on"
-          className="absolute top-[max(env(safe-area-inset-top),8px)] right-2 z-30 flex size-11 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm hover:text-foreground"
-          data-testid="gallery-close"
-        >
-          <X className="size-4" aria-hidden />
-        </button>
       </div>
 
       {/* Below the map: the act's own furniture, on the same tab the course

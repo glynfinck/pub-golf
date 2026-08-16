@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
 import { APIProvider } from "@vis.gl/react-google-maps";
 import { useTheme } from "next-themes";
 
@@ -14,11 +13,11 @@ import {
   DrawSurface,
   type DrawControls,
 } from "@/components/course/draw-walk-sheet";
-import { StageRail } from "@/components/course/stage-rail";
+import { StageBar } from "@/components/course/stage-bar";
 import { createCourse } from "@/lib/actions/courses";
 import { rememberCaddyCourse } from "@/lib/actions/caddy";
 import { draftFromPlan, draftOf } from "@/lib/course-draft";
-import { undoFor, type PlanStage } from "@/lib/caddy/stages";
+import { stageBack, undoFor, type PlanStage } from "@/lib/caddy/stages";
 import { RetractingPanel } from "@/components/course/retracting-panel";
 import { MAPS_BROWSER_KEY } from "@/lib/maps";
 import { strokeLengthKm, type StrokePoint } from "@/lib/caddy/stroke";
@@ -181,24 +180,20 @@ export function CourseRoom({
 
   return (
     <div className="fixed inset-0 z-20 flex flex-col bg-background">
-      <header className="flex items-center gap-2 px-4 pt-[max(env(safe-area-inset-top),10px)] pb-2">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Leave the course room"
-          className="flex size-11 items-center justify-center rounded-full border border-border text-muted-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-        </button>
-        <StageRail withHint progress={progress} onGo={goToStage} />
-        {/* **The counterweight.** The rail centres itself in the space it is
-            given, and that space started after a 44px back button — so the
-            four acts sat half a button right of the page's centre, which is
-            exactly far enough to look like a mistake rather than a margin. An
-            empty twin on the other side makes the rail's column the page's
-            column. Hidden from the reading order: it is furniture. */}
-        <div className="size-11 shrink-0" aria-hidden />
-      </header>
+      {/* One bar, and the gallery wears the same one. Back steps an act at a
+          time and only leaves the room from the first act — the arrow that
+          used to be the way out is now the way *back*, which is the thing a
+          host in the middle of four acts actually wants from it. */}
+      <StageBar
+        progress={progress}
+        job={job.stage}
+        holes={landed?.holes.length ?? null}
+        onBack={() => {
+          const back = stageBack(progress);
+          if (back) goToStage(back);
+          else router.back();
+        }}
+      />
 
       {/* The floor: the draw surface, edge to edge. Without a browser key
           there is no map and no apology — the panel's own fields still plan
@@ -333,6 +328,7 @@ export function CourseRoom({
         onClose={job.hide}
         onReopen={job.show}
         onStep={goToStage}
+        progress={progress}
       />
     </div>
   );

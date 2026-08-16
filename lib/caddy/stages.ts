@@ -18,33 +18,50 @@ export type PlanStage = "area" | "draw" | "tune" | "enrich";
 
 export const PLAN_STAGES: {
   id: PlanStage;
+  /** The one-word name, for anywhere four of them stand in a row. */
   label: string;
-  /** What this act is for, in the one line the rail has room for. */
+  /**
+   * The act as an instruction, which is what the top bar shows.
+   *
+   * Four one-word labels never fitted a 375px phone — that is what forced
+   * 10px type, a 44px lozenge around a five-letter word, and a bar that
+   * scrolled. Showing one act at a time buys the room to say it properly:
+   * "Draw the walk" rather than "DRAW".
+   */
+  title: string;
+  /** What this act is for, in the one line the bar has room for. */
   doing: string;
 }[] = [
   {
     id: "area",
     label: "Area",
+    title: "Pick the area",
     doing: "Move the map to where the night is, then hold it still.",
   },
   {
     id: "draw",
     label: "Draw",
+    title: "Draw the walk",
     doing: "Draw the walk. The bright ground is where the pubs are thick.",
   },
   {
     id: "tune",
     label: "Tune",
+    title: "Tune the brief",
     doing: "Holes, character, and when you tee off.",
   },
   {
     id: "enrich",
     label: "Enrich",
+    title: "The caddy’s turn",
     doing: "The caddy picks the pubs and dresses the card.",
   },
 ];
 
 const ORDER: PlanStage[] = PLAN_STAGES.map((stage) => stage.id);
+
+/** How many acts there are. The bar counts against this, never against 4. */
+export const STEP_COUNT = PLAN_STAGES.length;
 
 /**
  * What the caddy's job is doing, and the one question worth asking about it.
@@ -113,10 +130,20 @@ export const JOB_BADGE: Record<JobStage, string | null> = {
   failed: "The caddy lost the ball",
 };
 
+/**
+ * The caddy's own voice, and the top bar's title once it has the ball.
+ *
+ * Sized for that row, which is the one constraint it did not have when it was
+ * a pill floating over the map: at 18px serif between two 44px slots, a title
+ * longer than about thirty characters truncates on a 360px phone. `menu` was
+ * thirty-two — and the half that made it long ("or let the caddy") is a button
+ * six rows below it, so the row was spending its width restating a control the
+ * host can already see.
+ */
 export const JOB_HEADLINE: Record<JobStage, string> = {
   idle: "The caddy’s ready",
   opening: "The caddy’s walking the patch",
-  menu: "Pick the walk — or let the caddy",
+  menu: "Pick the walk",
   dressing: "The caddy’s dressing the card",
   done: "On the table",
   failed: "The caddy lost the ball",
@@ -213,4 +240,71 @@ export function undoFor(stage: PlanStage): StageUndo {
   if (stage === "area") return { release: true, clearStroke: true };
   if (stage === "draw") return { release: false, clearStroke: true };
   return { release: false, clearStroke: false };
+}
+
+/**
+ * Where a back tap lands — the nearest act behind that is open.
+ *
+ * Null means there is nothing to step back to, which happens in two places:
+ * the first act, and a plan already in flight. The caller decides what back
+ * means then (leave the room, or nothing), but the *arrow keeps its 44px
+ * either way* — a control that disappears is a control that moves everything
+ * beside it.
+ */
+export function stageBack(progress: PlanProgress): PlanStage | null {
+  const from = ORDER.indexOf(stageNow(progress));
+  for (let index = from - 1; index >= 0; index -= 1) {
+    if (stageOpen(ORDER[index], progress)) return ORDER[index];
+  }
+  return null;
+}
+
+/**
+ * The top bar, said once.
+ *
+ * The bar is the only thing on either screen that answers "where am I" — so
+ * it is one function, and both screens render whatever it returns. The room's
+ * header and the gallery's used to be two different objects with six
+ * differences between them: one floated, one didn't; one had the instruction,
+ * one had a headline pill; and the gallery hard-coded its own ticks, so the
+ * same moment read differently on the two surfaces.
+ */
+export interface StageHead {
+  /** The act, or what the caddy is doing if it has taken over. */
+  title: string;
+  /** The count beneath it — the only place a number appears. */
+  note: string;
+  /** How many of the acts are inked, 1-based and inclusive of the current. */
+  filled: number;
+  /** The last inked segment is a plan on the wire. */
+  working: boolean;
+  /** A card landed: the whole track goes to marker ink. */
+  carded: boolean;
+}
+
+export function stageHead(
+  progress: PlanProgress,
+  job: JobStage = "idle",
+  /** Holes on the card, once there is one — the count earns the row that
+   * "Step 4 of 4" would otherwise keep saying after there are no steps left. */
+  holes: number | null = null,
+): StageHead {
+  const step = ORDER.indexOf(stageNow(progress)) + 1;
+  const working = jobWorking(job);
+  return {
+    // The caddy speaks for itself once it has the ball; before that the act
+    // is the title. `JOB_HEADLINE` is that voice already — reusing it is what
+    // keeps this from becoming a fifth wording of the same five stages.
+    title: job === "idle" ? PLAN_STAGES[step - 1].title : JOB_HEADLINE[job],
+    note: progress.carded
+      ? holes != null
+        ? `${holes} holes · on the table`
+        : "On the table"
+      : working
+        ? `Step ${step} of ${STEP_COUNT} · working`
+        : `Step ${step} of ${STEP_COUNT}`,
+    filled: step,
+    working,
+    carded: progress.carded,
+  };
 }
