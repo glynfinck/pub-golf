@@ -1,6 +1,7 @@
 "use client";
 
 import { Putt } from "@/components/ui/putt";
+import { highlight } from "@/lib/caddy/thinking";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,6 +17,14 @@ import { cn } from "@/lib/utils";
  * pubs with a beer garden near Old Street" in an 18px serif and pushed the
  * panel out of shape. The heading is the one stable thing on the screen now
  * and everything that varies sits under it, in its own row, clamped.
+ *
+ * **The reasoning arrives as headlines, not as a firehose.** The third row
+ * used to hold the raw tail of the model's thinking, clamped to two lines and
+ * re-rendered on every token — so it slid upward continuously and was cut
+ * mid-word at both ends. It is unreadable by construction: the eye cannot
+ * finish a line that is moving. `highlight` waits for a sentence to close and
+ * hands back one complete thought, which then holds still until the next one
+ * finishes; `key` on the line makes each new thought fade in over the last.
  */
 export function CaddyTicker({
   headline,
@@ -34,6 +43,7 @@ export function CaddyTicker({
   fallback: string;
   className?: string;
 }) {
+  const thought = highlight(thinking);
   return (
     <div
       className={cn("flex flex-col items-center gap-3", className)}
@@ -51,12 +61,16 @@ export function CaddyTicker({
             {doing}
           </p>
         ) : null}
-        {thinking ? (
+        {thought ? (
           <p
+            // Keyed on the thought itself: React swaps the element when the
+            // caddy finishes a new one, so the fade plays per thought rather
+            // than once per mount — and never per token.
+            key={thought}
             aria-live="off"
-            className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+            className="animate-in fade-in duration-500 line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic motion-reduce:animate-none"
           >
-            {thinking}
+            {thought}
           </p>
         ) : doing ? null : (
           <p className="text-[11px] text-muted-foreground">{fallback}</p>

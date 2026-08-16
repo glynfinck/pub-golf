@@ -43,6 +43,7 @@ import {
   type PlanStage,
 } from "@/lib/caddy/stages";
 import { swapOptions, walkStats } from "@/lib/caddy/swap";
+import { highlight } from "@/lib/caddy/thinking";
 import { useMenuDials, type MenuDials } from "@/hooks/use-menu-dials";
 import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import { MAPS_BROWSER_KEY, mapId } from "@/lib/maps";
@@ -334,11 +335,25 @@ function GalleryBody({
     dials.setSwapping(false);
   }
 
-  // What the map draws depends on the act. While dressing, the caddy's own
-  // picks; at the menu, the selected walk; when done, the finished card.
+  /**
+   * What the map draws, act by act — and it is never nothing.
+   *
+   * Dressing used to draw the caddy's own picks, which the job **clears** the
+   * moment a dress begins. So pressing *Dress this walk* wiped the route off
+   * the map and left it blank until the model got round to naming its first
+   * pub — on the one screen whose whole job is showing you the walk, at the
+   * one moment you have just paid for it. The walk on screen stands until the
+   * caddy's own picks are a walk in their own right, and then they take over.
+   */
+  const confirmed = state.picked.filter((id) => byId[id] != null);
+  /** The caddy's last *finished* thought — see `lib/caddy/thinking.ts`. The
+   * raw tail slid upward on every token and could not be read. */
+  const thought = highlight(state.thinking);
   const walkIds =
     state.stage === "dressing"
-      ? state.picked.filter((id) => byId[id] != null)
+      ? confirmed.length > 1
+        ? confirmed
+        : stops
       : state.stage === "menu" && route
         ? stops
         : [];
@@ -517,10 +532,17 @@ function GalleryBody({
               {walkPath.length > 1 ? (
                 <DottedWalk path={walkPath} dark={dark} />
               ) : null}
-              {state.stage === "menu" && route
-                ? stops.map((id, index) => {
+              {(state.stage === "menu" && route) ||
+              state.stage === "dressing"
+                ? walkIds.map((id, index) => {
                     const node = byId[id];
                     if (!node) return null;
+                    // Named by the caddy already, or still to come. The pins
+                    // light in walking order as the picks arrive, which is the
+                    // dressing happening on the ground rather than only in a
+                    // line of text.
+                    const named =
+                      state.stage !== "dressing" || confirmed.includes(id);
                     return (
                       <AdvancedMarker
                         key={`stop-${id}`}
@@ -528,6 +550,7 @@ function GalleryBody({
                         anchorPoint={AdvancedMarkerAnchorPoint.CENTER}
                         title={`Hole ${index + 1} — ${node.name}`}
                         onClick={() => {
+                          if (state.stage === "dressing") return;
                           setPinned(null);
                           dials.setSwapping(false);
                           dials.setTapped(index);
@@ -540,10 +563,11 @@ function GalleryBody({
                         <div className="flex size-11 items-center justify-center">
                           <div
                             className={cn(
-                              "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md",
-                              index === stops.length - 1
+                              "flex size-6 items-center justify-center rounded-full border-2 border-background font-serif text-[11px] font-bold text-background shadow-md transition-opacity duration-500",
+                              index === walkIds.length - 1
                                 ? "bg-marker"
                                 : "bg-fairway",
+                              named ? "opacity-100" : "opacity-40",
                             )}
                           >
                             {index + 1}
@@ -987,12 +1011,15 @@ function GalleryBody({
                     : "Dressing the card"}
                 </p>
               )}
-              {state.thinking ? (
+              {thought ? (
                 <p
+                  // Keyed on the thought, so each finished one fades in over
+                  // the last rather than the paragraph sliding per token.
+                  key={thought}
                   aria-live="off"
-                  className="animate-in fade-in line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic"
+                  className="animate-in fade-in duration-500 line-clamp-2 max-w-full text-center text-[11px] text-muted-foreground/80 italic motion-reduce:animate-none"
                 >
-                  {state.thinking}
+                  {thought}
                 </p>
               ) : (
                 <p className="text-[11px] text-muted-foreground">
