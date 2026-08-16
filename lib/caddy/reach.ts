@@ -1,4 +1,5 @@
 import { haversineKm } from "@/lib/geo";
+import type { PatchPreview } from "@/lib/caddy/preflight";
 
 /**
  * How far the round reaches, from two areas the host has typed.
@@ -17,6 +18,10 @@ export interface Reach {
   km: number;
   /** The walk is long enough that the host should hear about it first. */
   warn: boolean;
+  /** What the lean search saw in the first area — the pre-flight's pins,
+   * count and echo (`lib/caddy/preflight.ts`). Attached by the brief screen;
+   * absent on a reach built from geometry alone. */
+  preview?: PatchPreview | null;
 }
 
 /**

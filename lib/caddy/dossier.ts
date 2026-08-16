@@ -78,6 +78,13 @@ export interface PubSource {
   editorial: string | null;
   /** Review snippets. Untrusted text — fenced on the way into the prompt. */
   reviews: string[];
+  /** Opening windows (`lib/caddy/hours.ts`), or null where Google says
+   * nothing. Optional, because dossiers written before hours existed read
+   * back without the key — and undefined means unknown, exactly as null
+   * does. Deliberately not printed in `dossierLine`: the router refuses a
+   * shut pub before the model ever weighs one, and the dossier's bytes are
+   * a cache key. */
+  hours?: import("@/lib/caddy/hours").OpenWindow[] | null;
 }
 
 /** A pub as the caddy sees it: the source, wearing an opaque id. */

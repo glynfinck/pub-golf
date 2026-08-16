@@ -1,6 +1,13 @@
 import "server-only";
 
-import { EMPTY_FACTS, type PubFacts, type PubSource } from "@/lib/caddy/dossier";
+import {
+  EMPTY_FACTS,
+  type PubFacts,
+  type PubSource,
+} from "@/lib/caddy/dossier";
+import { windowsOf } from "@/lib/caddy/hours";
+import { interleaveRings } from "@/lib/caddy/rings";
+import { strokeCircles, type StrokePoint } from "@/lib/caddy/stroke";
 import { corridorSamples, haversineKm } from "@/lib/geo";
 import { isDrinkingPlace, PLACES_FIELD_MASK } from "@/lib/pub-search";
 
@@ -42,6 +49,9 @@ export const CADDY_FIELD_MASK = [
   "places.goodForGroups",
   "places.editorialSummary",
   "places.reviews",
+  // A route is a schedule: the router refuses to build a walk that reaches
+  // a pub after it shuts, and these are what "shuts" means.
+  "places.regularOpeningHours",
 ].join(",");
 
 const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
@@ -82,6 +92,12 @@ interface GooglePlace {
   goodForGroups?: boolean;
   editorialSummary?: { text?: string };
   reviews?: { text?: { text?: string } }[];
+  regularOpeningHours?: {
+    periods?: {
+      open?: { day?: number; hour?: number; minute?: number };
+      close?: { day?: number; hour?: number; minute?: number };
+    }[];
+  };
 }
 
 /** Google's price level enum, as the 0–4 the dossier prints. */
@@ -97,7 +113,8 @@ function priceOf(level: string | undefined): number | null {
 }
 
 function factsOf(place: GooglePlace): PubFacts {
-  const read = (value: boolean | undefined) => (value === undefined ? null : value);
+  const read = (value: boolean | undefined) =>
+    value === undefined ? null : value;
   return {
     outdoorSeating: read(place.outdoorSeating),
     allowsDogs: read(place.allowsDogs),
@@ -136,6 +153,7 @@ function toGathered(place: GooglePlace): GatheredPub | null {
     reviews: (place.reviews ?? [])
       .map((review) => review.text?.text ?? "")
       .filter(Boolean),
+    hours: windowsOf(place.regularOpeningHours?.periods),
   };
 }
 
@@ -201,6 +219,9 @@ export interface GatherInput {
   /** Coordinates of pinned tees, where the host dropped them. */
   start: { lat: number; lng: number } | null;
   finish: { lat: number; lng: number } | null;
+  /** The walk, drawn. When present the circles sample down this line and
+   * the named areas keep only their words. */
+  stroke: StrokePoint[] | null;
   /** The player's IP city, so an unaimed search follows the phone and not the
    * data centre — the same rule `buildPlacesSearch` already keeps. */
   ipBias: { lat: number; lng: number } | null;
@@ -250,7 +271,10 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
    * So this leg locates the area and steps back. Filling the patch is Nearby's
    * job, under Nearby's restriction.
    */
-  const locate = async (query: string, bias: { lat: number; lng: number } | null) => {
+  const locate = async (
+    query: string,
+    bias: { lat: number; lng: number } | null,
+  ) => {
     if (!query.trim()) return null;
     const places = await call(
       key,
@@ -284,6 +308,25 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       lng: placed.reduce((sum, p) => sum + p.lng, 0) / placed.length,
     };
   };
+
+  // A drawn walk is the most concrete brief there is: its circles are the
+  // gather, its ends are the aim, and no locating search is needed at all.
+  if (input.stroke && input.stroke.length >= 2) {
+    const centres = strokeCircles(input.stroke, CORRIDOR_RADIUS_M / 1000);
+    const rings = await Promise.all(
+      centres.map((centre) =>
+        call(key, NEARBY_URL, nearbyBody(centre, CORRIDOR_RADIUS_M), language),
+      ),
+    );
+    return {
+      // Rank-interleaved, not circle-concatenated: the candidate cap is a
+      // budget, and flattening in circle order spent all of it on the first
+      // few circles — the opening quarter of the host's own line.
+      pubs: dedupe(interleaveRings(rings)),
+      from: input.stroke[0],
+      to: input.stroke[input.stroke.length - 1],
+    };
+  }
 
   // Pinned tees win where the host dropped them; otherwise the two named areas
   // are located and become the ends of the walk themselves.
@@ -331,14 +374,21 @@ export async function gatherPubs(input: GatherInput): Promise<Gathered> {
       ),
     ),
   );
+  // Same rule as the stroke's: a corridor is a line too, and concatenating
+  // its samples put the far end of the walk outside the cap.
+  return { pubs: dedupe(interleaveRings(rings)), from, to };
+}
+
+/** Places to pubs, first appearance wins. The interleave has already decided
+ * the order; this only drops what is not a pub and what is already in. */
+function dedupe(places: GooglePlace[]): GatheredPub[] {
   const seen = new Set<string>();
   const gathered: GatheredPub[] = [];
-  for (const place of rings.flat()) {
+  for (const place of places) {
     const pub = toGathered(place);
     if (!pub || seen.has(pub.googlePlaceId)) continue;
     seen.add(pub.googlePlaceId);
     gathered.push(pub);
   }
-  return { pubs: gathered, from, to };
+  return gathered;
 }
-

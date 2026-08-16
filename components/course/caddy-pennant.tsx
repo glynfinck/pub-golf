@@ -49,10 +49,7 @@ export function CaddyPennant({ className }: { className?: string }) {
         {/* The pennant, deliberately oversized against the stick — the same
             trade `lib/mark.ts` makes at 16px, where the flag is the only part
             still legible and a to-scale one disappears. */}
-        <path
-          d="M4.4 2.2h6.9L9.2 5.1l2.1 2.9H4.4z"
-          fill="currentColor"
-        />
+        <path d="M4.4 2.2h6.9L9.2 5.1l2.1 2.9H4.4z" fill="currentColor" />
       </svg>
     </span>
   );

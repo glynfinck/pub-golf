@@ -25,6 +25,7 @@ import { MembersOptions } from "@/components/round/members-options";
 import { HouseMark } from "@/components/ui/house-mark";
 import { Stepper } from "@/components/ui/stepper";
 import { Switch } from "@/components/ui/switch";
+import { TeeTimeNudger } from "@/components/ui/tee-time";
 import { useAction } from "@/hooks/use-action";
 import { createRound } from "@/lib/actions/rounds";
 import { templateForHoleCount } from "@/lib/course-templates";
@@ -35,11 +36,7 @@ import {
   parkDraft,
   type NewRoundDraft,
 } from "@/lib/new-round-draft";
-import {
-  MULLIGAN_STROKES,
-  MAX_MULLIGANS,
-  PENALTY_PRESETS,
-} from "@/lib/rules";
+import { MULLIGAN_STROKES, MAX_MULLIGANS, PENALTY_PRESETS } from "@/lib/rules";
 import { clockTime12, formatDuration, roundMinutes } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -49,16 +46,6 @@ const FORMATS = [
   { id: "match", label: "Match" },
   { id: "scramble", label: "Scramble" },
 ] as const;
-
-/** The tee-time grain. Nobody tees off at 7:23 — quarter hours are enough. */
-const TEE_MINUTE_STEP = 15;
-/** The last tee the picker can set: 11:45 PM. */
-const LAST_TEE_MINUTES = 24 * 60 - TEE_MINUTE_STEP;
-
-const teeNudgeDown =
-  "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md px-1 font-mono text-[11px] font-bold text-muted-foreground hover:bg-secondary disabled:opacity-30";
-const teeNudgeUp =
-  "flex h-9 min-w-9 shrink-0 items-center justify-center rounded-md px-1 font-mono text-[11px] font-bold text-fairway hover:bg-secondary disabled:opacity-30";
 
 /** The price ladder a tap walks a penalty through. */
 const PRICE_LADDER = [1, 2, 3, 5, 10, 20];
@@ -113,7 +100,9 @@ export function NewRoundForm({
     handicaps: false,
     ...draft?.toggles,
   });
-  const [minutesPerPub, setMinutesPerPub] = useState(draft?.minutesPerPub ?? 20);
+  const [minutesPerPub, setMinutesPerPub] = useState(
+    draft?.minutesPerPub ?? 20,
+  );
   /** null = unscheduled: the host tees off when the group is stood there. */
   const [teeDate, setTeeDate] = useState<Date | null>(
     draft?.teeDate ? new Date(draft.teeDate) : null,
@@ -178,12 +167,6 @@ export function NewRoundForm({
 
   function setToggle(key: string, checked: boolean) {
     setToggles((state) => ({ ...state, [key]: checked }));
-  }
-
-  function nudgeTee(delta: number) {
-    setTeeMinutes((current) =>
-      Math.min(LAST_TEE_MINUTES, Math.max(0, current + delta)),
-    );
   }
 
   /** Park the table before the trip to Stripe's page, so the host comes back
@@ -464,120 +447,86 @@ export function NewRoundForm({
           </AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4 pb-4">
             <div className="flex flex-col divide-y divide-border">
-            <div className={settingRow}>
-              <span className="text-sm font-semibold">
-                First tee
-                <span className="block text-[10px] font-normal text-muted-foreground">
-                  Printed on the lobby and the invite · locks nothing
+              <div className={settingRow}>
+                <span className="text-sm font-semibold">
+                  First tee
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    Printed on the lobby and the invite · locks nothing
+                  </span>
                 </span>
-              </span>
-              <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="compact" className="gap-1.5">
-                    <CalendarDays size={14} aria-hidden />
-                    {teeDate
-                      ? `${shortDate(teeDate)} · ${clockTime12(teeMinutes)}`
-                      : "Unscheduled · tap to set"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-auto p-3">
-                  <Calendar
-                    mode="single"
-                    selected={teeDate ?? undefined}
-                    onSelect={(day) => setTeeDate(day ?? null)}
-                  />
-                  {/* One readout, four nudges: any time of day on the
-                      quarter hour, hour jumps still two buttons away. */}
-                  <div className="mt-2 flex min-h-12 items-center gap-0.5 rounded-lg border border-input bg-card px-1.5">
-                    <button
-                      type="button"
-                      aria-label="Tee off an hour earlier"
-                      disabled={teeMinutes === 0}
-                      onClick={() => nudgeTee(-60)}
-                      className={teeNudgeDown}
-                    >
-                      −1h
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Tee off a quarter hour earlier"
-                      disabled={teeMinutes === 0}
-                      onClick={() => nudgeTee(-TEE_MINUTE_STEP)}
-                      className={teeNudgeDown}
-                    >
-                      −15
-                    </button>
-                    <span className="tabular min-w-0 flex-1 text-center font-mono text-sm font-bold">
-                      {clockTime12(teeMinutes)}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Tee off a quarter hour later"
-                      disabled={teeMinutes === LAST_TEE_MINUTES}
-                      onClick={() => nudgeTee(TEE_MINUTE_STEP)}
-                      className={teeNudgeUp}
-                    >
-                      +15
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Tee off an hour later"
-                      disabled={teeMinutes === LAST_TEE_MINUTES}
-                      onClick={() => nudgeTee(60)}
-                      className={teeNudgeUp}
-                    >
-                      +1h
-                    </button>
-                  </div>
-                  <div className="mt-2 flex justify-between gap-2">
+                <Popover open={scheduleOpen} onOpenChange={setScheduleOpen}>
+                  <PopoverTrigger asChild>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="compact"
-                      onClick={() => {
-                        setTeeDate(null);
-                        setScheduleOpen(false);
-                      }}
+                      className="gap-1.5"
                     >
-                      Clear
+                      <CalendarDays size={14} aria-hidden />
+                      {teeDate
+                        ? `${shortDate(teeDate)} · ${clockTime12(teeMinutes)}`
+                        : "Unscheduled · tap to set"}
                     </Button>
-                    <Button
-                      size="compact"
-                      disabled={!teeDate}
-                      onClick={() => setScheduleOpen(false)}
-                    >
-                      Done
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-auto p-3">
+                    <Calendar
+                      mode="single"
+                      selected={teeDate ?? undefined}
+                      onSelect={(day) => setTeeDate(day ?? null)}
+                    />
+                    <TeeTimeNudger
+                      className="mt-2"
+                      value={teeMinutes}
+                      onChange={setTeeMinutes}
+                    />
+                    <div className="mt-2 flex justify-between gap-2">
+                      <Button
+                        variant="ghost"
+                        size="compact"
+                        onClick={() => {
+                          setTeeDate(null);
+                          setScheduleOpen(false);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                      <Button
+                        size="compact"
+                        disabled={!teeDate}
+                        onClick={() => setScheduleOpen(false)}
+                      >
+                        Done
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            <div className={settingRow}>
-              <span className="text-sm font-semibold">Time at each pub</span>
-              <Stepper
-                className="w-36 shrink-0"
-                value={minutesPerPub}
-                onChange={setMinutesPerPub}
-                min={5}
-                max={60}
-                step={5}
-                label="minutes at each pub"
-                format={(value) => `${value} min`}
-              />
-            </div>
+              <div className={settingRow}>
+                <span className="text-sm font-semibold">Time at each pub</span>
+                <Stepper
+                  className="w-36 shrink-0"
+                  value={minutesPerPub}
+                  onChange={setMinutesPerPub}
+                  min={5}
+                  max={60}
+                  step={5}
+                  label="minutes at each pub"
+                  format={(value) => `${value} min`}
+                />
+              </div>
 
-            <label className={settingRow}>
-              <span className="text-sm font-semibold">
-                Shot clock on the card
-                <span className="block text-[10px] font-normal text-muted-foreground">
-                  Counts down {minutesPerPub} minutes on every phone
+              <label className={settingRow}>
+                <span className="text-sm font-semibold">
+                  Shot clock on the card
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    Counts down {minutesPerPub} minutes on every phone
+                  </span>
                 </span>
-              </span>
-              <Switch
-                checked={toggles.timer}
-                onCheckedChange={(checked) => setToggle("timer", checked)}
-              />
-            </label>
+                <Switch
+                  checked={toggles.timer}
+                  onCheckedChange={(checked) => setToggle("timer", checked)}
+                />
+              </label>
             </div>
 
             {/* The 19th hole, computed: pubs at pace plus Google's walks. */}
@@ -592,8 +541,7 @@ export function NewRoundForm({
                 </span>
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground">
-                {holeCount} pubs × {minutesPerPub} min + {walkTotal} min
-                walking
+                {holeCount} pubs × {minutesPerPub} min + {walkTotal} min walking
                 {teeDate ? ` from a ${clockTime12(teeMinutes)} tee` : ""}
               </p>
             </div>

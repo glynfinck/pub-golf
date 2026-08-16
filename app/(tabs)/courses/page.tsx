@@ -29,12 +29,15 @@ export default async function CoursesPage() {
         <CoursesList courses={courses} />
       ) : (
         <Card className="gap-0 px-4 text-sm text-muted-foreground">
-          Nothing of your own in the book yet. Plot a course — or copy a
-          curated card below and tweak it.
+          Nothing of your own in the book yet. Plot a course — or copy a curated
+          card below and tweak it.
         </Card>
       )}
 
-      <Link href="/courses/new" className={cn(buttonVariants(), "w-full")}>
+      {/* One tap, then the choice. Which room you plan in is a decision
+          worth a screen of its own (app/courses/start) — offering both here
+          made the paid one read as a variant of the free one. */}
+      <Link href="/courses/start" className={cn(buttonVariants(), "w-full")}>
         Plot a new course
       </Link>
 
@@ -68,9 +71,9 @@ export default async function CoursesPage() {
       </section>
 
       <p className="text-center text-[11px] text-muted-foreground">
-        Courses are reusable — every round takes its own snapshot. Tap a
-        course to retouch it; the menu beside it files copies and tears out.
-        Pubs come from Google; you bring the par and the drinks.
+        Courses are reusable — every round takes its own snapshot. Tap a course
+        to retouch it; the menu beside it files copies and tears out. Pubs come
+        from Google; you bring the par and the drinks.
       </p>
     </Screen>
   );

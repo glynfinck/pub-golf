@@ -6,13 +6,18 @@ import { Copy, Map as MapIcon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
-import { CaddyGroup } from "@/components/course/caddy-group";
-import type { Reach } from "@/lib/caddy/reach";
+import { CaddyAsk } from "@/components/course/caddy-ask";
+import { CaddyGallery } from "@/components/course/caddy-gallery";
+import { useCaddyJob } from "@/hooks/use-caddy-job";
+import { JOB_BADGE } from "@/lib/caddy/stages";
 import {
   RoutePreview,
   type LivePatch,
 } from "@/components/course/route-preview";
-import { HoleEditor, type MoveDirection } from "@/components/course/hole-editor";
+import {
+  HoleEditor,
+  type MoveDirection,
+} from "@/components/course/hole-editor";
 import { PlaceSearch, type FoundPub } from "@/components/course/place-search";
 import { PubMapSheet } from "@/components/course/pub-map-sheet";
 import { Button } from "@/components/ui/button";
@@ -31,7 +36,9 @@ import {
 import {
   appendHole,
   describeDressing,
+  draftFromPlan,
   draftHole,
+  draftOf,
   insertHole,
   moveHole,
   removeHole,
@@ -69,32 +76,6 @@ type PickTarget =
   | { mode: "replace"; id: string };
 
 /**
- * A caddy's card, as rows for the table.
- *
- * Shared by the card that has just arrived and the card being picked back up
- * after a refresh, which have to produce byte-identical holes — a resumed
- * table that dressed a hole even slightly differently would file that
- * difference over the host's course the next time anything saved.
- */
-function draftFromPlan(planned: PlannedCourse): DraftHole[] {
-  return planned.holes.map((hole) => ({
-    id: crypto.randomUUID(),
-    venue_id: hole.venue_id,
-    venue_name: hole.venue_name,
-    address: hole.address,
-    rating: hole.rating,
-    lat: hole.lat,
-    lng: hole.lng,
-    drink: hole.drink,
-    par: hole.par,
-    hazard: hole.hazard,
-    hazard_note: hole.hazard_note,
-    penalties: hole.penalties,
-    walk_minutes_to_next: null,
-  }));
-}
-
-/**
  * The drafting table, shared by /courses/new and /courses/[id]: search
  * Google for the pubs, dress each hole with par and drink, save. The map
  * sheet shows the patch when the browser has a Maps key; the Maps app
@@ -114,7 +95,6 @@ export function CourseBuilder({
   resumed = null,
   reopen = null,
   filedCourseId = null,
-  passExpiresAt = null,
   allowance,
 }: {
   course?: CourseBuilderCourse;
@@ -138,11 +118,6 @@ export function CourseBuilder({
    * session is on top.
    */
   filedCourseId?: string | null;
-  /** When the green fee's day runs out, for the confirmation before a fresh
-   * card. **Null is the ordinary case**: the day starts at tee-off, so a host
-   * planning on Wednesday for Saturday has a fee with no clock on it at all.
-   * `freshCourseNotice` says which of those two a host is looking at. */
-  passExpiresAt?: string | null;
   /** Whether the host's fee still has a course to give, and where the last one
    * went. The caddy shows one of two faces depending on it. */
   allowance?: CaddyAllowance;
@@ -175,12 +150,28 @@ export function CourseBuilder({
    * still there and still says which conversation — this only ever narrows it.
    */
   const [caddyTurn, setCaddyTurn] = useState<string | null>(null);
+
+  /**
+   * The job, held by the table rather than by the group inside it — the same
+   * ownership the Course Room now keeps, and for the same reason: whoever can
+   * unmount the group must not be the one whose job it is.
+   */
+  const caddyJob = useCaddyJob({
+    session: caddySession,
+    onSession: setCaddySession,
+    onTurn: setCaddyTurn,
+    onCourse: takeCaddyCourse,
+    onPatch: (pins) => setPatch({ pins, picked: [] }),
+    onPicked: (ids) =>
+      setPatch((current) =>
+        current ? { ...current, picked: [...current.picked, ...ids] } : current,
+      ),
+  });
   // Counts the cards the caddy has handed over, which is all the preview needs
   // to know about to decide whether to walk the route or simply show it.
   const [drawKey, setDrawKey] = useState(0);
   /** How far the round reaches, resolved from the brief's two areas. Held
    * here rather than in the group so the map and the form read one value. */
-  const [reach, setReach] = useState<Reach | null>(null);
   /**
    * The patch the caddy is working, while it is still working it.
    *
@@ -398,25 +389,6 @@ export function CourseBuilder({
 
   /** The card, in the shape the actions want. Two writers now — the save
    * button and the caddy filing its own card — so it is built in one place. */
-  function draftOf(rows: DraftHole[], courseName: string) {
-    return {
-      name: courseName,
-      holes: rows.map((hole) => ({
-        venue_id: hole.venue_id,
-        venue_name: hole.venue_name,
-        drink: hole.drink,
-        par: hole.par,
-        hazard: hole.hazard,
-        hazard_note: hole.hazard_note,
-        // A rule with no offence on it is a half-typed thought, not a rule.
-        penalties: hole.penalties.filter((rule) => rule.reason.trim() !== ""),
-        lat: hole.lat,
-        lng: hole.lng,
-        walk_minutes_to_next: hole.walk_minutes_to_next,
-      })),
-    };
-  }
-
   function save() {
     run(async () => {
       const draft = draftOf(holes, name);
@@ -495,7 +467,8 @@ export function CourseBuilder({
       : pick?.mode === "replace"
         ? {
             label: "Choose",
-            aria: (venue: string) => `Choose ${venue} for hole ${pickIndex + 1}`,
+            aria: (venue: string) =>
+              `Choose ${venue} for hole ${pickIndex + 1}`,
           }
         : { label: "Add", aria: undefined };
 
@@ -526,13 +499,15 @@ export function CourseBuilder({
           between. */}
       <RoutePreview
         stops={holes}
+        // While the caddy plans, its own patch owns the map. Before that, the
+        // pre-flight's pins do: the free lean search's results, faint on the
+        // ring, so the host sees what the caddy is about to look at before
+        // anything is spent.
         live={patch}
+        chip={null}
+        badge={JOB_BADGE[caddyJob.stage]}
         drawKey={drawKey}
-        ring={
-          reach
-            ? { lat: reach.centre.lat, lng: reach.centre.lng, km: reach.km, warn: reach.warn }
-            : null
-        }
+        ring={null}
         onOpen={
           MAPS_BROWSER_KEY
             ? () => {
@@ -554,35 +529,59 @@ export function CourseBuilder({
         />
       </div>
 
-      {/* The caddy: one group above the free search, and nothing at all when
-          it is off duty. Everything below it is the builder as it has always
-          been — the fee buys the planning, never the table.
-          Whether it is on duty is the page's call, not this table's. It used
-          to be `caddy && !editing`, which quietly meant a saved course could
-          never be tweaked — the door you came in by is not a fact about the
-          caddy. `/courses/[id]` passes `caddy` only when the conversation that
-          wrote that course is still open. */}
-      {caddy ? (
-        <CaddyGroup
+      {/* The caddy **continues** here; it is never offered here.
+          Planning has its own room now (app/plan), so the table's job is the
+          conversation that already exists: a card handed over from the room,
+          or one resumed after a refresh, keeps its ask box and its tweaks.
+          With no session there is nothing to continue, and a host who came
+          to plot by hand meets a table with no caddy on it at all — which is
+          what "plot it by hand" has to mean to be worth choosing.
+          Whether the caddy is on duty is still the page's call, not this
+          table's: `/courses/[id]` passes `caddy` only when the conversation
+          that wrote that course is still open. */}
+      {caddy && (caddySession || reopen) ? (
+        <CaddyAsk
+          job={caddyJob}
           hasPass={hasPass}
           onCourse={takeCaddyCourse}
-          onSession={setCaddySession}
-          onTurn={setCaddyTurn}
-          session={caddySession}
           reopen={reopen}
-          passExpiresAt={passExpiresAt}
-          filed={savedId !== null}
           allowance={allowance}
-          onPatch={(pins) => setPatch({ pins, picked: [] })}
-          onReach={setReach}
-          reach={reach}
-          onPicked={(ids) =>
-            setPatch((current) =>
-              current ? { ...current, picked: [...current.picked, ...ids] } : current,
-            )
-          }
         />
       ) : null}
+
+      {/* The gallery belongs to the table, not to the group inside it, and it
+          renders unconditionally: it draws nothing unless the job is open or
+          still has something to say, and gating it on the group's own
+          condition is how it came to be torn down mid-performance. */}
+      <CaddyGallery
+        open={caddyJob.open}
+        active={caddyJob.active}
+        nonce={caddyJob.nonce}
+        holes={9}
+        stretch={5}
+        state={{
+          stage: caddyJob.stage,
+          menu: caddyJob.menu,
+          picked: caddyJob.picked,
+          doing: caddyJob.doing,
+          thinking: caddyJob.thinking,
+          course: caddyJob.course,
+          error: caddyJob.error,
+        }}
+        onDress={(choice) => void caddyJob.dress({ ...choice })}
+        onClose={caddyJob.hide}
+        onReopen={caddyJob.show}
+        // The table has no Area, Draw or Tune — its brief is a form, and the
+        // only act it plays is the caddy's. Saying so here is what let the
+        // gallery stop guessing: it used to hard-code exactly this and then
+        // apply it to the Course Room too, where all four acts are real.
+        progress={{
+          locked: true,
+          aimed: true,
+          planning: caddyJob.working,
+          carded: caddyJob.course != null,
+        }}
+      />
 
       <PlaceSearch
         onAdd={addPub}
@@ -639,7 +638,9 @@ export function CourseBuilder({
               <button
                 type="button"
                 aria-label={`Insert a pub before hole ${index + 1}`}
-                onClick={() => setPicking({ mode: "insert", beforeId: hole.id })}
+                onClick={() =>
+                  setPicking({ mode: "insert", beforeId: hole.id })
+                }
                 className="flex min-h-10 items-center gap-2 text-muted-foreground hover:text-fairway focus-visible:text-fairway"
               >
                 <span
@@ -686,7 +687,9 @@ export function CourseBuilder({
                   clearUndo();
                   setChanged([]);
                   setHoles((current) =>
-                    current.map((h, i) => (i === index ? { ...h, ...patch } : h)),
+                    current.map((h, i) =>
+                      i === index ? { ...h, ...patch } : h,
+                    ),
                   );
                 }}
                 onRemove={() => remove(index)}
@@ -833,8 +836,8 @@ export function CourseBuilder({
             />
           )}
           <p className="text-center text-[11px] text-muted-foreground">
-            The copy is the course as last saved. Tearing it out never touches
-            a round already played on it.
+            The copy is the course as last saved. Tearing it out never touches a
+            round already played on it.
           </p>
         </div>
       ) : null}

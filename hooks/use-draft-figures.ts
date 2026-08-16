@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { actionSettled, actionStarted } from "@/lib/action-window";
 import { type Figures, withoutSettled } from "@/lib/figures";
@@ -32,14 +32,24 @@ export function useDraftFigures({
   write: (key: string, value: number) => Promise<{ error?: string } | void>;
   delayMs?: number;
 }) {
-  const [draft, setDraft] = useState<Figures>({});
+  const [held, setDraft] = useState<Figures>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Dissolve entries the server has caught up with.
-  useEffect(() => {
-    const next = withoutSettled(draft, server);
-    if (next !== draft) setDraft(next);
-  }, [draft, server]);
+  /**
+   * Dissolve entries the server has caught up with.
+   *
+   * React's own "adjusting state when props change" pattern — compared during
+   * render, re-rendered immediately without committing. It was an effect, which
+   * is a setState in an effect body: the house forbids it and the linter never
+   * saw it, because `hooks/` sat outside the lint script. Pruning here also
+   * costs a render fewer per echo, on the hook the play screen leans on hardest.
+   *
+   * The pruning has to reach the *state*, not just the read: an entry the
+   * server has matched and this hook still remembers would resurface the moment
+   * another phone moved that figure again.
+   */
+  const draft = withoutSettled(held, server);
+  if (draft !== held) setDraft(draft);
 
   function set(key: string, value: number) {
     setDraft((current) => ({ ...current, [key]: value }));

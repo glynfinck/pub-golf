@@ -5,15 +5,13 @@ import { toast } from "sonner";
 import { actionSettled, actionStarted } from "@/lib/action-window";
 import { BUSY_DELAY_MS, busyHoldRemaining } from "@/lib/time";
 
-export type ActionOutcome =
-  | {
-      error?: string;
-      /** A second line under the toast: the technical reason, where one is
-       * safe to show. Actions leave it unset in production — see
-       * `lib/caddy/readiness.ts`, which is what decides that for the caddy. */
-      detail?: string;
-    }
-  | void;
+export type ActionOutcome = {
+  error?: string;
+  /** A second line under the toast: the technical reason, where one is
+   * safe to show. Actions leave it unset in production — see
+   * `lib/caddy/readiness.ts`, which is what decides that for the caddy. */
+  detail?: string;
+} | void;
 
 /**
  * The house waiting contract around a server action.
@@ -32,8 +30,12 @@ export type ActionOutcome =
 export function useAction() {
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
-  const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const shownAt = useRef<number | null>(null);
 
   useEffect(

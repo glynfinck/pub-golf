@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { caddyEnabled } from "@/lib/caddy/credentials";
-import { openPlan, runTurn } from "@/lib/caddy/run";
+import { chosenWalkFrom } from "@/lib/caddy/menu";
+import { continuePlan, openPlan, runTurn } from "@/lib/caddy/run";
 import { encodeEvent, type CaddyEvent } from "@/lib/caddy/stream";
 
 /**
@@ -64,13 +65,37 @@ export async function POST(request: Request) {
   // Everything before the model, and none of it costs anything. A refusal
   // here is an ordinary JSON error rather than a stream that opens only to
   // apologise — there is nothing to narrate yet.
-  const opened = await openPlan(brief);
+  //
+  // Two ways in, one path to a charge. A body carrying a `sessionId` is the
+  // dress step of an open/menu plan: the session already holds the gathered
+  // patch, so it is picked back up rather than gathered again — no second
+  // Places spend, no second session row. Anything else is the plan as it has
+  // always been.
+  const body = (typeof brief === "object" && brief !== null
+    ? (brief as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+  const opened =
+    typeof body.sessionId === "string"
+      ? await continuePlan(body.sessionId, {
+          holes: body.holes,
+          stretch: body.stretch,
+        })
+      : await openPlan(brief);
   if ("error" in opened) {
     return NextResponse.json(
       { error: opened.error, offer: opened.offer },
       { status: 200 },
     );
   }
+
+  // The host's pick off the menu, re-derived against the server's own
+  // dossier. Anything that does not resolve — unknown id, repeat, wrong
+  // length, tampering — degrades to the caddy's own choice, never an error.
+  const chosenRoute = chosenWalkFrom(
+    body.route,
+    opened.candidates,
+    opened.brief.holes,
+  );
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -107,6 +132,7 @@ export async function POST(request: Request) {
         ...opened,
         history: [],
         kind: "plan",
+        chosenRoute,
         narrate: ({ thinking, doing, picked }) => {
           if (doing) say({ type: "doing", text: doing });
           if (thinking) say({ type: "thinking", text: thinking });

@@ -57,11 +57,18 @@ export default async function ResultsPage({
 
   const { round, holes, players, scores, penalties, me } = bundle;
   const ruleset = readRuleset(round.ruleset);
-  const standings = computeStandings(holes, players, scores, penalties, me?.id, {
-    filedThrough: holes.length,
-    softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
-    mulliganStrokes: ruleset.mulliganStrokes,
-  });
+  const standings = computeStandings(
+    holes,
+    players,
+    scores,
+    penalties,
+    me?.id,
+    {
+      filedThrough: holes.length,
+      softSubstituteScoresPar: ruleset.softSubstituteScoresPar,
+      mulliganStrokes: ruleset.mulliganStrokes,
+    },
+  );
   // Handicaps only earn their column when somebody is actually carrying one.
   const handicapped = standings.some((row) => row.handicap > 0);
   const superlatives = computeSuperlatives(holes, players, scores, penalties);
@@ -89,8 +96,7 @@ export default async function ResultsPage({
         >
           {winner.name} takes the round
           <span className="block font-sans text-[11px] not-italic text-muted-foreground">
-            {winner.gross} gross ·{" "}
-            {handicapped ? `${winner.net} net · ` : ""}
+            {winner.gross} gross · {handicapped ? `${winner.net} net · ` : ""}
             {formatToPar(winner.netToPar)} ·{" "}
             {winner.penaltyStrokes > 0
               ? `${winner.penaltyStrokes} penalty strokes`
@@ -142,9 +148,9 @@ export default async function ResultsPage({
 
       {last && standings.length > 1 ? (
         <Card className="gap-0 border-l-4 border-l-hazard px-4 py-3 text-xs text-muted-foreground">
-          <b className="text-foreground">The forfeit:</b> {last.name} wears
-          the golf outfit to work on Monday. Photographic evidence required
-          by house rule.
+          <b className="text-foreground">The forfeit:</b> {last.name} wears the
+          golf outfit to work on Monday. Photographic evidence required by house
+          rule.
         </Card>
       ) : null}
 

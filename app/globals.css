@@ -66,10 +66,10 @@
   --hazard: #a63d2c;
   --good: #3d7a4a;
   --radius: 0.625rem;
-  --font-sans: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue",
-    sans-serif;
-  --font-serif: "Palatino Linotype", Palatino, "Iowan Old Style", Georgia,
-    serif;
+  --font-sans:
+    ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-serif:
+    "Palatino Linotype", Palatino, "Iowan Old Style", Georgia, serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -325,5 +325,117 @@
   }
   .putt-green-pennant {
     animation: none;
+  }
+}
+
+/* The start screen's caddy card: the walk drawing itself in, once, on
+   arrival — the same language the route preview speaks, at rest on a card.
+   Once rather than looped: you land on this screen fresh every time, so the
+   draw is the greeting, and a loop would only turn it into wallpaper. */
+@keyframes start-walk-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes start-stop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* The last stop keeps a slow ring, the way the pill's dot does — the one
+   thing on the card that says the night is still ahead of you. */
+@keyframes start-glow {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+.start-walk-mask {
+  transform-origin: left center;
+  animation: start-walk-in 1.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.start-stop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: start-stop-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+.start-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: start-glow 2.6s ease-in-out 2.1s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-walk-mask,
+  .start-stop,
+  .start-glow {
+    animation: none;
+  }
+  .start-walk-mask {
+    transform: scaleX(1);
+  }
+  .start-stop {
+    opacity: 1;
+  }
+}
+
+/* The plan checklist's live step.
+
+   A ring rather than a fade. The dot is 14px on an 11px row, sitting between
+   neighbours already dimmed to 35% — an opacity pulse at that scale is read
+   as flicker, and it fights the dimming that is doing the same job better.
+   The ring leaves the dot alone and spends its movement in the space around
+   it, which nothing else is using.
+
+   Drawn *over* the dot rather than behind it, and there is a trap in that.
+   `z-index: -1` looks like the obvious way to tuck a ring under its parent —
+   but the dot is `position: relative` with `z-index: auto`, which makes no
+   stacking context, so a negative-z child paints behind the nearest ancestor
+   that does. That is the card, and the ring vanished under its background
+   entirely. Over the top is also simply correct here: the ring is the dot's
+   own colour, so it is invisible where the two overlap, and a live step has
+   no tick inside to obscure — only a finished one does.
+
+   Slower than a spinner on purpose: this marks *which* step is live, and the
+   figure on the right is what says the step is moving. */
+@keyframes step-live-ring {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.3);
+  }
+}
+
+.step-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--marker);
+  animation: step-live-ring 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-live::after {
+    animation: none;
+    opacity: 0;
   }
 }

@@ -47,7 +47,6 @@ export default async function EditCoursePage({
       hasPass={stand.hasPass}
       resumed={resumed}
       reopen={reopen}
-      passExpiresAt={stand.passExpiresAt}
       allowance={stand.allowance}
     />
   );

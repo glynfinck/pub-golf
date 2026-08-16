@@ -5,6 +5,7 @@ import {
   type CandidateDossier,
 } from "@/lib/caddy/dossier";
 import {
+  measuresMeaning,
   particularLabel,
   stretchMeaning,
   vibeMeaning,
@@ -16,6 +17,7 @@ import {
   targetKmFor,
 } from "@/lib/caddy/route-graph";
 import { drinkForHazard, HAZARDS, type HazardId } from "@/lib/hazards";
+import { swapDeadStops } from "@/lib/caddy/repair";
 import { forwardOrder, orderWalk } from "@/lib/caddy/route";
 import {
   GOOD_COURSE,
@@ -74,6 +76,11 @@ export interface PlannedHole {
 export interface PlannedCourse {
   name: string;
   holes: PlannedHole[];
+  /** Street-verified walking minutes per leg (length holes − 1), null where
+   * the streets could not answer. Attached after the card is parsed
+   * (`lib/caddy/verify-legs.ts`) — a garnish on a correct card, never a
+   * gate in front of one. */
+  legMinutes?: (number | null)[];
 }
 
 export type PlanResult =
@@ -123,7 +130,9 @@ export const CADDY_SYSTEM = [
   "same words on the rules sheet during the round:",
   ...HAZARDS.flatMap((hazard) => [
     `  ${hazard.id} — ${hazard.meaning}`,
-    ...(hazard.drinkRule ? [`    On this hazard the drink must be ${hazard.drinkRule}.`] : []),
+    ...(hazard.drinkRule
+      ? [`    On this hazard the drink must be ${hazard.drinkRule}.`]
+      : []),
   ]),
   "",
   "RULES",
@@ -199,7 +208,7 @@ export const CADDY_SYSTEM_TOOLS = [
   "",
   "NAME THE COURSE before you hand it over. `name_course`, once, and make it",
   "this round's rather than any round's — the patch, the shape of the night,",
-  "a joke the group would get. \"The caddy's round\" is what a card is called",
+  'a joke the group would get. "The caddy\'s round" is what a card is called',
   "when nobody named it, and a host can tell.",
   "",
   "Stop when the card holds up: every hole dressed, a name on it, the walk",
@@ -236,7 +245,24 @@ export function briefBlock(
       `Spacing: ${stretchMeaning(brief.stretch)} Aim for about ${brief.stretch} minutes' walk between consecutive pubs, and do not pick three that sit on the same corner — the walk between rounds is what paces the night.`,
     );
   }
-  const start = brief.startVenueId ? byVenue.get(brief.startVenueId) : undefined;
+  // Measures, where the host said. Silence here is the caddy's own choice, so
+  // an empty list writes no line at all rather than a line saying "anything" —
+  // which reads as an instruction to vary for its own sake.
+  if (brief.measures.length) {
+    lines.push(
+      `Drinks: keep to ${measuresMeaning(brief.measures)}. A hazard's own drink rule still outranks this, and never write a drink the pub does not pour.`,
+    );
+  }
+  if (brief.teeOffDay != null) {
+    const hh = String(Math.floor(brief.teeOffMinutes / 60)).padStart(2, "0");
+    const mm = String(brief.teeOffMinutes % 60).padStart(2, "0");
+    lines.push(
+      `Tee-off at ${hh}:${mm}. The walks in <routes> already avoid pubs that would be shut when the group arrives.`,
+    );
+  }
+  const start = brief.startVenueId
+    ? byVenue.get(brief.startVenueId)
+    : undefined;
   const finish = brief.finishVenueId
     ? byVenue.get(brief.finishVenueId)
     : undefined;
@@ -253,6 +279,25 @@ export function briefBlock(
     `Name the course something a group would say out loud, about ${brief.where || "the area"}.`,
   );
   return lines.join("\n");
+}
+
+/**
+ * The walk the host chose off the menu, as the caddy reads it.
+ *
+ * The chosen walk outranks the caddy's own choosing — that is the whole of
+ * what the menu means — but it does not outrank the brief: a stop that cannot
+ * meet what was asked may be swapped, said so, and nothing else may move.
+ * The ids are already validated against the dossier (`chosenWalkFrom`), so
+ * everything here is a real candidate by construction.
+ */
+export function chosenWalkBlock(stops: string[]): string {
+  return [
+    "THE HOST CHOSE THE WALK",
+    `Set this walk first, in this order: ${stops.join(" > ")}.`,
+    "The host picked it off the menu, so it is the card. Swap a stop only if",
+    "it cannot meet the brief — use <swaps>, keep the order, and say why in",
+    "that hole's fitNote. Do not re-plan the route.",
+  ].join("\n");
 }
 
 /** A follow-up turn: the host asking for a change to the card in hand. */
@@ -291,9 +336,16 @@ export function patchBlock(
     targetKm: targetKmFor(brief.stretch, brief.holes, brief.reachKm),
     aimFrom: brief.aimFrom,
     aimTo: brief.aimTo,
+    teeOff:
+      brief.teeOffDay != null
+        ? { day: brief.teeOffDay, minutes: brief.teeOffMinutes }
+        : null,
+    stroke: brief.stroke,
   });
   const routes = routesBlock(graph);
-  return routes ? `${dossierBlock(candidates)}\n\n${routes}` : dossierBlock(candidates);
+  return routes
+    ? `${dossierBlock(candidates)}\n\n${routes}`
+    : dossierBlock(candidates);
 }
 
 /**
@@ -311,7 +363,9 @@ export function patchBlock(
  * the same validator and a second copy is a second chance to spell it the way
  * that fails.
  */
-export function nullableEnum(values: readonly string[]): Record<string, unknown> {
+export function nullableEnum(
+  values: readonly string[],
+): Record<string, unknown> {
   return { enum: [...values, null] };
 }
 
@@ -369,7 +423,12 @@ export function planSchema(
  * bounds a whole-card answer is clamped to. Two paths now reach a hole — the
  * structured card and a `set_hole` call — and the moment they disagree, one of
  * them is a way to write something `createCourse` will refuse. */
-export function clampInt(value: unknown, min: number, max: number, fallback: number) {
+export function clampInt(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
@@ -414,7 +473,16 @@ export function parsePlan(
   // after the host's own patch rather than after the app.
   brief: Pick<
     CaddyBrief,
-    "holes" | "startVenueId" | "finishVenueId" | "stretch" | "where" | "reachKm" | "aimFrom" | "aimTo"
+    | "holes"
+    | "startVenueId"
+    | "finishVenueId"
+    | "stretch"
+    | "where"
+    | "reachKm"
+    | "aimFrom"
+    | "aimTo"
+    | "teeOffDay"
+    | "teeOffMinutes"
   >,
 ): PlanResult {
   if (typeof raw !== "object" || raw === null) {
@@ -453,7 +521,9 @@ export function parsePlan(
       ),
       par: clampInt(row.par, 1, 20, 4),
       hazard,
-      hazard_note: hazard ? clampText(row.hazardNote, HAZARD_NOTE_MAX) || null : null,
+      hazard_note: hazard
+        ? clampText(row.hazardNote, HAZARD_NOTE_MAX) || null
+        : null,
       penalties: readRules(row.localRules),
       fit_note: clampText(row.fitNote, FIT_NOTE_MAX) || null,
     });
@@ -506,15 +576,29 @@ export function parsePlan(
     last: Boolean(brief.finishVenueId),
   });
 
+  // The last rung arithmetic can climb: a stop that would be shut when the
+  // group reached it swaps for its nearest open neighbour, in place, with
+  // its dressing kept and its fit note saying why (`lib/caddy/repair.ts`).
+  // Pins never move, and a stop with nothing open in reach stands — the
+  // contract will say so, which beats a silent march across the patch.
+  const settled = swapDeadStops(
+    walked,
+    candidates,
+    { startVenueId: brief.startVenueId, finishVenueId: brief.finishVenueId },
+    brief.teeOffDay != null
+      ? { day: brief.teeOffDay, minutes: brief.teeOffMinutes }
+      : null,
+  ).holes;
+
   // Kept as an assertion on our own output rather than on the model's. If this
   // ever fires the router has a bug, and refusing the card is the right way to
   // find out — a group sent to the wrong first pub is worse than no card.
-  if (brief.startVenueId && walked[0].venue_id !== brief.startVenueId) {
+  if (brief.startVenueId && settled[0].venue_id !== brief.startVenueId) {
     return { ok: false, reason: "pin-moved" };
   }
   if (
     brief.finishVenueId &&
-    walked[walked.length - 1].venue_id !== brief.finishVenueId
+    settled[settled.length - 1].venue_id !== brief.finishVenueId
   ) {
     return { ok: false, reason: "pin-moved" };
   }
@@ -524,9 +608,21 @@ export function parsePlan(
   // now. Water is the one hazard that cannot finish a round: its relief is
   // deferred until the hole is filed, and the last hole is the one nobody
   // leaves (`lib/hazards.ts`).
-  const final = walked[walked.length - 1];
-  if (final.hazard && !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole) {
-    walked[walked.length - 1] = { ...final, hazard: null, hazard_note: null };
+  const final = settled[settled.length - 1];
+  if (
+    final.hazard &&
+    !HAZARDS.find((h) => h.id === final.hazard)?.onFinalHole
+  ) {
+    settled[settled.length - 1] = { ...final, hazard: null, hazard_note: null };
+  }
+
+  // The first hole is the router's decision for the same reason, so the
+  // no-hazard-on-the-first rule is applied here too. It was prompt-only, and
+  // a prompt-only rule is a hope: the club wants the group settled in before
+  // anything is taken away from them.
+  const opener = settled[0];
+  if (opener.hazard) {
+    settled[0] = { ...opener, hazard: null, hazard_note: null };
   }
 
   // The caddy is asked to name the course and usually does. When it does not,
@@ -540,7 +636,7 @@ export function parsePlan(
   const name =
     clampText(payload.courseName, COURSE_NAME_MAX) ||
     (patch ? `${patch}, ${holes.length} holes` : "The caddy's round");
-  return { ok: true, course: { name, holes: walked } };
+  return { ok: true, course: { name, holes: settled } };
 }
 
 /** The line a refusal earns on screen. None of these spend anything. */

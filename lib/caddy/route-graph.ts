@@ -1,5 +1,21 @@
 import type { CandidateDossier, PubFacts } from "@/lib/caddy/dossier";
-import { haversineKm } from "@/lib/geo";
+import {
+  DWELL_MINUTES,
+  LAST_ORDERS_MARGIN,
+  openAt,
+  openFor,
+  type OpenWindow,
+  type TeeOff,
+} from "@/lib/caddy/hours";
+import { walkCrossings, type Barrier } from "@/lib/caddy/barriers";
+import {
+  alongStrokeKm,
+  distanceToStrokeKm,
+  strokeFit,
+  strokeLengthKm,
+  type StrokePoint,
+} from "@/lib/caddy/stroke";
+import { haversineKm, WALK_MINUTES_PER_KM } from "@/lib/geo";
 
 /**
  * The map, worked out before the caddy is asked.
@@ -41,6 +57,8 @@ export interface RouteNode {
   reviewCount: number | null;
   priceLevel: number | null;
   facts: PubFacts;
+  /** Opening windows, or null/undefined for unknown — which never punishes. */
+  hours?: OpenWindow[] | null;
   /** Chains repeat their name, so the normalised name is a good enough
    * "kind of place" for variety scoring without needing a taxonomy. */
   kind: string;
@@ -78,6 +96,10 @@ export interface PlannedRoute {
   /** Why this one is in the set, for the model to read: "shortest",
    * "kindest legs", "most variety". */
   character: string;
+  /** The walk's name, two or three words — what the menu puts on a card. */
+  name: string;
+  /** Why you would take it, in one line under the name. */
+  why: string;
 }
 
 export interface RouteGraph {
@@ -118,6 +140,26 @@ export interface RouteRequest {
    */
   aimFrom?: { lat: number; lng: number } | null;
   aimTo?: { lat: number; lng: number } | null;
+  /**
+   * When the round tees off, or null for "no day named". A route is a
+   * schedule: with a tee-off on the brief the exact DP refuses to build a
+   * state that arrives after a pub shuts, every constructed walk is checked
+   * whole (`walkFeasible`), and the menu prefers walks that stay open —
+   * falling back to the unchecked set only when nothing passes, because a
+   * late-night patch with thin hours data must still get a card.
+   */
+  teeOff?: TeeOff | null;
+  /**
+   * The walk, drawn. `principalAxis` guesses the direction of travel from
+   * the candidate cloud; a stroke states it. When present, "how far along"
+   * becomes arc-length along this line — the forward walks stay monotone
+   * along a *curve*, and "forward" means the way the stroke was drawn.
+   */
+  stroke?: StrokePoint[] | null;
+  /** Geography a straight line cannot see: rivers and rail with their
+   * bridges (`lib/caddy/barriers.ts`). Walks that cross one anywhere but a
+   * gate are offered only when nothing better exists. */
+  barriers?: Barrier[] | null;
 }
 
 const DEFAULT_NEIGHBOURS = 5;
@@ -194,7 +236,10 @@ export function kindOf(name: string): string {
 export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
   const nodes: RouteNode[] = [];
   for (const candidate of candidates) {
-    if (typeof candidate.lat !== "number" || typeof candidate.lng !== "number") {
+    if (
+      typeof candidate.lat !== "number" ||
+      typeof candidate.lng !== "number"
+    ) {
       continue;
     }
     nodes.push({
@@ -205,6 +250,7 @@ export function routableNodes(candidates: CandidateDossier[]): RouteNode[] {
       reviewCount: candidate.reviewCount,
       priceLevel: candidate.priceLevel,
       facts: candidate.facts,
+      hours: candidate.hours ?? null,
       kind: kindOf(candidate.name),
     });
   }
@@ -218,7 +264,12 @@ function distances(nodes: RouteNode[]): Map<string, Map<string, number>> {
   for (const from of nodes) table.set(from.id, new Map());
   for (let i = 0; i < nodes.length; i += 1) {
     for (let j = i + 1; j < nodes.length; j += 1) {
-      const km = haversineKm(nodes[i].lat, nodes[i].lng, nodes[j].lat, nodes[j].lng);
+      const km = haversineKm(
+        nodes[i].lat,
+        nodes[i].lng,
+        nodes[j].lat,
+        nodes[j].lng,
+      );
       table.get(nodes[i].id)!.set(nodes[j].id, km);
       table.get(nodes[j].id)!.set(nodes[i].id, km);
     }
@@ -230,7 +281,8 @@ const gap = (
   table: Map<string, Map<string, number>>,
   from: string,
   to: string,
-): number => (from === to ? 0 : (table.get(from)?.get(to) ?? Number.POSITIVE_INFINITY));
+): number =>
+  from === to ? 0 : (table.get(from)?.get(to) ?? Number.POSITIVE_INFINITY);
 
 /** The k nearest others to each node. */
 export function nearestNeighbours(
@@ -249,9 +301,13 @@ export function nearestNeighbours(
   return out;
 }
 
-function walk(table: Map<string, Map<string, number>>, stops: string[]): number {
+function walk(
+  table: Map<string, Map<string, number>>,
+  stops: string[],
+): number {
   let km = 0;
-  for (let i = 1; i < stops.length; i += 1) km += gap(table, stops[i - 1], stops[i]);
+  for (let i = 1; i < stops.length; i += 1)
+    km += gap(table, stops[i - 1], stops[i]);
   return km;
 }
 
@@ -296,11 +352,47 @@ export function principalAxis(
 }
 
 /** How far along the direction of travel a pub sits, in kilometres. */
-function along(node: RouteNode, axis: { x: number; y: number }, origin: RouteNode): number {
+function along(
+  node: RouteNode,
+  axis: { x: number; y: number },
+  origin: RouteNode,
+): number {
   const scale = Math.cos(origin.lat * (Math.PI / 180));
   const dx = (node.lng - origin.lng) * scale * 111.32;
   const dy = (node.lat - origin.lat) * 111.32;
   return dx * axis.x + dy * axis.y;
+}
+
+/**
+ * Does this walk stay ahead of closing time?
+ *
+ * The schedule is arithmetic: arrival at stop *i* is tee-off, plus the walk
+ * so far, plus a dwell for every hole already drunk. Every stop must be open
+ * at its arrival, and the finish — the hole nobody leaves — must have at
+ * least the last-orders margin left in it. Unknown hours pass everything:
+ * thin data is not a shut door.
+ */
+export function walkFeasible(
+  table: Map<string, Map<string, number>>,
+  byId: Map<string, RouteNode>,
+  stops: string[],
+  teeOff: TeeOff | null | undefined,
+): boolean {
+  if (!teeOff) return true;
+  let walked = 0;
+  for (let i = 0; i < stops.length; i += 1) {
+    if (i > 0)
+      walked += gap(table, stops[i - 1], stops[i]) * WALK_MINUTES_PER_KM;
+    const node = byId.get(stops[i]);
+    if (!node) return false;
+    const arrival = teeOff.minutes + Math.round(walked) + i * DWELL_MINUTES;
+    if (!openAt(node.hours, teeOff.day, arrival)) return false;
+    if (i === stops.length - 1) {
+      const left = openFor(node.hours, teeOff.day, arrival);
+      if (left !== null && left < LAST_ORDERS_MARGIN) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -335,19 +427,28 @@ function bestForwardWalk(
   startId: string | null,
   finishId: string | null,
   drift: number,
+  teeOff: TeeOff | null = null,
+  alongFn: ((node: RouteNode) => number) | null = null,
 ): string[] | null {
   const origin = (startId ? byId.get(startId) : null) ?? nodes[0];
   if (!origin) return null;
-  const axis = principalAxis(nodes, origin, finishId ? byId.get(finishId) : null);
+  const axis = principalAxis(
+    nodes,
+    origin,
+    finishId ? byId.get(finishId) : null,
+  );
+  const position = alongFn ?? ((node: RouteNode) => along(node, axis, origin));
 
   const order = nodes
-    .map((node) => ({ node, t: along(node, axis, origin) }))
+    .map((node) => ({ node, t: position(node) }))
     .sort((a, b) => a.t - b.t);
   const n = order.length;
   if (n < holes) return null;
 
   const startAt = startId ? order.findIndex((e) => e.node.id === startId) : -1;
-  const finishAt = finishId ? order.findIndex((e) => e.node.id === finishId) : -1;
+  const finishAt = finishId
+    ? order.findIndex((e) => e.node.id === finishId)
+    : -1;
   // A pinned tee that is not at the end of the line it was asked to travel
   // cannot be honoured by a forward-only walk. Rather than quietly bending the
   // rule, this hands back nothing and another seed answers.
@@ -355,17 +456,40 @@ function bestForwardWalk(
   if (finishId && (finishAt === -1 || finishAt <= startAt)) return null;
 
   const step = (i: number, j: number) =>
-    gap(table, order[i].node.id, order[j].node.id) - drift * (order[j].t - order[i].t);
+    gap(table, order[i].node.id, order[j].node.id) -
+    drift * (order[j].t - order[i].t);
 
   // best[k][j] — the cheapest k-stop walk ending at j. `from` remembers the
-  // step that got there so the route can be read back out.
+  // step that got there so the route can be read back out. `mins` rides
+  // alongside: the walking minutes of the best-cost path into each state,
+  // which is what makes closing time a *pruning* rule rather than a filter —
+  // a state the group would reach after the towels go up is never built.
+  // (The cheapest path is treated as the earliest; with drift in the cost
+  // that is an approximation, and `walkFeasible` still checks the whole.)
   const INF = Number.POSITIVE_INFINITY;
-  const best: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(INF));
-  const from: number[][] = Array.from({ length: holes + 1 }, () => new Array(n).fill(-1));
+  const best: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(INF),
+  );
+  const from: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(-1),
+  );
+  const mins: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array(n).fill(0),
+  );
+
+  const shutAt = (j: number, k: number, walked: number) =>
+    teeOff
+      ? !openAt(
+          order[j].node.hours,
+          teeOff.day,
+          teeOff.minutes + Math.round(walked) + (k - 1) * DWELL_MINUTES,
+        )
+      : false;
 
   for (let j = 0; j < n; j += 1) {
-    // Where a walk may begin: the pinned tee, or anywhere if none was named.
-    if (startAt === -1 || j === startAt) best[1][j] = 0;
+    // Where a walk may begin: the pinned tee, or anywhere if none was named
+    // — and never somewhere that is shut at tee-off.
+    if ((startAt === -1 || j === startAt) && !shutAt(j, 1, 0)) best[1][j] = 0;
   }
   for (let k = 2; k <= holes; k += 1) {
     for (let j = 0; j < n; j += 1) {
@@ -374,8 +498,14 @@ function bestForwardWalk(
         if (best[k - 1][i] === INF) continue;
         const cost = best[k - 1][i] + step(i, j);
         if (cost < best[k][j]) {
+          const walked =
+            mins[k - 1][i] +
+            gap(table, order[i].node.id, order[j].node.id) *
+              WALK_MINUTES_PER_KM;
+          if (shutAt(j, k, walked)) continue;
           best[k][j] = cost;
           from[k][j] = i;
+          mins[k][j] = walked;
         }
       }
     }
@@ -384,7 +514,8 @@ function bestForwardWalk(
   let end = finishAt;
   if (end === -1) {
     end = 0;
-    for (let j = 1; j < n; j += 1) if (best[holes][j] < best[holes][end]) end = j;
+    for (let j = 1; j < n; j += 1)
+      if (best[holes][j] < best[holes][end]) end = j;
   }
   if (best[holes][end] === INF) return null;
 
@@ -421,6 +552,7 @@ function snakeWalk(
   startId: string,
   finishId: string | null,
   drift: number,
+  alongFn: ((node: RouteNode) => number) | null = null,
 ): string[] | null {
   const origin = byId.get(startId);
   if (!origin) return null;
@@ -429,7 +561,8 @@ function snakeWalk(
     origin,
     finishId ? byId.get(finishId) : null,
   );
-  const at = new Map(nodes.map((node) => [node.id, along(node, axis, origin)]));
+  const position = alongFn ?? ((node: RouteNode) => along(node, axis, origin));
+  const at = new Map(nodes.map((node) => [node.id, position(node)]));
 
   const used = new Set<string>([startId]);
   if (finishId) used.add(finishId);
@@ -467,6 +600,206 @@ function snakeWalk(
   if (finishId) stops.push(finishId);
   return stops.length === holes ? stops : null;
 }
+
+/**
+ * How much of a drawn line a walk has to span before it counts as following
+ * it, and how much doubling back it may do while it does.
+ *
+ * Read as shares of the stroke's own arc length, so they mean the same thing
+ * on a two-kilometre line and a ten-kilometre one. Seven tenths is deliberately
+ * short of the whole: the ends of a stroke are where a finger starts and stops
+ * rather than where the pubs are, and demanding the last two hundred metres
+ * would refuse good walks over the host's own overshoot.
+ */
+export const STROKE_COVERAGE_FLOOR = 0.7;
+export const STROKE_BACKTRACK_SHARE = 0.35;
+
+/** Whether a walk answers the line it was drawn on. */
+export function followsStroke(
+  points: StrokePoint[],
+  stroke: StrokePoint[],
+): boolean {
+  const length = strokeLengthKm(stroke);
+  if (length <= 0) return true;
+  const fit = strokeFit(points, stroke);
+  return (
+    fit.coverage >= STROKE_COVERAGE_FLOOR &&
+    fit.backtrackKm <= length * STROKE_BACKTRACK_SHARE
+  );
+}
+
+/**
+ * Walking a drawn line, stated as the optimisation it actually is.
+ *
+ * The first attempt built coverage by hand: cut the line into bands, take the
+ * best pub in each. That works and it is a heuristic — it is greedy inside a
+ * band and blind across bands, so a pub two metres outside band three's edge
+ * loses to a worse one just inside it. The real question has a clean form:
+ *
+ *   **choose `holes` candidates, ordered by arc position along the stroke,
+ *   minimising the total cost of the stops, subject to consecutive stops
+ *   being at least `minGapKm` further down the line.**
+ *
+ * That is a shortest path in a DAG. The arc position gives a topological order
+ * for free — every edge runs strictly forwards down the line — so the states
+ * are (candidate, stops used) and each is settled exactly once. This *is* A\*
+ * on that graph with a perfect ordering and no re-expansions; adding a
+ * priority queue and an admissible heuristic to it would visit the same states
+ * and pay for the heap. At `MAX_CANDIDATES` of 40 and at most 18 holes the
+ * whole table is about 29,000 relaxations, which is microseconds. A\* earns
+ * its keep when the state space is too big to settle — if the candidate cap
+ * ever grows by an order of magnitude, or if a non-separable cost (arrival
+ * time, variety across the whole set) has to ride in the state, this is the
+ * function to reach for it in.
+ *
+ * The spacing constraint is what makes coverage fall out rather than be
+ * imposed: `holes` stops each at least `minGapKm` apart span at least
+ * `(holes − 1) × minGapKm` of the line, so asking for `length / holes` asks
+ * for a walk that covers all but a hole's worth of what was drawn.
+ *
+ * Exact, pure and deterministic — ties break on id, because the router sits
+ * behind a cache key and an optimum that wobbles between runs is a card that
+ * wobbles between runs.
+ */
+export function bestStrokeWalk(
+  nodes: RouteNode[],
+  holes: number,
+  stroke: StrokePoint[],
+  options: {
+    /** The least distance along the line between consecutive stops. */
+    minGapKm: number;
+    /** What one stop costs. Distance from the drawn line, by default. */
+    cost?: (node: RouteNode, offLineKm: number) => number;
+    /** What the gap between two consecutive stops costs, on top of the stops
+     * themselves — how "evenly spaced down the line" is asked for. */
+    gapCost?: (gapKm: number) => number;
+    startId?: string | null;
+    finishId?: string | null;
+  },
+): string[] | null {
+  if (holes < 2 || nodes.length < holes || stroke.length < 2) return null;
+  const cost = options.cost ?? ((_node, offLineKm) => offLineKm);
+  const gapCost = options.gapCost;
+
+  const placed = nodes
+    .map((node) => {
+      const point = { lat: node.lat, lng: node.lng };
+      return {
+        node,
+        along: alongStrokeKm(point, stroke),
+        off: distanceToStrokeKm(point, stroke),
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.along - b.along ||
+        (a.node.id < b.node.id ? -1 : a.node.id > b.node.id ? 1 : 0),
+    );
+
+  const count = placed.length;
+  const startAt = options.startId
+    ? placed.findIndex((entry) => entry.node.id === options.startId)
+    : -1;
+  const finishAt = options.finishId
+    ? placed.findIndex((entry) => entry.node.id === options.finishId)
+    : -1;
+  // A pin nobody gathered is not a pin. Refused rather than ignored: the other
+  // constructions answer this patch, and quietly dropping a host's own choice
+  // is the failure that would never be noticed.
+  if (options.startId && startAt < 0) return null;
+  if (options.finishId && finishAt < 0) return null;
+
+  const INF = Number.POSITIVE_INFINITY;
+  /** `best[j][i]` — the cheapest j-stop walk whose last stop is candidate i. */
+  const best: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array<number>(count).fill(INF),
+  );
+  const cameFrom: number[][] = Array.from({ length: holes + 1 }, () =>
+    new Array<number>(count).fill(-1),
+  );
+
+  for (let i = 0; i < count; i += 1) {
+    // With a pinned tee there is one legal opening; without one, any candidate
+    // may open the walk and the DP decides which.
+    if (startAt >= 0 && i !== startAt) continue;
+    best[1][i] = cost(placed[i].node, placed[i].off);
+  }
+
+  for (let stops = 2; stops <= holes; stops += 1) {
+    for (let i = 0; i < count; i += 1) {
+      const here = cost(placed[i].node, placed[i].off);
+      for (let previous = 0; previous < i; previous += 1) {
+        if (best[stops - 1][previous] === INF) continue;
+        const gap = placed[i].along - placed[previous].along;
+        if (gap < options.minGapKm - 1e-9) continue;
+        const total =
+          best[stops - 1][previous] + here + (gapCost ? gapCost(gap) : 0);
+        if (total < best[stops][i] - 1e-12) {
+          best[stops][i] = total;
+          cameFrom[stops][i] = previous;
+        }
+      }
+    }
+  }
+
+  let end = -1;
+  let cheapest = INF;
+  for (let i = 0; i < count; i += 1) {
+    if (finishAt >= 0 && i !== finishAt) continue;
+    if (best[holes][i] < cheapest) {
+      cheapest = best[holes][i];
+      end = i;
+    }
+  }
+  if (end < 0) return null;
+
+  const stops: string[] = [];
+  let at = end;
+  for (let taken = holes; taken >= 1; taken -= 1) {
+    stops.push(placed[at].node.id);
+    at = cameFrom[taken][at];
+    if (at < 0 && taken > 1) return null;
+  }
+  return stops.reverse();
+}
+
+/**
+ * The spacings tried, most insistent first.
+ *
+ * `length / holes` asks for a walk that spans all but a hole's worth of the
+ * drawn line. Where the pubs cannot answer that — a genuine dead stretch, a
+ * park, a river — the ask relaxes rather than the router refusing, which is
+ * the same honest fallback the hours and barrier filters keep.
+ */
+function strokeGaps(lengthKm: number, holes: number): number[] {
+  const even = lengthKm / Math.max(holes, 1);
+  return [even, even * 0.6, even * 0.3, 0];
+}
+
+/**
+ * The readings of "walk me down this line" worth offering, each an exact
+ * optimum of its own objective rather than a perturbation of one answer.
+ *
+ * Trace it (nothing but distance from the line), pace it (that plus a penalty
+ * on uneven gaps), or take the best of what stands beside it (that plus a
+ * quarter-kilometre's detour bought per star).
+ */
+const STROKE_OBJECTIVES: {
+  key: string;
+  cost?: (node: RouteNode, offLineKm: number) => number;
+  gapCost?: (idealKm: number) => (gapKm: number) => number;
+}[] = [
+  { key: "hug" },
+  {
+    key: "even",
+    gapCost: (idealKm) => (gapKm) =>
+      (gapKm - idealKm) ** 2 / Math.max(idealKm, 0.05),
+  },
+  {
+    key: "rated",
+    cost: (node, offLineKm) => offLineKm + (5 - (node.rating ?? 3.5)) * 0.25,
+  },
+];
 
 /**
  * A greedy tour: from the start, always step to the nearest unused stop, and
@@ -576,7 +909,8 @@ function swapIn(
       for (const id of pool) {
         if (inRoute.has(id)) continue;
         const after =
-          gap(table, route[i - 1] ?? id, id) + gap(table, id, route[i + 1] ?? id);
+          gap(table, route[i - 1] ?? id, id) +
+          gap(table, id, route[i + 1] ?? id);
         if (after < before - 1e-9) {
           inRoute.delete(route[i]);
           inRoute.add(id);
@@ -590,6 +924,76 @@ function swapIn(
   return route;
 }
 
+/** A leg midpoint further than this from every candidate is crossing dead
+ * ground. Half a kilometre: the glow of one pub, roughly. */
+export const DEAD_GROUND_KM = 0.5;
+
+/**
+ * The worst dead ground on a walk: the largest distance from any leg's
+ * midpoint to its nearest candidate. The candidate cloud is the density
+ * field — where there are doors there is light, and a walk should keep to
+ * it where it can.
+ */
+export function worstDeadGroundKm(
+  stops: string[],
+  nodes: RouteNode[],
+  byId: Map<string, RouteNode>,
+): number {
+  let worst = 0;
+  for (let i = 1; i < stops.length; i += 1) {
+    const a = byId.get(stops[i - 1]);
+    const b = byId.get(stops[i]);
+    if (!a || !b) continue;
+    const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const node of nodes) {
+      nearest = Math.min(
+        nearest,
+        haversineKm(mid.lat, mid.lng, node.lat, node.lng),
+      );
+    }
+    if (nearest !== Number.POSITIVE_INFINITY) worst = Math.max(worst, nearest);
+  }
+  return worst;
+}
+
+/**
+ * The non-dominated set: every route no other route beats on *all* the
+ * arguments at once. Sequential objective-winners had accidental coverage —
+ * an objective whose best was taken contributed nothing — where a Pareto
+ * front makes "these walks are genuinely different arguments" a theorem
+ * about the output rather than a hope about the process. The named
+ * objectives still pick and label the menu; they just pick from here.
+ */
+export function paretoFront(
+  routes: PlannedRoute[],
+  nodes: Map<string, RouteNode>,
+  targetKm: number | null,
+): PlannedRoute[] {
+  // Every objective is an axis, and it has to be: an objective missing from
+  // the axes can have its own best route dominated away before it ever gets
+  // to pick, which quietly deletes a character from the menu. With the full
+  // set, each objective's winner is on the front or tied with something that
+  // beats it elsewhere — either way the menu keeps the argument.
+  const axes = ROUTE_OBJECTIVES;
+  const scored = routes.map((route) =>
+    axes.map((axis) => axis.score(route, nodes, targetKm)),
+  );
+  return routes.filter((_, i) => {
+    for (let j = 0; j < routes.length; j += 1) {
+      if (i === j) continue;
+      let allLeq = true;
+      let oneLess = false;
+      for (let k = 0; k < scored[i].length; k += 1) {
+        if (scored[j][k] > scored[i][k] + 1e-9) allLeq = false;
+        if (scored[j][k] < scored[i][k] - 1e-9) oneLess = true;
+      }
+      if (allLeq && oneLess) return false;
+    }
+    return true;
+  });
+}
+
 /** How much two routes overlap, 0 (nothing shared) to 1 (identical set). */
 export function overlap(a: string[], b: string[]): number {
   const left = new Set(a);
@@ -600,12 +1004,32 @@ export function overlap(a: string[], b: string[]): number {
   return union === 0 ? 0 : shared / union;
 }
 
+/** How a walk is described: a name, a reason, and the sentence that joins
+ * them for the model. Passed as one value so the three can never disagree. */
+export interface RouteWording {
+  name: string;
+  why: string;
+  character: string;
+}
+
+/** What a walk with no objective behind it is called — the router's own
+ * working answer, before an objective has claimed it. */
+const UNNAMED: RouteWording = {
+  name: "The walk",
+  why: "The router's own pick",
+  character: "the router's own pick",
+};
+
 function describe(
   table: Map<string, Map<string, number>>,
   nodes: Map<string, RouteNode>,
   stops: string[],
-  character: string,
+  wording: string | RouteWording,
 ): PlannedRoute {
+  const said: RouteWording =
+    typeof wording === "string"
+      ? { ...UNNAMED, character: wording, why: wording }
+      : wording;
   const legs: RouteLeg[] = [];
   for (let i = 1; i < stops.length; i += 1) {
     legs.push({
@@ -628,7 +1052,9 @@ function describe(
     totalKm,
     worstLegKm: legs.reduce((worst, leg) => Math.max(worst, leg.km), 0),
     variety: kinds.size,
-    character,
+    character: said.character,
+    name: said.name,
+    why: said.why,
   };
 }
 
@@ -641,7 +1067,10 @@ function describe(
  * target rather than on the distance itself — otherwise every answer is nine
  * pubs on one street.
  */
-export function scoreRoute(route: PlannedRoute, targetKm: number | null): number {
+export function scoreRoute(
+  route: PlannedRoute,
+  targetKm: number | null,
+): number {
   const spread = targetKm
     ? Math.abs(route.totalKm - targetKm) / Math.max(targetKm, 0.1)
     : route.totalKm / 10;
@@ -650,7 +1079,8 @@ export function scoreRoute(route: PlannedRoute, targetKm: number | null): number
   const trek = Math.max(0, route.worstLegKm - 0.8);
   // Variety pulls the other way, so it subtracts. Capped: past a handful of
   // distinct kinds nobody notices another.
-  const sameness = (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
+  const sameness =
+    (route.stops.length - Math.min(route.variety, 6)) / route.stops.length;
   // A night should go somewhere. Two pubs on one street and back again can hit
   // the target distance exactly and still be the same corner all evening —
   // this is what separates a jaunt from a lap of the block, and nothing in the
@@ -689,24 +1119,47 @@ function carrying(
  */
 export interface RouteObjective {
   key: string;
-  /** What the model reads, so it can choose between them. */
+  /**
+   * The walk's name — two or three words, comparable at a glance.
+   *
+   * Split out of `character` because the menu could not use a sentence. Ten
+   * walks arrived as ten pills holding up to forty-six characters of prose
+   * each; nothing lined up, nothing could be compared, and the stats only ever
+   * described the one already chosen. A name goes in a column heading and a
+   * card title. A sentence goes underneath it.
+   */
+  name: string;
+  /** Why you would take it — the sentence that used to be the whole label. */
+  why: string;
+  /** Name and why, joined. What the model reads, so it can choose between
+   * them, and what anything not yet rebuilt on the pair still renders. */
   character: string;
-  score: (route: PlannedRoute, nodes: Map<string, RouteNode>, targetKm: number | null) => number;
+  score: (
+    route: PlannedRoute,
+    nodes: Map<string, RouteNode>,
+    targetKm: number | null,
+  ) => number;
 }
 
 export const ROUTE_OBJECTIVES: RouteObjective[] = [
   {
     key: "balanced",
+    name: "Best fit",
+    why: "Closest to the brief you wrote",
     character: "best fit for the brief",
     score: (route, _nodes, target) => scoreRoute(route, target),
   },
   {
     key: "onward",
+    name: "Keeps moving",
+    why: "Least doubling back",
     character: "keeps moving — least doubling back",
     score: (route) => route.detour,
   },
   {
     key: "rated",
+    name: "Best reviewed",
+    why: "The patch's highest-rated pubs",
     character: "the best-reviewed pubs in the patch",
     score: (route, nodes) => {
       // Weighted by review count, so one glowing five-star with three reviews
@@ -725,6 +1178,8 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   },
   {
     key: "drinks",
+    name: "Widest range",
+    why: "Beer, wine and shorts across the walk",
     character: "widest range of drinks",
     score: (route, nodes) => {
       // The house rule enforced by geometry rather than by dressing: a card
@@ -739,38 +1194,53 @@ export const ROUTE_OBJECTIVES: RouteObjective[] = [
   },
   {
     key: "kind",
+    name: "Kindest legs",
+    why: "Nothing far between stops",
     character: "kindest legs — nothing far between stops",
     score: (route) => route.worstLegKm,
   },
   {
     key: "mixed",
+    name: "Most variety",
+    why: "Fewest repeats of the same kind of place",
     character: "most variety — fewest repeats of the same place",
     score: (route) => -route.variety,
   },
   {
     key: "cheap",
+    name: "Easiest round",
+    why: "Gentlest on a round of drinks",
     character: "easiest on a round of drinks",
     score: (route, nodes) => {
       const priced = route.stops
         .map((id) => nodes.get(id)?.priceLevel)
         .filter((level): level is number => typeof level === "number");
-      return priced.length === 0 ? 4 : priced.reduce((a, b) => a + b, 0) / priced.length;
+      return priced.length === 0
+        ? 4
+        : priced.reduce((a, b) => a + b, 0) / priced.length;
     },
   },
   {
     key: "outdoor",
+    name: "Beer gardens",
+    why: "Outdoor tables where the patch has any",
     character: "beer gardens where there are any",
     score: (route, nodes) => -carrying(route.stops, nodes, "outdoorSeating"),
   },
   {
     key: "groups",
+    name: "Big table",
+    why: "Room for a crowd to sit together",
     character: "room for a big table",
     score: (route, nodes) => -carrying(route.stops, nodes, "goodForGroups"),
   },
   {
     key: "sport",
+    name: "The match",
+    why: "Somewhere with the game on",
     character: "somewhere with the match on",
-    score: (route, nodes) => -carrying(route.stops, nodes, "goodForWatchingSports"),
+    score: (route, nodes) =>
+      -carrying(route.stops, nodes, "goodForWatchingSports"),
   },
 ];
 
@@ -823,9 +1293,20 @@ export function buildRouteGraph(
     nearestTo(request.aimFrom);
   const aimedFinish = nearestTo(request.aimTo);
   const finishId =
-    (request.finishId && byId.has(request.finishId) && request.finishId !== startId
+    (request.finishId &&
+    byId.has(request.finishId) &&
+    request.finishId !== startId
       ? request.finishId
       : null) ?? (aimedFinish && aimedFinish !== startId ? aimedFinish : null);
+
+  // The drawn stroke, where there is one, is the axis every forward walk
+  // projects onto — stated by the host, not guessed from the cloud.
+  const strokeAxis =
+    request.stroke && request.stroke.length >= 2 ? request.stroke : null;
+  const alongFn = strokeAxis
+    ? (node: RouteNode) =>
+        alongStrokeKm({ lat: node.lat, lng: node.lng }, strokeAxis)
+    : null;
 
   // With no pinned tee, try several origins so the seeds genuinely differ.
   const origins = startId ? [startId] : pool.slice(0, 6);
@@ -838,7 +1319,10 @@ export function buildRouteGraph(
   for (const origin of origins) {
     // Greedy: the short, clustered answer. Kept because for a genuinely dense
     // patch it is the right one, and because 2-opt over it is a good baseline.
-    for (const skip of [null, ...neighbours[origin].slice(0, 3).map((n) => n.id)]) {
+    for (const skip of [
+      null,
+      ...neighbours[origin].slice(0, 3).map((n) => n.id),
+    ]) {
       const seed = greedy(table, pool, holes, origin, finishId, skip);
       if (seed) seeds.push(seed);
     }
@@ -851,10 +1335,52 @@ export function buildRouteGraph(
       // all. The greedy one is kept behind it: the exact walk needs a pinned
       // tee to sit at the end of the line it travels, and refuses rather than
       // bending that, so a patch with awkward pins still gets a route.
-      const exact = bestForwardWalk(table, nodes, byId, holes, origin, finishId, drift);
+      const exact = bestForwardWalk(
+        table,
+        nodes,
+        byId,
+        holes,
+        origin,
+        finishId,
+        drift,
+        request.teeOff ?? null,
+        alongFn,
+      );
       if (exact) snakes.push(exact);
-      const seed = snakeWalk(table, nodes, byId, holes, origin, finishId, drift);
+      const seed = snakeWalk(
+        table,
+        nodes,
+        byId,
+        holes,
+        origin,
+        finishId,
+        drift,
+        alongFn,
+      );
       if (seed) snakes.push(seed);
+    }
+  }
+
+  // And the exact optima for the drawn line: the walk that minimises total
+  // distance from the stroke, subject to spanning it. Origin-free — the line
+  // decides where these begin — so they stand outside the loop above, and each
+  // relaxes its spacing only as far as it has to before it can answer at all.
+  if (strokeAxis) {
+    const lineKm = strokeLengthKm(strokeAxis);
+    for (const objective of STROKE_OBJECTIVES) {
+      for (const minGapKm of strokeGaps(lineKm, holes)) {
+        const walk = bestStrokeWalk(nodes, holes, strokeAxis, {
+          minGapKm,
+          cost: objective.cost,
+          gapCost: objective.gapCost?.(lineKm / Math.max(holes, 1)),
+          startId,
+          finishId,
+        });
+        if (walk) {
+          snakes.push(walk);
+          break;
+        }
+      }
     }
   }
 
@@ -865,7 +1391,76 @@ export function buildRouteGraph(
     return twoOpt(table, route, startId !== null, finishId !== null);
   });
 
-  const described = [...improved, ...snakes].map((stops) => describe(table, byId, stops, ""));
+  const described = [...improved, ...snakes].map((stops) =>
+    describe(table, byId, stops, ""),
+  );
+
+  // Closing time, applied to the whole pool. Walks that stay open outrank
+  // walks that do not; only when *nothing* passes does the unchecked pool
+  // stand, because a patch with thin hours data must still get a card — the
+  // contract will say what could not be proved.
+  const teeOff = request.teeOff ?? null;
+  const feasible = teeOff
+    ? described.filter((route) =>
+        walkFeasible(table, byId, route.stops, teeOff),
+      )
+    : described;
+  const timed = feasible.length > 0 ? feasible : described;
+
+  // Geography next: walks that swim stand only when every walk swims.
+  const barriers = request.barriers ?? null;
+  const dry = barriers?.length
+    ? timed.filter(
+        (route) =>
+          walkCrossings(
+            route.stops.flatMap((id) => {
+              const node = byId.get(id);
+              return node ? [{ lat: node.lat, lng: node.lng }] : [];
+            }),
+            barriers,
+          ) === 0,
+      )
+    : timed;
+  const grounded = dry.length > 0 ? dry : timed;
+
+  // Density is a field the candidates themselves draw: a leg whose midpoint
+  // sits far from every pub crosses dead ground — a park, a river, an
+  // industrial estate the map cannot otherwise see. Walks that stay in the
+  // glow outrank walks that cross the dark, with the usual honest fallback
+  // when every walk must cross it.
+  const populated = grounded.filter(
+    (route) => worstDeadGroundKm(route.stops, nodes, byId) <= DEAD_GROUND_KM,
+  );
+  const lit = populated.length > 0 ? populated : grounded;
+
+  // **A stroke is a route, not a region**, and this is the filter that says
+  // so. The drawn line reached construction (the forward walks are monotone
+  // along it) and reached the gather (the circles are sampled down it) but
+  // never reached selection — so a tight cluster sitting inside the swath was
+  // eligible for the menu and, being short and well-connected, usually won it.
+  // The host drew a walk across town and was offered one street of it.
+  //
+  // Same shape as the hours and barrier filters above, for the same reason:
+  // an honest fallback rather than an empty menu. Where no walk can follow the
+  // line — the pubs genuinely are all at one end — the unfiltered pool stands
+  // and the card says what it is.
+  const tracking = strokeAxis
+    ? lit.filter((route) =>
+        followsStroke(
+          route.stops.flatMap((id) => {
+            const node = byId.get(id);
+            return node ? [{ lat: node.lat, lng: node.lng }] : [];
+          }),
+          strokeAxis,
+        ),
+      )
+    : lit;
+  const onLine = tracking.length > 0 ? tracking : lit;
+
+  // And the menu chooses from the non-dominated set: nothing on it is beaten
+  // on every argument at once by something off it.
+  const front = paretoFront(onLine, byId, target);
+  const pool2 = front.length > 0 ? front : onLine;
 
   // Each objective picks its own winner from the same pool, which is what
   // makes this a menu rather than a shortlist: the routes differ because they
@@ -880,16 +1475,21 @@ export function buildRouteGraph(
   const wanted = request.routes ?? DEFAULT_ROUTES;
   for (const objective of ROUTE_OBJECTIVES) {
     if (kept.length >= wanted) break;
-    const ranked = [...described].sort(
-      (a, b) => objective.score(a, byId, target) - objective.score(b, byId, target),
+    const ranked = [...pool2].sort(
+      (a, b) =>
+        objective.score(a, byId, target) - objective.score(b, byId, target),
     );
     const winner = ranked.find(
       (route) =>
         !kept.includes(route) &&
-        !kept.some((other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR),
+        !kept.some(
+          (other) => overlap(other.stops, route.stops) > 1 - DIVERSITY_FLOOR,
+        ),
     );
     if (!winner) continue;
     winner.character = objective.character;
+    winner.name = objective.name;
+    winner.why = objective.why;
     kept.push(winner);
   }
 
@@ -950,7 +1550,11 @@ export function routesBlock(graph: RouteGraph): string {
         ` | longest ${route.worstLegKm.toFixed(2)}km | ${route.variety} kinds`,
     );
   });
-  lines.push("", "<swaps>", "Nearest alternatives to each stop, with the walk to it.");
+  lines.push(
+    "",
+    "<swaps>",
+    "Nearest alternatives to each stop, with the walk to it.",
+  );
   for (const node of graph.nodes) {
     const near = graph.neighbours[node.id];
     if (!near?.length) continue;

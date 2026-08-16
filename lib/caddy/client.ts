@@ -7,6 +7,7 @@ import {
   CADDY_SYSTEM_TOOLS,
   askBlock,
   briefBlock,
+  chosenWalkBlock,
   parsePlan,
   patchBlock,
   planSchema,
@@ -144,6 +145,11 @@ export interface CaddyAsk {
   holeNumber?: number | null;
   /** A roll asks for a fresh card from the same patch. */
   roll?: boolean;
+  /** The walk the host chose off the menu, as candidate ids in walking
+   * order — already validated against the dossier (`chosenWalkFrom`), so by
+   * the time it is here every id is real. Absent means the caddy chooses,
+   * which is what it always did. */
+  chosenRoute?: string[] | null;
 }
 
 /**
@@ -340,6 +346,11 @@ function buildMessages(input: CaddyAsk): Anthropic.MessageParam[] {
           cache_control: { type: "ephemeral" },
         },
         { type: "text", text: briefBlock(input.brief, input.candidates) },
+        // The host's own pick off the menu, when there was one. After the
+        // brief and outside the cached prefix — it varies per plan.
+        ...(input.chosenRoute?.length
+          ? [{ type: "text" as const, text: chosenWalkBlock(input.chosenRoute) }]
+          : []),
       ],
     },
   ];

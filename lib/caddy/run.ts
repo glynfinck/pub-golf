@@ -21,6 +21,8 @@ import {
   type PubSource,
 } from "@/lib/caddy/dossier";
 import { gatherPubs, type GatheredPub } from "@/lib/caddy/places";
+import { checkCard, contractRecord } from "@/lib/caddy/contract";
+import { routesKey, verifyLegs } from "@/lib/caddy/verify-legs";
 import { planFailureNote, type PlannedCourse } from "@/lib/caddy/plan";
 import type { CaddyOffer } from "@/lib/caddy/stream";
 import { ipBiasFrom } from "@/lib/pub-search";
@@ -298,7 +300,7 @@ async function cachePubs(
   // Google's relevance order, preserved — the caddy is told to route and
   // dress, not to re-rank a search result.
   return gathered
-    .map((pub) => {
+    .map((pub): PubSource | null => {
       const venueId = idByPlace.get(pub.googlePlaceId);
       if (!venueId) return null;
       // The Google id has done its job — matching the upsert back to the row.
@@ -316,6 +318,7 @@ async function cachePubs(
         facts: pub.facts,
         editorial: pub.editorial,
         reviews: pub.reviews,
+        hours: pub.hours ?? null,
       } satisfies PubSource;
     })
     .filter((pub): pub is PubSource => pub !== null);
@@ -390,6 +393,7 @@ async function gatherFor(
     key: placesKey,
     where: brief.where,
     whereTo: brief.whereTo,
+    stroke: brief.stroke,
     start: start?.lat != null && start.lng != null
       ? { lat: start.lat, lng: start.lng }
       : null,
@@ -401,10 +405,16 @@ async function gatherFor(
   });
 
   const cached = await cachePubs(supabase, gather.pubs);
+  // Struck pubs go before the dossier is built — the caddy never knows they
+  // existed. Pins are exempt: a host who strikes their own tee has changed
+  // their mind about the strike, not the tee.
+  const kept = cached.filter(
+    (pub) => !brief.excludedVenueIds.includes(pub.venueId),
+  );
   // Pinned tees always join the table, whatever the gather returned.
   const withPins = [
     ...[start, finish].filter((pin): pin is PubSource => Boolean(pin)),
-    ...cached,
+    ...kept,
   ];
   const candidates = buildCandidates(
     withPins,
@@ -629,6 +639,63 @@ export async function openPlan(rawBrief: unknown): Promise<
   };
 }
 
+/**
+ * Pick a plan back up at the menu: the session is open, the patch is
+ * gathered, and the host has just chosen — or declined to choose — a walk.
+ *
+ * The other half of the open/dress split. `openPlan` gathers and answers
+ * with the menu; this loads the same session back for the turn that spends,
+ * with the same checks a re-opened conversation gets (`askTheCaddy`): the
+ * session must be theirs (RLS decides), the patch must still be open, and
+ * the fee must still be running. Dials ride the merge through `readBrief`,
+ * so a re-dialled hole count or spacing is clamped exactly as a fresh
+ * brief's would be — the wire never writes a number the menu could not.
+ */
+export async function continuePlan(
+  sessionId: string,
+  dials?: { holes?: unknown; stretch?: unknown },
+): Promise<
+  | { error: string; offer?: CaddyOffer; detail?: string }
+  | {
+      supabase: Awaited<ReturnType<typeof createClient>>;
+      userId: string;
+      sessionId: string;
+      brief: CaddyBrief;
+      candidates: CandidateDossier[];
+    }
+> {
+  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+
+  const session = await host();
+  if (!session) return { error: "Planning a course takes a sign-in." };
+  const { supabase, user } = session;
+
+  const { data: row } = await supabase
+    .from("caddy_sessions")
+    .select("id, brief, dossier")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!row) return { error: "That patch isn't on your table." };
+
+  const stored = (row.brief ?? {}) as Record<string, unknown>;
+  const brief = readBrief({
+    ...stored,
+    ...(dials?.holes !== undefined ? { holes: dials.holes } : {}),
+    ...(dials?.stretch !== undefined ? { stretch: dials.stretch } : {}),
+  });
+  const candidates = (row.dossier ?? []) as unknown as CandidateDossier[];
+  if (!brief || !patchIsOpen(candidates)) {
+    return { error: "That patch has been put away. Plan a fresh one." };
+  }
+
+  const { data: covered } = await supabase.rpc("holds_day_pass", {
+    who: user.id,
+  });
+  if (covered !== true) return { error: PASS_RAN_OUT, offer: "more" };
+
+  return { supabase, userId: user.id, sessionId, brief, candidates };
+}
+
 /** Roll a fresh card, or answer something the host said. Both re-read the
  * patch from the session — no Google, warm cache, short answer. */
 export async function askTheCaddy(input: {
@@ -780,8 +847,10 @@ function midConversation(brief: CaddyBrief) {
           key,
           where: query,
           // A mid-plan search is one place the caddy went looking for, not a
-          // walk between two — the corridor is the brief's business.
+          // walk between two — the corridor and the stroke are the brief's
+          // business.
           whereTo: "",
+          stroke: null,
           start: null,
           finish: null,
           ipBias: null,
@@ -826,6 +895,9 @@ export async function runTurn(input: {
   kind: "plan" | "roll" | "tweak";
   ask?: string;
   holeNumber?: number | null;
+  /** The walk the host chose off the menu, validated against the dossier
+   * before it gets here (`chosenWalkFrom`). Null is the caddy's own choice. */
+  chosenRoute?: string[] | null;
   /** Present on a streamed plan: the caddy's reasoning, the tool it is
    * reaching for, and the pubs it has settled on. Narration only — nothing
    * here reaches the card, and a run where none of it arrives looks exactly
@@ -862,6 +934,7 @@ export async function runTurn(input: {
     ask: input.ask,
     holeNumber: input.holeNumber,
     roll: input.kind === "roll",
+    chosenRoute: input.chosenRoute ?? null,
   };
   /**
    * Which caddy answers.
@@ -887,7 +960,7 @@ export async function runTurn(input: {
   /** The ledger line. Written for a failure too — the vendor billed us for it
    * either way — but marked `failed`, which is what keeps the host's promise
    * honest: the money counts, the card does not. */
-  const record = (failed: boolean, result: unknown) =>
+  const record = (failed: boolean, result: unknown, contract: unknown = null) =>
     input.supabase.from("caddy_turns").insert({
       session_id: input.sessionId,
       host: input.userId,
@@ -905,6 +978,9 @@ export async function runTurn(input: {
       // tools" and "the tools did nothing" stay different facts — see
       // lib/caddy/trace.ts for why it holds inputs and never replies.
       trace: (outcome.trace ?? null) as never,
+      // The Card Contract's findings on this card, for the clean-card rate.
+      // Null on a failure: there is no card to hold to anything.
+      contract: contract as never,
     });
 
   if (!outcome.ok) {
@@ -936,9 +1012,38 @@ export async function runTurn(input: {
   // rather than the conversation it happened in: a session runs to sixty-five
   // turns, and by the time anyone triages "the caddy put a Wetherspoons on
   // hole four" the card they meant may have been rolled over twice.
-  const { data: filed, error } = await record(false, outcome.course)
+  // Street truth for the card that shipped: at most seventeen walking legs,
+  // pennies, and the walk stops being an estimate. Absent key or silent
+  // streets answer null per leg and nothing else changes.
+  outcome.course.legMinutes = await verifyLegs(
+    outcome.course.holes,
+    routesKey(process.env),
+  );
+
+  // Scored before it is filed, so the turn row carries its own verdict. The
+  // contract is telemetry rather than a gate: a card with findings still
+  // lands — a hole with a note beats no card — and the findings are what
+  // price the next fix.
+  const contract = contractRecord(
+    checkCard(
+      outcome.course.holes,
+      input.brief,
+      input.candidates,
+      input.brief.teeOffDay != null
+        ? { day: input.brief.teeOffDay, minutes: input.brief.teeOffMinutes }
+        : null,
+    ),
+  );
+  let { data: filed, error } = await record(false, outcome.course, contract)
     .select("id")
     .maybeSingle();
+  if (error?.code === "42703") {
+    // The ledger predates the contract column for the minute a deploy takes.
+    // The card matters more than its score, so file it without one.
+    ({ data: filed, error } = await record(false, outcome.course)
+      .select("id")
+      .maybeSingle());
+  }
   if (error) {
     // The one refusal a host can actually meet, and it names no number.
     if (error.code === "42501") return { error: FULL_SHIFT, offer: "more" };

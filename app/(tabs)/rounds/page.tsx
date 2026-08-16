@@ -19,8 +19,8 @@ export default async function RoundsPage() {
       <ScreenHeader eyebrow="History" title="Rounds" />
       {rounds.length === 0 ? (
         <Card className="gap-0 px-4 text-sm text-muted-foreground">
-          Every attested card ends up here — filed by date, with the winner
-          and your score to par. Nothing on file yet.
+          Every attested card ends up here — filed by date, with the winner and
+          your score to par. Nothing on file yet.
         </Card>
       ) : (
         <RoundsList rounds={rounds} />
