@@ -57,7 +57,15 @@ function ToggleGroupItem({
         "not-first:border-l not-first:border-border",
         "focus-visible:ring-3 focus-visible:ring-ring/50",
         "hover:bg-secondary",
-        "data-on:bg-fairway data-on:text-primary-foreground data-on:hover:bg-fairway",
+        // **`data-[state=on]`, never `data-on`.** Tailwind ships shorthands
+        // for a fixed list of `data-state` values — `checked`, `open`,
+        // `closed` and friends — which is why `switch.tsx` can say
+        // `data-checked:` and mean `[data-state=checked]`. `on` is not on that
+        // list, so `data-on:` compiles to a bare `[data-on]` attribute
+        // selector that Radix never sets: the chosen segment took no styling
+        // at all. The control toggled perfectly and looked identical before
+        // and after, which is indistinguishable from a dead button.
+        "data-[state=on]:bg-fairway data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-fairway",
         "disabled:pointer-events-none disabled:opacity-50",
         className
       )}

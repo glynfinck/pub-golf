@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -220,6 +220,59 @@ describe("the panel under a map", () => {
     // says only whether the panel is up.)
     expect(panel).not.toContain("jobPanelLabel");
     expect(panel).not.toMatch(/^\s*label\??:/m);
+  });
+});
+
+describe("Radix state variants", () => {
+  /**
+   * Tailwind ships `data-<value>:` shorthands for a fixed list of `data-state`
+   * values, and **only** that list. Each of these was checked against the
+   * compiled stylesheet: they expand to `[data-state=<value>]`, which is what
+   * Radix actually sets.
+   */
+  const KNOWN = [
+    "checked",
+    "unchecked",
+    "open",
+    "closed",
+    "disabled",
+    "horizontal",
+    "vertical",
+  ];
+
+  /**
+   * The bug this exists to prevent, which cost two rounds to find.
+   *
+   * The segmented control styled its chosen state through a bare `data-on`
+   * variant rather than `data-[state=on]`. `on` is not
+   * on Tailwind's list, so it compiled to a bare `[data-on]` attribute
+   * selector — an attribute Radix never sets. The selected segment took no
+   * styling whatsoever: the control toggled correctly and looked identical
+   * before and after, which is indistinguishable from a dead button. It was
+   * reported, twice, as "can't click the holes buttons".
+   *
+   * Nothing catches this. It is not a type error, not a lint error, not a
+   * runtime error, and the class is present in the stylesheet — it just never
+   * matches. An unknown value has to be written `data-[state=on]:`, which
+   * says what it means and cannot silently miss.
+   */
+  it("writes an unknown state as data-[state=…] rather than a bare variant", () => {
+    const stray: string[] = [];
+    for (const file of readdirSync(join(ROOT, "components/ui"))) {
+      if (!file.endsWith(".tsx")) continue;
+      const source = withoutComments(read(join("components/ui", file)));
+      for (const [, value] of source.matchAll(/\bdata-([a-z][a-z-]*):/g)) {
+        if (!KNOWN.includes(value)) stray.push(`${file}: data-${value}:`);
+      }
+    }
+    expect(stray).toEqual([]);
+  });
+
+  it("styles the chosen segment on the attribute Radix sets", () => {
+    // The positive half: the control must actually say `data-[state=on]`, so
+    // deleting the highlight is a visible diff rather than a silent no-op.
+    const group = read("components/ui/toggle-group.tsx");
+    expect(group).toContain("data-[state=on]:bg-fairway");
   });
 });
 
