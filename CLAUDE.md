@@ -15,6 +15,29 @@ is this Next version's middleware convention (see the `home` sibling repo).
   `FieldLabel` (eyebrow-styled Label) is exported from `ui/input.tsx`.
   Domain components (Chip, Avatar initials, HazardPill, Countdown) stay
   custom in `components/ui` and `components/round`.
+- **Two files break that rule and owe a debt.** `ui/toggle-group.tsx` and
+  `ui/slider.tsx` are *vendored*, not generated: `ui.shadcn.com` is
+  unreachable from the Claude Code container (the network policy answers 403
+  to CONNECT; npm is allowed, the registry is not), so they are written
+  against the same `radix-ui` package the generated files import. They are
+  **not** the registry's — shadcn's toggle-group is CVA-based, takes
+  `variant`/`size`, and imports `toggleVariants` from a `ui/toggle.tsx` this
+  repo does not have. Run `npx shadcn add toggle-group slider --overwrite`
+  from a machine that can reach the registry and take what it gives you; then
+  re-apply the two house deltas, which are all these files add: `min-h-11` on
+  the toggle item and a 22px thumb on the slider, both because the house floor
+  is 44px and shadcn's defaults are smaller. The cost of the shortcut is
+  already on the record — the segmented control shipped styling its chosen
+  state through `data-on:`, which Tailwind compiles to an attribute Radix
+  never sets, so the control worked and looked dead. The registry's version
+  says `data-[state=on]:` and would not have. `tests/unit/caddy-house-style.ts`
+  now holds that rule for anything in `components/ui`.
+- `ui/form-row.tsx` and `ui/picker-row.tsx` are layouts rather than
+  primitives — the brief's one-row-per-field rhythm and the row-opens-a-sheet
+  pair. Recent shadcn ships a `Field` family that covers some of this; it was
+  not reachable either, and adopting it would collide with the house
+  `FieldLabel` already exported from `ui/input.tsx`. Worth a look when the
+  registry is to hand.
 - House style tokens live in `app/globals.css` — cream/fairway/marker/hazard.
   Never hardcode colors; use the semantic tokens. No emojis in UI — inline
   SVG or lucide icons only.

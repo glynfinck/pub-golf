@@ -8,13 +8,18 @@ import { cn } from "@/lib/utils"
 /**
  * A segmented control: one row, equal shares, pick one.
  *
- * **Vendored, not generated.** `npx shadcn add toggle-group` is the way this
- * file is supposed to arrive, and it is how it should be re-synced — but
- * `ui.shadcn.com` is unreachable from this environment (the network policy
- * answers 403 to the registry), so it is written here against the same
- * `radix-ui` package every other generated component in this folder imports,
- * in the same `data-slot` / `cn` shape. Re-run the CLI when you can and take
- * whatever it gives you.
+ * **Vendored, not generated — this is a debt, not a decision.**
+ * `npx shadcn add toggle-group slider --overwrite` is how this file should
+ * arrive and how it should be replaced; `ui.shadcn.com` is unreachable from
+ * the container this was written in (403 to CONNECT — npm is allowed, the
+ * registry is not). So it is written against the same `radix-ui` package the
+ * generated files import, in the same `data-slot` / `cn` shape — but it is
+ * **not** what the registry would give you: shadcn's is CVA-based, takes
+ * `variant`/`size`, and imports `toggleVariants` from a `ui/toggle.tsx` this
+ * repo does not have. Overwrite it wholesale rather than merging.
+ *
+ * House delta to re-apply after a sync: `min-h-11` on the item. That is
+ * the whole of it.
  *
  * **What it replaces.** A wrapping flex of `Chip`s with `role="radiogroup"`.
  * Six of those made the brief a wall: every group a different width, every
@@ -22,9 +27,6 @@ import { cn } from "@/lib/utils"
  * and a ragged right edge all the way down. A segment row has one height and
  * one edge, which is most of what "sleeker" meant.
  *
- * House customisation, exactly as `components.json` intends generated files to
- * carry: `min-h-11` on the item, because the house floor is 44px and shadcn's
- * default is smaller.
  */
 function ToggleGroup({
   className,

@@ -8,10 +8,14 @@ import { cn } from "@/lib/utils"
 /**
  * A scale, dragged.
  *
- * **Vendored, not generated** — see the note in `toggle-group.tsx`. The shadcn
- * registry is unreachable from this environment, so this is written against
- * the same `radix-ui` package the rest of this folder imports. Re-sync with
- * `npx shadcn add slider` when you can.
+ * **Vendored, not generated — this is a debt, not a decision.**
+ * See the note in `toggle-group.tsx`: the shadcn registry is unreachable from
+ * the container this was written in, so it is written against the same
+ * `radix-ui` package the rest of this folder imports. Overwrite it wholesale
+ * with `npx shadcn add slider --overwrite` from a machine that can reach it.
+ *
+ * House delta to re-apply after a sync: a 22px thumb in a `min-h-11` root.
+ * That is the whole of it.
  *
  * **What it replaces.** Four `Chip`s for a quantity that is genuinely ordered
  * — Doorstep, Short, Steady, Stretch. Buttons in a row say nothing about the
