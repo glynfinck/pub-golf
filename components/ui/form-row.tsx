@@ -22,18 +22,24 @@ import { cn } from "@/lib/utils";
  *
  * Three shapes, one rhythm:
  *
- *   `<FormRow label="Which day"><ToggleGroup …/></FormRow>`   inline control
+ *   `<FormRow label="Holes"><ToggleGroup …/></FormRow>`   inline control
  *   `<FormRow label="Kind of round" onOpen={…} value="Steady" />`  opens a sheet
  *   `<FormRow label="Where" stacked>…</FormRow>`  full-width, for an Input
+ *
+ * **Inline is for numerals; words go stacked.** The value slot is capped at
+ * 62% of the row, and a segmented control of four word-length labels wants
+ * about 230px — so inline it overflows, and the group's own `overflow-hidden`
+ * clips the last option clean off the edge where nothing can reach it. If the
+ * labels are words, stack the row and let it have the full width.
  */
 export function FormRow({
   label,
   /** What the field currently reads, where the control is elsewhere. */
   value,
-  /** Makes the whole row a button. Its own 44px comes from `min-h-13`. */
+  /** Makes the whole row a button. Its own 44px comes from the frame. */
   onOpen,
   /** Put the control under the label at full width, for an input or a slider
-   * that has nowhere useful to go in a 120px value slot. */
+   * that has nowhere useful to go in the value slot. */
   stacked = false,
   /** A word under the label. Kept to one line — this is a row, not a panel. */
   note,
@@ -95,9 +101,21 @@ export function FormRow({
   return (
     <div className={frame}>
       {head}
-      {/* `max-w-[62%]` keeps a long segmented control from squeezing the label
-          to nothing — the label is the thing you scan down, so it wins. */}
-      <div className="ml-auto flex max-w-[62%] min-w-0 shrink-0 justify-end">
+      {/*
+       * **The floor is why this has a `min-w`, and it is load-bearing.**
+       * A `w-full` control inside a shrink-to-fit flex item has nothing to be
+       * a percentage *of*, so it collapses to its own content width — which
+       * turned the four-way Holes control into segments twenty-three pixels
+       * across. Forty-four tall and twenty-three wide is not a tap target; it
+       * is a sliver, and it is why the control could not be pressed. The
+       * floor is 180px because four 44px segments plus the three hairlines
+       * between them is 179 — a slot sized to 4×44 exactly lands at 43.25,
+       * which is under the floor by the width of its own borders.
+       *
+       * `max-w-[62%]` is the other half: the label is what you scan down the
+       * column, so a wide control may not squeeze it to nothing.
+       */}
+      <div className="ml-auto flex min-w-45 max-w-[62%] shrink-0 justify-end">
         {children}
       </div>
     </div>

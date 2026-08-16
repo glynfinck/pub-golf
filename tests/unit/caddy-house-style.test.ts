@@ -139,6 +139,27 @@ describe("the caddy's tap targets", () => {
     ["components/course/caddy-gallery.tsx", 2],
   ]);
 
+  /**
+   * The floor is two dimensions, and only one of them is a class.
+   *
+   * The Holes control shipped 44px tall and **23px wide** — a sliver nothing
+   * could be pressed on — because `w-full` inside a shrink-to-fit flex item
+   * has no percentage to resolve against and collapses to content width. No
+   * height class was wrong, so the sweep above saw nothing.
+   *
+   * A width cannot be measured by reading source, but the thing that *causes*
+   * it can be named: an inline control sits in a slot with a definite minimum,
+   * or it shrink-wraps. That is one line in one file, so it is assertable.
+   */
+  it("gives an inline control a slot wide enough to divide", () => {
+    const row = read("components/ui/form-row.tsx");
+    expect(row).toMatch(/min-w-45/);
+    // 180px, not 176: four 44px segments plus the three hairlines between them
+    // is 179, so a slot sized to 4×44 lands at 43.25 — under the floor by the
+    // width of its own borders.
+    expect(45 * 4).toBeGreaterThanOrEqual(44 * 4 + 3);
+  });
+
   it("has nothing a thumb can miss", () => {
     const small: string[] = [];
     for (const file of SURFACES) {

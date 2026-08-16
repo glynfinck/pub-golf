@@ -912,7 +912,13 @@ function GalleryBody({
                     ))}
                   </ToggleGroup>
                 </FormRow>
-                <FormRow label="How far apart">
+                {/* Stacked, because these labels are words. Four of
+                    "Doorstep / Short / Steady / Stretch" want 231px and the
+                    value slot caps at 62% of the row — so inline, the group
+                    overflowed and `overflow-hidden` clipped "Stretch" clean
+                    off the right edge, unreachable. Numerals fit a slot;
+                    words want the width. */}
+                <FormRow label="How far apart" stacked>
                   <ToggleGroup
                     type="single"
                     value={String(dials.stretch)}
