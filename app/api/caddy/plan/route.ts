@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { caddyEnabled } from "@/lib/caddy/credentials";
+import { caddyOnDuty } from "@/lib/caddy/open";
 import { openPlan, runTurn } from "@/lib/caddy/run";
 import { encodeEvent, type CaddyEvent } from "@/lib/caddy/stream";
 
@@ -50,7 +50,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
-  if (!caddyEnabled(process.env)) {
+  if (!caddyOnDuty(process.env)) {
     return NextResponse.json({ error: "The caddy isn't on duty here." }, { status: 503 });
   }
 

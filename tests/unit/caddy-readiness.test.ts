@@ -8,6 +8,10 @@ import {
 } from "@/lib/caddy/readiness";
 
 const OPEN = {
+  // The house's own switch, on. Every case below is about a deploy that is
+  // equipped or not; `caddyOpen` is about whether the house is showing the
+  // caddy at all, and it has its own describe block.
+  CADDY_OPEN: "true",
   AI_GATEWAY_API_KEY: "gw",
   STRIPE_SECRET_KEY: "sk_test",
   GOOGLE_PLACES_API_KEY: "places",
@@ -40,6 +44,19 @@ describe("caddyReady", () => {
     const noTill = { ...OPEN, STRIPE_SECRET_KEY: "" };
     expect(caddyReady(noTill, { ...HOST, hasPass: true })).toBe(true);
     expect(caddyReady(noTill, { ...HOST, hasPass: false })).toBe(false);
+  });
+
+  it("is shut whenever the house has not opened it", () => {
+    // The one gate that outranks equipment: everything else in place, and
+    // still no caddy, because it is being finished. Default-shut, so an
+    // environment that simply forgets the variable stays quiet.
+    expect(caddyReady({ ...OPEN, CADDY_OPEN: undefined }, HOST)).toBe(false);
+    expect(caddyReady({ ...OPEN, CADDY_OPEN: "false" }, HOST)).toBe(false);
+    // Nothing else counts as yes — not "1", not "yes", not an empty string.
+    expect(caddyReady({ ...OPEN, CADDY_OPEN: "1" }, HOST)).toBe(false);
+    expect(caddyReady({ ...OPEN, CADDY_OPEN: "" }, HOST)).toBe(false);
+    // Trimmed, because a variable pasted into a dashboard often is not.
+    expect(caddyReady({ ...OPEN, CADDY_OPEN: " true " }, HOST)).toBe(true);
   });
 
   it("needs the schema to have caught up", () => {
@@ -80,6 +97,7 @@ describe("shutGates", () => {
   it("names every gate that is shut, and only those", () => {
     const shut = shutGates({}, { ...HOST, hasPass: false, tablesPresent: false });
     expect(shut.map((gate) => gate.label)).toEqual([
+      "The caddy is open",
       "Model credential",
       "A green fee to work under",
       "Caddy tables migrated",
@@ -89,8 +107,19 @@ describe("shutGates", () => {
   });
 
   it("says which door a credential came through, when there is one", () => {
-    expect(caddyGates(OPEN, HOST)[0].label).toContain("gateway");
-    expect(caddyGates({ ANTHROPIC_API_KEY: "k" }, HOST)[0].label).toContain("anthropic");
+    expect(caddyGates(OPEN, HOST)[1].label).toContain("gateway");
+    expect(caddyGates({ ANTHROPIC_API_KEY: "k" }, HOST)[1].label).toContain(
+      "anthropic",
+    );
+  });
+
+  it("names the switch first, so nobody debugs a key that is not the problem", () => {
+    // The failure this ordering exists to prevent: everything configured,
+    // nothing on screen, and a gate list that opens by talking about API keys.
+    const shut = shutGates({ ...OPEN, CADDY_OPEN: undefined }, HOST);
+    expect(shut).toHaveLength(1);
+    expect(shut[0].label).toBe("The caddy is open");
+    expect(shut[0].fix).toContain("CADDY_OPEN=true");
   });
 
   it("tells a guest something different from a signed-out visitor", () => {
@@ -104,6 +133,7 @@ describe("shutGates", () => {
     // It reports presence, which is what observing the feature already tells
     // you. It must never report the thing itself.
     const env = {
+      CADDY_OPEN: "true",
       AI_GATEWAY_API_KEY: "gw_secret_value",
       STRIPE_SECRET_KEY: "sk_live_secret",
       GOOGLE_PLACES_API_KEY: "places_secret",

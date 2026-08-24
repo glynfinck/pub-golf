@@ -94,6 +94,30 @@ is this Next version's middleware convention (see the `home` sibling repo).
   score) — a 0 never scores as a free under-par hole. The in-progress hole
   only counts once swigs > 0. This still holds after a mulligan:
   resetting a hole never buys a free one.
+- **The caddy is held back, and `CADDY_OPEN` is the whole switch**
+  (`lib/caddy/open.ts`, default shut — only the literal `"true"` opens it).
+  It gates three things that must move together: the pipeline
+  (`caddyOnDuty` at every entry point in `run.ts` and the plan route, so no
+  model call and no ledger row is reachable by any path), `caddyReady` (so
+  the group never renders and `caddyStand` short-circuits before it queries),
+  and the **till** — `greenFeeOnSale` takes the fee and the top-ups off sale,
+  because `GREEN_FEE_EXTRAS` has exactly one entry and that entry is the
+  caddy, so a fee sold now is £12 for a coming-soon note. The honesty box is
+  outside it: a tip buys nothing, so it never had anything to be dishonest
+  about. Nothing is deleted behind the flag — tables, ledger and tests are
+  untouched, and flipping it on restores the caddy whole.
+  Two consequences worth not relearning: `/courses/new` and `/tariff` both
+  declare `force-dynamic`, because the flag baked into a prerender cannot be
+  flipped back without a rebuild (and on `/tariff` that means a board quoting
+  prices over a till that has started refusing) — and `/courses/new` was
+  dynamic only by accident of reading a session, which the short-circuit
+  removed. The coming-soon note (`components/course/caddy-coming-soon.tsx`)
+  is the **one** sanctioned break in absence-rather-than-apology, and the
+  line is exact: absence is right when a thing is missing *for you* (no key,
+  no fee — a disabled feature is an accusation), a note is right when it is
+  missing for *everyone*, temporarily. So it renders on `CADDY_OPEN` alone;
+  the four equipment gates in `readiness.ts` still produce silence. It quotes
+  no price, offers no waiting list, and never says "AI".
 - **The caddy never invents a pub.** It selects and orders from real Google
   Places results and dresses them (drink, par, hazard, local rules, course
   name). Enforced structurally rather than by instruction: the model only ever

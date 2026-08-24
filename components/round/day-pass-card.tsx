@@ -13,7 +13,16 @@ import { cn } from "@/lib/utils";
  * to the person who bought it, on their own screen, after they bought it.
  * Nothing about this card asks for anything.
  */
-export function DayPassCard({ pass }: { pass: DayPass }) {
+export function DayPassCard({
+  pass,
+  caddyOpen,
+}: {
+  pass: DayPass;
+  /** Whether the thing this fee buys is actually on duty. Passed in rather
+   * than read here: the card is a client component and the flag is the
+   * server's to know. */
+  caddyOpen: boolean;
+}) {
   return (
     <Card
       className="gap-0 border-l-4 border-l-fairway px-4"
@@ -32,21 +41,42 @@ export function DayPassCard({ pass }: { pass: DayPass }) {
           no card at all — it is the app telling you something it will then
           refuse. "It will plan another" had the same flaw one size down:
           with the goes spent, tearing out leaves nothing to rebuild with,
-          so the promise now carries its own condition. */}
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        Your course is the caddy&apos;s to plan, and yours to keep — change it
-        whenever, or tear it out and plan another while there are goes left.
-        A new day takes a new fee.
-      </p>
-      <Link
-        href="/courses/new"
-        className={cn(
-          buttonVariants({ variant: "outline" }),
-          "mt-3 w-full",
-        )}
-      >
-        Plan a course
-      </Link>
+          so the promise now carries its own condition.
+
+          The same rule, one size up again: while the caddy is shut this card
+          would be promising the one thing the fee cannot currently deliver.
+          A held pass is not retracted — paid is paid, and the day still runs
+          — but the sentence has to be the truth rather than the plan, and the
+          button has to lead somewhere that works. The free builder does. */}
+      {caddyOpen ? (
+        <>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Your course is the caddy&apos;s to plan, and yours to keep — change
+            it whenever, or tear it out and plan another while there are goes
+            left. A new day takes a new fee.
+          </p>
+          <Link
+            href="/courses/new"
+            className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}
+          >
+            Plan a course
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            The caddy your fee buys is still being finished, so it can&apos;t
+            plan for you yet — build a course by hand in the meantime, and
+            we&apos;ll be in touch about the fee.
+          </p>
+          <Link
+            href="/courses/new"
+            className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}
+          >
+            Build a course
+          </Link>
+        </>
+      )}
     </Card>
   );
 }

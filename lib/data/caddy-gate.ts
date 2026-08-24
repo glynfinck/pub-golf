@@ -1,6 +1,12 @@
 import "server-only";
 
-import { caddyReady, shutGates, showCaddyDiagnostics } from "@/lib/caddy/readiness";
+import { caddyOpen } from "@/lib/caddy/open";
+import {
+  caddyReady,
+  closedGate,
+  shutGates,
+  showCaddyDiagnostics,
+} from "@/lib/caddy/readiness";
 import { CADDY_COURSES_PER_FEE, CADDY_GRANT_SIZE } from "@/lib/caddy/credits";
 import { caddyAllowance } from "@/lib/data/caddy";
 import { getDayPass } from "@/lib/data/billing";
@@ -20,6 +26,19 @@ import type { CaddyAllowance } from "@/lib/data/caddy";
  */
 export interface CaddyStand {
   ready: boolean;
+  /**
+   * Shut on purpose rather than shut by circumstance — the one reason a
+   * player is told about.
+   *
+   * The house rule everywhere else is absence rather than apology: a host who
+   * cannot have the caddy because this deploy has no model key is shown
+   * nothing, because "you are missing out on something" is not information
+   * they can act on. Held back on purpose is the exception, and the reason is
+   * that it is temporary and it is about the *house*, not about them. "Not
+   * built yet" is an honest thing to say to everybody at once; "your deploy
+   * is misconfigured" is not something to say to a player at all.
+   */
+  comingSoon: boolean;
   hasPass: boolean;
   /** When the fee's day runs out, so a screen can say rather than imply. */
   passExpiresAt: string | null;
@@ -57,6 +76,24 @@ async function caddyTablesPresent(): Promise<boolean> {
 }
 
 export async function caddyStand(): Promise<CaddyStand> {
+  // Shut is shut: no probe, no allowance, no round trip for an answer that
+  // cannot change. The screen needs one fact and it is already in hand.
+  if (!caddyOpen(process.env)) {
+    return {
+      ready: false,
+      comingSoon: true,
+      hasPass: false,
+      passExpiresAt: null,
+      allowance: { canPlan: false, left: 0, courseId: null, tweaks: 0 },
+      // Off production, still name the variable. The player-facing note says
+      // "coming soon", which is all a player needs and none of what a
+      // deployer needs — "I set every key and preview still shows nothing" is
+      // the exact afternoon this list exists to save. Just the one gate: the
+      // four below it ask the database, and this branch deliberately has not.
+      gates: showCaddyDiagnostics(process.env) ? [closedGate(process.env)] : null,
+    };
+  }
+
   const [pass, user, tablesPresent] = await Promise.all([
     getDayPass(),
     getSessionUser(),
@@ -82,6 +119,7 @@ export async function caddyStand(): Promise<CaddyStand> {
 
   return {
     ready,
+    comingSoon: false,
     hasPass: pass != null,
     passExpiresAt: pass?.expiresAt ?? null,
     allowance,

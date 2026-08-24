@@ -9,7 +9,7 @@ import {
   askCaddyLooped,
   type CaddyTurnRecord,
 } from "@/lib/caddy/client";
-import { caddyEnabled } from "@/lib/caddy/credentials";
+import { caddyOnDuty } from "@/lib/caddy/open";
 import { CADDY_CREDITS_SPENT } from "@/lib/caddy/credits";
 import { CADDY_FAIR_USE_NOTE } from "@/lib/caddy/fair-use";
 import { patchIsOpen, resumableSince } from "@/lib/caddy/window";
@@ -448,7 +448,7 @@ async function gatherFor(
 export async function reopenCaddyPatch(
   sessionId: string,
 ): Promise<{ error?: string }> {
-  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  if (!caddyOnDuty(process.env)) return { error: NO_CADDY };
   const placesKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!placesKey) return { error: NO_CADDY };
 
@@ -552,7 +552,7 @@ export async function openPlan(rawBrief: unknown): Promise<
   // insert are three separate problems with three separate fixes, and off
   // production the staging note is allowed to say which. The player-facing
   // sentence never changes; only `detail` does, and only where it is read.
-  if (!caddyEnabled(process.env))
+  if (!caddyOnDuty(process.env))
     return {
       error: NO_CADDY,
       detail:
@@ -637,7 +637,7 @@ export async function askTheCaddy(input: {
   holeNumber?: number | null;
   roll?: boolean;
 }): Promise<CaddyResult> {
-  if (!caddyEnabled(process.env)) return { error: NO_CADDY };
+  if (!caddyOnDuty(process.env)) return { error: NO_CADDY };
 
   const session = await host();
   if (!session) return { error: "Planning a course takes a sign-in." };

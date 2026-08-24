@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import Stripe from "stripe";
 
+import { caddyOpen } from "@/lib/caddy/open";
 import {
   billingEnabled,
   CADDY_TOPUPS_ON_SALE,
@@ -33,6 +34,13 @@ export async function startGreenFeeCheckout(): Promise<{
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!billingEnabled(secretKey)) {
     return { error: "The till isn't plugged in yet." };
+  }
+  // The shelf is shut while the caddy is: the fee's one extra is the caddy,
+  // so charging for it now would be taking money for a coming-soon note. The
+  // gate is the till alone, exactly as the fee-first rule is — nothing on the
+  // spend side re-checks it, and a pass somebody already holds keeps working.
+  if (!caddyOpen(process.env)) {
+    return { error: "The caddy is still being finished — nothing to sell yet." };
   }
 
   const supabase = await createClient();
@@ -142,6 +150,13 @@ export async function startCaddyTopupCheckout(
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!billingEnabled(secretKey)) {
     return { error: "The till isn't plugged in yet." };
+  }
+  // The shelf is shut while the caddy is: the fee's one extra is the caddy,
+  // so charging for it now would be taking money for a coming-soon note. The
+  // gate is the till alone, exactly as the fee-first rule is — nothing on the
+  // spend side re-checks it, and a pass somebody already holds keeps working.
+  if (!caddyOpen(process.env)) {
+    return { error: "The caddy is still being finished — nothing to sell yet." };
   }
   // Against what is *on sale*, not against every key the ledger honours. The
   // two lists differ the moment a rung retires, and this is the side that has

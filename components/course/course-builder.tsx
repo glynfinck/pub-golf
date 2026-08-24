@@ -6,6 +6,7 @@ import { Copy, Map as MapIcon, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Masthead } from "@/components/shell/masthead";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
+import { CaddyComingSoon } from "@/components/course/caddy-coming-soon";
 import { CaddyGroup } from "@/components/course/caddy-group";
 import type { Reach } from "@/lib/caddy/reach";
 import {
@@ -110,6 +111,7 @@ function draftFromPlan(planned: PlannedCourse): DraftHole[] {
 export function CourseBuilder({
   course,
   caddy = false,
+  caddyComingSoon = false,
   hasPass = false,
   resumed = null,
   reopen = null,
@@ -150,6 +152,18 @@ export function CourseBuilder({
    * the group never renders — the maps-key pattern, so an unconfigured deploy
    * shows the builder exactly as it has always been. */
   caddy?: boolean;
+  /**
+   * The caddy is shut on purpose rather than shut by circumstance, and this
+   * table is the door that says so.
+   *
+   * Never true at the same time as `caddy` — the flag that raises this is the
+   * first thing `caddyReady` checks — and passed only by `/courses/new`. A
+   * saved course does not get the note: `/courses/[id]` shows the caddy only
+   * where a conversation about *that* course is still open, so a note there
+   * would appear on every hand-plotted course in the book and mean nothing to
+   * any of them.
+   */
+  caddyComingSoon?: boolean;
   hasPass?: boolean;
 }) {
   const editing = course !== undefined;
@@ -562,6 +576,7 @@ export function CourseBuilder({
           never be tweaked — the door you came in by is not a fact about the
           caddy. `/courses/[id]` passes `caddy` only when the conversation that
           wrote that course is still open. */}
+      {caddyComingSoon ? <CaddyComingSoon /> : null}
       {caddy ? (
         <CaddyGroup
           hasPass={hasPass}
