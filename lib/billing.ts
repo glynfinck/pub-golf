@@ -1,5 +1,8 @@
 import type Stripe from "stripe";
 
+import type { CaddyEnv } from "@/lib/caddy/credentials";
+import { caddyOpen } from "@/lib/caddy/open";
+
 /** Prices resolve by lookup key, never id: a sandbox mirrors production
  * under the same keys, so code never branches on environment. */
 export const GREEN_FEE_LOOKUP_KEY = "green_fee";
@@ -88,6 +91,28 @@ export const CADDY_TOPUPS: Record<
  * no surface, and nothing on screen mentions money. */
 export function billingEnabled(secretKey: string | undefined): boolean {
   return typeof secretKey === "string" && secretKey.length > 0;
+}
+
+/**
+ * Whether the green fee — and the top-ups above it — may actually be sold.
+ *
+ * A key is not permission. `GREEN_FEE_EXTRAS` has exactly one entry in it and
+ * that entry is the caddy, so a shut caddy leaves the fee selling a day of
+ * nothing and the top-up shelf selling goes at a thing that will not answer.
+ * The covenant's "money only ever buys something real" is a rule about what
+ * the fee *lists*; this is the same rule one level up, about whether it may
+ * be charged at all.
+ *
+ * Deliberately separate from `billingEnabled`, which still means only "there
+ * is a Stripe key". The honesty box is not behind this: a tip grants nothing,
+ * buys nothing and is not the caddy, so it is unaffected either way.
+ *
+ * A fee somebody already bought is untouched — this is the till, not a
+ * retraction. Paid is paid, which is the same rule `caddyReady` keeps for a
+ * held pass against a closed till.
+ */
+export function greenFeeOnSale(env: CaddyEnv): boolean {
+  return caddyOpen(env) && billingEnabled(env.STRIPE_SECRET_KEY);
 }
 
 /**

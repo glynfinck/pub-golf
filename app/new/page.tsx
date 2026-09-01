@@ -1,5 +1,5 @@
 import { NewRound } from "@/components/round/new-round";
-import { billingEnabled } from "@/lib/billing";
+import { greenFeeOnSale } from "@/lib/billing";
 import { getDayPass } from "@/lib/data/billing";
 import { getMyCourses } from "@/lib/data/courses";
 import { getSessionUser } from "@/lib/data/rounds";
@@ -19,14 +19,15 @@ export default async function NewRoundPage() {
     <NewRound
       courses={courses}
       pass={pass}
-      // Two gates, both the covenant's. No Stripe key, no till and no
-      // mention of money — the maps-key pattern. And an anonymous seat is a
+      // Three gates, all the covenant's. No Stripe key, no till and no
+      // mention of money — the maps-key pattern. An anonymous seat is a
       // guest: guests never cross the payment boundary, so no price is
-      // rendered on their screen even though they can reach this form.
+      // rendered on their screen even though they can reach this form. And
+      // the fee is off sale entirely while the caddy — its one extra — is
+      // still being finished, so the members' options group does not appear
+      // at all rather than offering a day of nothing.
       billingOn={
-        billingEnabled(process.env.STRIPE_SECRET_KEY) &&
-        user != null &&
-        !user.is_anonymous
+        greenFeeOnSale(process.env) && user != null && !user.is_anonymous
       }
     />
   );

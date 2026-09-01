@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Landing } from "@/components/landing";
 import { DayPassCard } from "@/components/round/day-pass-card";
+import { caddyOpen } from "@/lib/caddy/open";
 import { Screen, ScreenHeader } from "@/components/shell/screen";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
@@ -112,7 +113,9 @@ export default async function ClubhousePage() {
           bought, the league is the table's own history. They used to be one
           door because the fee was what let a round into the league; it isn't
           any more. */}
-      {pass ? <DayPassCard pass={pass} /> : null}
+      {pass ? (
+        <DayPassCard pass={pass} caddyOpen={caddyOpen(process.env)} />
+      ) : null}
       {leagueRounds > 0 ? (
         <Link
           href="/league"

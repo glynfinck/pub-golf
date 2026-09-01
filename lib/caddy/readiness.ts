@@ -1,5 +1,6 @@
 import { billingEnabled } from "@/lib/billing";
 import { caddyCredentials, type CaddyEnv } from "@/lib/caddy/credentials";
+import { caddyOpen } from "@/lib/caddy/open";
 
 /**
  * Why the caddy is not on the drafting table — for the person deploying it,
@@ -25,6 +26,27 @@ import { caddyCredentials, type CaddyEnv } from "@/lib/caddy/credentials";
  * never any part of its value — which is the same thing an attacker learns by
  * observing whether the feature works at all.
  */
+
+/**
+ * The one gate that is a decision rather than a configuration.
+ *
+ * Its own function because two callers need the same sentence and neither may
+ * write its own. `caddyGates` puts it at the head of the list; `caddyStand`
+ * hands back this gate *alone* when the switch is off, because with the caddy
+ * shut it never asks the database anything and so has no honest answer for
+ * the four gates below it — and a gate list that guesses is worse than a
+ * short one.
+ */
+export function closedGate(env: CaddyEnv): CaddyGate {
+  return {
+    label: "The caddy is open",
+    ok: caddyOpen(env),
+    fix:
+      "Held back on purpose while it is being finished — every door says " +
+      "\u201ccoming soon\u201d and the green fee is off sale. Set " +
+      "CADDY_OPEN=true on this environment to work on it.",
+  };
+}
 
 export interface CaddyGate {
   /** What is being checked, in the deployer's own vocabulary. */
@@ -53,6 +75,11 @@ export function showCaddyDiagnostics(env: CaddyEnv): boolean {
 export function caddyGates(env: CaddyEnv, input: CaddyReadinessInput): CaddyGate[] {
   const credentials = caddyCredentials(env);
   return [
+    // First, because it outranks every other answer: a deploy can be
+    // perfectly equipped and still be one where the caddy is deliberately
+    // not open. Naming it here is what stops the next person spending an
+    // afternoon on the credential gates below it.
+    closedGate(env),
     {
       label: credentials
         ? `Model credential (${credentials.via})`
@@ -100,6 +127,9 @@ export function shutGates(env: CaddyEnv, input: CaddyReadinessInput): CaddyGate[
  */
 export function caddyReady(env: CaddyEnv, input: CaddyReadinessInput): boolean {
   return (
+    // The house's own switch, ahead of everything the deploy happens to
+    // have. Shut means shut whatever else is configured.
+    caddyOpen(env) &&
     caddyCredentials(env) !== null &&
     // The Places key belongs here, not only in the gate list. Leaving it out
     // was deliberate once — the group would "render and then refuse honestly"

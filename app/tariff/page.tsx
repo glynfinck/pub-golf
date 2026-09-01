@@ -9,6 +9,7 @@ import {
   DAY_PASS_HOURS,
   GREEN_FEE_EXTRAS,
 } from "@/lib/billing";
+import { caddyOpen } from "@/lib/caddy/open";
 import { SUPPORT_EMAIL } from "@/lib/config";
 import {
   CADDY_TOPUP_OFFERS,
@@ -17,10 +18,37 @@ import {
 } from "@/lib/caddy/credits";
 import { GREEN_FEE_PRICE, TARIFF } from "@/lib/tariff";
 
+/**
+ * Whether the caddy — and so the fee it is the whole of — is open for
+ * business. Read once, at the top, because it changes what this board *is*:
+ * with the caddy shut the only thing the house sells is a tip, and a tariff
+ * that lists a green fee nobody can buy is not a price list, it is an advert
+ * for a shut door.
+ */
+const CADDY_OPEN = caddyOpen(process.env);
+
+/**
+ * Rendered per request rather than prerendered, and only because of the flag
+ * above.
+ *
+ * This page has no data in it and was static for good reason. But a static
+ * page bakes `CADDY_OPEN` in at build time, and changing an environment
+ * variable does not itself trigger a rebuild — so turning the caddy off would
+ * leave the one public surface that quotes prices still quoting them, over a
+ * till that had already started refusing. That is the exact shape DEPLOYMENT.md
+ * warns about, on the page where it costs the most: money saying one thing and
+ * the checkout doing another.
+ *
+ * The cost is a render with no fetches in it. The correctness is that this
+ * board is never ahead of, or behind, the till it describes.
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "The tariff",
-  description:
-    "What Pub Golf costs: playing is free, always. The green fee, the caddy and the honesty box, priced like a pint and explained in full.",
+  description: CADDY_OPEN
+    ? "What Pub Golf costs: playing is free, always. The green fee, the caddy and the honesty box, priced like a pint and explained in full."
+    : "What Pub Golf costs: playing is free, always — and right now that is everything. The caddy and its green fee are still being finished.",
 };
 
 /**
@@ -93,9 +121,23 @@ export default function TariffPage() {
       <Masthead back={{ href: "/", label: "Clubhouse" }} />
       <ScreenHeader eyebrow="The Clubhouse" title="The tariff" />
       <p className="text-sm text-muted-foreground">
-        Same as the sign on the wall, with what each thing actually is written
-        under it. Checkout shows your own money — the {GREEN_FEE_PRICE} green
-        fee reads {ABROAD.map((line) => line).join(", ")} abroad.
+        {CADDY_OPEN ? (
+          <>
+            Same as the sign on the wall, with what each thing actually is
+            written under it. Checkout shows your own money — the{" "}
+            {GREEN_FEE_PRICE} green fee reads{" "}
+            {ABROAD.map((line) => line).join(", ")} abroad.
+          </>
+        ) : (
+          /* No conversion table for a fee that is not being charged. The
+             board still exists — a public tariff is how "what's free stays
+             free" is worth anything — it just has one line on it. */
+          <>
+            Same as the sign on the wall. Right now the whole game is free:
+            the caddy, and the green fee that buys it, are still being
+            finished, so there is nothing to sell yet.
+          </>
+        )}
       </p>
 
       <Card className="gap-0 px-4 py-1">
@@ -117,44 +159,75 @@ export default function TariffPage() {
           </p>
         </TariffEntry>
 
-        <TariffEntry
-          rows={[
-            {
-              key: "fee",
-              label: "Green fee — a day of extras",
-              value: GREEN_FEE_PRICE,
-            },
-          ]}
-        >
-          <p>
-            A day pass for whoever is hosting. Every round you tee off inside
-            the day is covered — one payment for the whole table — and covered
-            rounds stay covered for good.
-          </p>
-          {/* The sentence with the most commercial consequence on the page,
-              and the one it got wrong for a release: the day used to run from
-              the charge, so a host buying on Wednesday for Saturday had a
-              dead pass by Thursday. `activate_day_pass` moved the start to
-              tee-off; this says so before the money rather than after it. */}
-          <p>
-            <b className="text-foreground">
-              The day starts when you tee a round off, not when you pay
-            </b>
-            , so buying on Wednesday for Saturday&apos;s crawl costs you
-            nothing. It then runs {DAY_PASS_HOURS} hours, with the time
-            remaining always on show.
-          </p>
-          {/* Read off GREEN_FEE_EXTRAS, which the covenant governs: it lists
-              what has shipped, never what is planned. A fee that grew an
-              extra grows this line with it. */}
-          <p>
-            What it buys today:{" "}
-            {GREEN_FEE_EXTRAS.map(
-              (extra) => `${extra.title.toLowerCase()} — ${extra.detail}`,
-            ).join("; ")}
-            . Anything added later joins the same fee.
-          </p>
-        </TariffEntry>
+        {/* The fee, either priced or postponed. Not simply hidden while it
+            is shut: a reader who has heard the app has a paid tier and finds
+            no mention of one on its own tariff learns nothing, whereas a line
+            saying it is coming and what it will be answers the question they
+            actually arrived with. What it must not do is carry a number — a
+            price is an offer, and this one cannot be accepted. */}
+        {CADDY_OPEN ? (
+          <TariffEntry
+            rows={[
+              {
+                key: "fee",
+                label: "Green fee — a day of extras",
+                value: GREEN_FEE_PRICE,
+              },
+            ]}
+          >
+            <p>
+              A day pass for whoever is hosting. Every round you tee off inside
+              the day is covered — one payment for the whole table — and
+              covered rounds stay covered for good.
+            </p>
+            {/* The sentence with the most commercial consequence on the page,
+                and the one it got wrong for a release: the day used to run
+                from the charge, so a host buying on Wednesday for Saturday had
+                a dead pass by Thursday. `activate_day_pass` moved the start to
+                tee-off; this says so before the money rather than after it. */}
+            <p>
+              <b className="text-foreground">
+                The day starts when you tee a round off, not when you pay
+              </b>
+              , so buying on Wednesday for Saturday&apos;s crawl costs you
+              nothing. It then runs {DAY_PASS_HOURS} hours, with the time
+              remaining always on show.
+            </p>
+            {/* Read off GREEN_FEE_EXTRAS, which the covenant governs: it
+                lists what has shipped, never what is planned. A fee that grew
+                an extra grows this line with it. */}
+            <p>
+              What it buys today:{" "}
+              {GREEN_FEE_EXTRAS.map(
+                (extra) => `${extra.title.toLowerCase()} — ${extra.detail}`,
+              ).join("; ")}
+              . Anything added later joins the same fee.
+            </p>
+          </TariffEntry>
+        ) : (
+          <TariffEntry
+            rows={[
+              {
+                key: "fee",
+                label: "Green fee — a day of extras",
+                value: "not yet on sale",
+              },
+            ]}
+          >
+            <p>
+              A day pass for whoever is hosting, and what it will buy is the
+              caddy: tell it where you are drinking and get a course back,
+              yours to change or replace. It is still being finished, so the
+              fee is off sale — nothing on this app can currently be paid for
+              except a tip.
+            </p>
+            <p>
+              When it opens, every round you tee off inside the day is covered
+              — one payment for the whole table — and the day will start at
+              tee-off rather than at checkout.
+            </p>
+          </TariffEntry>
+        )}
 
         {/* Driven off the offers, so a retired rung leaves this board with
             it. That is the honest direction: `caddy_topup_course` cannot be
@@ -167,30 +240,38 @@ export default function TariffPage() {
             means a night of pub golf, four times over. The £12 three-pack
             sits directly under the £12 green fee, and calling itself three
             rounds made the fee look like the worse buy at identical money. */}
-        <TariffEntry
-          rows={CADDY_TOPUP_OFFERS.map((offer) => ({
-            key: offer.lookupKey,
-            label: `More caddy — ${offer.goes}`,
-            value: offer.price,
-          }))}
-        >
-          <p>
-            Extra goes at the course the caddy planned for you. {WHAT_A_GO_BUYS}
-          </p>
-          {/* The condition, in the warning tone, on the board as well as at
-              the shelf — one constant (`WHAT_A_GO_NEEDS`), because a
-              condition worded twice is two conditions the moment one of them
-              is edited. This is the line that lets the £5 rung sit under the
-              £12 fee without reading as the cheaper way in, and it is why
-              the board can carry the rungs in public at all: `topupRefusal`
-              turns a fee-less buyer away at the till, and nobody should meet
-              that refusal having never been told. */}
-          <p className="font-semibold text-hazard">{WHAT_A_GO_NEEDS}</p>
-          <p>
-            Unlike the fee&apos;s own day, these keep: goes you have bought
-            never run out, so an unused one is still there next month.
-          </p>
-        </TariffEntry>
+        {/* Goes ride on a green fee, and the fee is not being sold — so
+            this rung is unbuyable twice over. The entry above already
+            tells a reader the caddy is coming; a second block pricing
+            extra goes at it would only be a number nobody can act on,
+            which is the same argument that retired `caddy_topup_course`
+            off this board. It comes back with the fee, unchanged. */}
+        {CADDY_OPEN ? (
+          <TariffEntry
+            rows={CADDY_TOPUP_OFFERS.map((offer) => ({
+              key: offer.lookupKey,
+              label: `More caddy — ${offer.goes}`,
+              value: offer.price,
+            }))}
+          >
+            <p>
+              Extra goes at the course the caddy planned for you. {WHAT_A_GO_BUYS}
+            </p>
+            {/* The condition, in the warning tone, on the board as well as at
+                the shelf — one constant (`WHAT_A_GO_NEEDS`), because a
+                condition worded twice is two conditions the moment one of them
+                is edited. This is the line that lets the £5 rung sit under the
+                £12 fee without reading as the cheaper way in, and it is why
+                the board can carry the rungs in public at all: `topupRefusal`
+                turns a fee-less buyer away at the till, and nobody should meet
+                that refusal having never been told. */}
+            <p className="font-semibold text-hazard">{WHAT_A_GO_NEEDS}</p>
+            <p>
+              Unlike the fee&apos;s own day, these keep: goes you have bought
+              never run out, so an unused one is still there next month.
+            </p>
+          </TariffEntry>
+        ) : null}
 
         <TariffEntry
           rows={[
@@ -209,12 +290,15 @@ export default function TariffPage() {
         </TariffEntry>
       </Card>
 
-      {billingEnabled(process.env.STRIPE_SECRET_KEY) ? null : (
+      {/* Only while the caddy is open. With it shut the fee's own entry
+          already says it is not on sale, and two notes explaining the same
+          silence read as two different problems. */}
+      {CADDY_OPEN && !billingEnabled(process.env.STRIPE_SECRET_KEY) ? (
         <p className="text-xs text-muted-foreground">
           The taps are still being fitted; the prices above are what
           they&apos;ll cost when the bar opens.
         </p>
-      )}
+      ) : null}
 
       <section>
         <h3 className="eyebrow mb-2">House rules on money</h3>
