@@ -64,9 +64,24 @@ jobs:
           node scripts/stripe-seed.mjs
           npm run test:stripe
 
+      # Pinned, not `latest`. `supabase db reset` builds the whole database
+      # from scratch, so the CLI version decides what a table arrives with
+      # before any migration runs — which makes an unpinned CLI a silent input
+      # to every grant assertion in the db tier.
+      #
+      # It bit on 26 Aug 2026: 2.116.0 shipped that morning, `latest` took it,
+      # and nine db tests went red — every one of them a grant, none of them a
+      # policy or a trigger. The last green run on `main` (14 Aug) had been on
+      # 2.114.0, which is why that is the version here rather than the newest
+      # that happens to pass.
+      #
+      # 20260918000000_state_the_grants.sql is the actual fix: it revokes and
+      # re-grants explicitly, so the access model no longer depends on what the
+      # bootstrap hands out. This pin is what keeps the stack from moving under
+      # the suite again while nobody is looking. Bump it deliberately.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.114.0
 
       - name: Start local Supabase
         run: |
